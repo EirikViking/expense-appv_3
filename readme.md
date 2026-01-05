@@ -1,0 +1,23 @@
+# Expense App v3 (MVP)
+
+Personal expense analytics app for Norwegian bank and credit card data.
+
+## Features
+- XLSX upload and parsing (credit cards)
+- PDF upload and text extraction (bank statements)
+- Transaction and file deduplication (SHA256)
+- JWT authentication
+- Norwegian date and number formats
+
+## Tech stack
+- Frontend: React, Vite, TypeScript, Tailwind
+- Backend: Cloudflare Worker (Hono)
+- Database: Cloudflare D1 (SQLite)
+- Monorepo: pnpm workspaces
+
+## Development
+
+```bash
+pnpm install
+pnpm dev:web     # http://localhost:5173
+pnpm dev:worker  # http://localhost:8788
