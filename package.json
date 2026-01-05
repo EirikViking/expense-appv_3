@@ -1,0 +1,24 @@
+{
+  "name": "personal-expense-analytics",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:worker": "pnpm --filter worker dev",
+    "build": "pnpm -r build",
+    "build:web": "pnpm --filter web build",
+    "build:worker": "pnpm --filter worker build",
+    "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1",
+    "typescript": "^5.3.3",
+    "xlsx": "^0.18.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
