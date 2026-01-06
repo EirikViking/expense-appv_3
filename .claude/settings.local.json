@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(pnpm --filter web build:*)",
+      "Bash(pnpm --filter @expense/shared typecheck:*)",
+      "Bash(pnpm --filter worker typecheck:*)",
+      "Bash(pnpm generate-fixtures:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(npx wrangler:*)",
+      "Bash(pnpm dev)",
+      "Bash(curl:*)",
+      "Bash(pnpm add:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(xargs:*)",
+      "Bash(pnpm test)",
+      "Bash(pnpm build:web:*)",
+      "Bash(pnpm db:migrate:local:*)",
+      "Bash(pnpm db:seed:*)",
+      "Bash(npx tsx:*)",
+      "Bash(wrangler d1 execute:*)",
+      "Bash(wrangler d1 create:*)",
+      "Bash(wrangler deploy:*)"
+    ]
+  }
+}

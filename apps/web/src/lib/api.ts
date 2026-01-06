@@ -48,16 +48,45 @@ import type {
 // In production, use the configured API URL
 const API_URL = import.meta.env.DEV ? '/api' : (import.meta.env.VITE_API_URL || '');
 
+// Token storage key
+const AUTH_TOKEN_KEY = 'expense_auth_token';
+
+// Get stored auth token
+export function getAuthToken(): string | null {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+// Set auth token
+export function setAuthToken(token: string): void {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+// Clear auth token
+export function clearAuthToken(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
+  // Build headers, including Authorization if token exists
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Add Authorization header if token exists
+  const token = getAuthToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
+      ...headers,
+      ...(options.headers as Record<string, string>),
     },
   });
 

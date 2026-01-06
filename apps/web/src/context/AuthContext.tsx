@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { api } from '../lib/api';
+import { api, setAuthToken, clearAuthToken, getAuthToken } from '../lib/api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -17,10 +17,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = useCallback(async () => {
     try {
+      // Check if we have a stored token first
+      const token = getAuthToken();
+      if (!token) {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+        return;
+      }
       // Try to access a protected endpoint to verify auth
       await api.getTransactions({ limit: 1 });
       setIsAuthenticated(true);
     } catch {
+      // Token is invalid or expired, clear it
+      clearAuthToken();
       setIsAuthenticated(false);
     } finally {
       setIsLoading(false);
@@ -34,6 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (password: string) => {
     const response = await api.login(password);
     if (response.success) {
+      // Store the token if returned
+      if (response.token) {
+        setAuthToken(response.token);
+      }
       setIsAuthenticated(true);
     }
   }, []);
@@ -42,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } finally {
+      clearAuthToken();
       setIsAuthenticated(false);
     }
   }, []);

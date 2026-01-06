@@ -25,16 +25,17 @@ auth.post('/login', async (c) => {
     const exp = Date.now() + 24 * 60 * 60 * 1000;
     const token = await signJwt({ authenticated: true, exp }, c.env.JWT_SECRET);
 
-    // Set HttpOnly cookie
+    // Set cookie for same-origin requests (with cross-origin compatible settings)
     setCookie(c, 'auth_token', token, {
       httpOnly: true,
-      secure: false,
-      sameSite: 'Lax',
+      secure: true,
+      sameSite: 'None',
       maxAge: 24 * 60 * 60,
       path: '/',
     });
 
-    return c.json({ success: true });
+    // Also return token in response body for cross-origin clients to store and send via Authorization header
+    return c.json({ success: true, token });
   } catch (error) {
     return c.json({ error: 'Internal server error' }, 500);
   }
