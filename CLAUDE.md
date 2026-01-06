@@ -2,6 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Deployment rules (must follow)
+
+This project has two separate deployments:
+
+1) Frontend (Cloudflare Pages)
+- Deploys automatically on GitHub push
+
+2) Backend API (Cloudflare Worker)
+- NEVER auto-deploys
+- Any backend code change requires an explicit Worker deploy
+
+If you modify anything under `apps/worker/`, you MUST:
+1) State clearly that a Worker deploy is required
+2) Provide the exact deploy command OR exact Cloudflare GUI steps
+3) Provide a simple way to verify the deploy is live (what to check in the UI)
+
+Do not assume anything is deployed unless the user confirms it.
+
+
 ### Recommended Project Rules
 
 - All frontend → Worker calls must go through `apps/web/src/lib/api.ts` `request()` helper
