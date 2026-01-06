@@ -66,27 +66,53 @@ export function InsightsPage() {
     try {
       const prevRange = getPreviousMonthRange();
 
-      const [summaryRes, categoriesRes, merchantsRes, timeseriesRes, subsRes, compareRes] =
-        await Promise.all([
-          api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
-          api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
-          api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 10 }),
-          api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity }),
-          api.getAnalyticsSubscriptions(),
-          api.getAnalyticsCompare({
-            date_from_1: prevRange.start,
-            date_to_1: prevRange.end,
-            date_from_2: dateFrom,
-            date_to_2: dateTo,
-          }),
-        ]);
+      const endpointNames = ['summary', 'by-category', 'by-merchant', 'timeseries', 'subscriptions', 'compare'];
 
-      setSummary(summaryRes);
-      setCategories(categoriesRes.categories);
-      setMerchants(merchantsRes.merchants);
-      setTimeseries(timeseriesRes.series);
-      setSubscriptions(subsRes.subscriptions);
-      setComparison(compareRes);
+      const results = await Promise.allSettled([
+        api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
+        api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
+        api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 10 }),
+        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity }),
+        api.getAnalyticsSubscriptions(),
+        api.getAnalyticsCompare({
+          previous_start: prevRange.start,
+          previous_end: prevRange.end,
+          current_start: dateFrom,
+          current_end: dateTo,
+        }),
+      ]);
+
+      const [summaryRes, categoriesRes, merchantsRes, timeseriesRes, subsRes, compareRes] = results;
+
+      // Set state only for fulfilled results
+      if (summaryRes.status === 'fulfilled') {
+        setSummary(summaryRes.value);
+      }
+      if (categoriesRes.status === 'fulfilled') {
+        setCategories(categoriesRes.value.categories);
+      }
+      if (merchantsRes.status === 'fulfilled') {
+        setMerchants(merchantsRes.value.merchants);
+      }
+      if (timeseriesRes.status === 'fulfilled') {
+        setTimeseries(timeseriesRes.value.series);
+      }
+      if (subsRes.status === 'fulfilled') {
+        setSubscriptions(subsRes.value.subscriptions);
+      }
+      if (compareRes.status === 'fulfilled') {
+        setComparison(compareRes.value);
+      }
+
+      // Log failed endpoints (non-blocking)
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          console.error(
+            `[Insights] /analytics/${endpointNames[index]} failed:`,
+            result.reason?.message || result.reason
+          );
+        }
+      });
     } catch (err) {
       console.error('Failed to load insights:', err);
     } finally {
@@ -159,8 +185,8 @@ export function InsightsPage() {
   }
 
   const monthlySubTotal = subscriptions.reduce((sum, s) => {
-    if (s.estimated_cadence === 'monthly') return sum + s.estimated_amount;
-    if (s.estimated_cadence === 'yearly') return sum + s.estimated_amount / 12;
+    if (s.frequency === 'monthly') return sum + s.amount;
+    if (s.frequency === 'yearly') return sum + s.amount / 12;
     return sum;
   }, 0);
 
@@ -214,25 +240,25 @@ export function InsightsPage() {
                 <div>
                   <p className="text-sm text-gray-500">Total Expenses</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(comparison.period2.total_expenses)}
+                    {formatCurrency(comparison.current.total_expenses)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  comparison.change.expenses_change > 0
+                  comparison.change_percentage.expenses > 0
                     ? 'bg-red-100 text-red-700'
                     : 'bg-green-100 text-green-700'
                 )}>
-                  {comparison.change.expenses_change > 0 ? (
+                  {comparison.change_percentage.expenses > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {Math.abs(comparison.change.expenses_change).toFixed(1)}%
+                  {Math.abs(comparison.change_percentage.expenses).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.period1.total_expenses)} last period
+                vs {formatCurrency(comparison.previous.total_expenses)} last period
               </p>
             </CardContent>
           </Card>
@@ -243,25 +269,25 @@ export function InsightsPage() {
                 <div>
                   <p className="text-sm text-gray-500">Total Income</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {formatCurrency(comparison.period2.total_income)}
+                    {formatCurrency(comparison.current.total_income)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  comparison.change.income_change > 0
+                  comparison.change_percentage.income > 0
                     ? 'bg-green-100 text-green-700'
                     : 'bg-red-100 text-red-700'
                 )}>
-                  {comparison.change.income_change > 0 ? (
+                  {comparison.change_percentage.income > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {Math.abs(comparison.change.income_change).toFixed(1)}%
+                  {Math.abs(comparison.change_percentage.income).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.period1.total_income)} last period
+                vs {formatCurrency(comparison.previous.total_income)} last period
               </p>
             </CardContent>
           </Card>
@@ -273,29 +299,27 @@ export function InsightsPage() {
                   <p className="text-sm text-gray-500">Net Savings</p>
                   <p className={cn(
                     'text-2xl font-bold',
-                    comparison.period2.net >= 0 ? 'text-green-600' : 'text-red-600'
+                    comparison.current.net >= 0 ? 'text-green-600' : 'text-red-600'
                   )}>
-                    {formatCurrency(comparison.period2.net, true)}
+                    {formatCurrency(comparison.current.net, true)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  (comparison.change.net_change ?? 0) > 0
+                  comparison.change_percentage.net > 0
                     ? 'bg-green-100 text-green-700'
                     : 'bg-red-100 text-red-700'
                 )}>
-                  {(comparison.change.net_change ?? 0) > 0 ? (
+                  {comparison.change_percentage.net > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {comparison.change.net_change !== null
-                    ? `${Math.abs(comparison.change.net_change).toFixed(1)}%`
-                    : 'N/A'}
+                  {Math.abs(comparison.change_percentage.net).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.period1.net, true)} last period
+                vs {formatCurrency(comparison.previous.net, true)} last period
               </p>
             </CardContent>
           </Card>
@@ -487,15 +511,15 @@ export function InsightsPage() {
                     <CreditCard className="h-5 w-5 text-blue-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{sub.merchant_name || sub.description}</p>
+                    <p className="font-medium truncate">{sub.merchant_name}</p>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span>{formatCurrency(sub.estimated_amount)}</span>
+                      <span>{formatCurrency(sub.amount)}</span>
                       <span>•</span>
-                      <span>{sub.estimated_cadence}</span>
+                      <span>{sub.frequency}</span>
                     </div>
                   </div>
                   <Badge variant="outline" className="text-xs">
-                    {sub.occurrence_count}x
+                    {sub.transaction_ids.length}x
                   </Badge>
                 </div>
               ))}

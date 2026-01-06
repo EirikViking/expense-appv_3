@@ -490,16 +490,8 @@ export interface SubscriptionDetection {
   transaction_ids: string[];
 }
 
-// Recurring item for insights display
-export interface RecurringItem {
-  merchant_name: string | null;
-  description: string;
-  estimated_amount: number;
-  estimated_cadence: RecurringCadence;
-  occurrence_count: number;
-  last_date: string;
-  confidence: number;
-}
+// Recurring item for insights display - alias for SubscriptionDetection (what backend returns)
+export type RecurringItem = SubscriptionDetection;
 
 export interface AnomalyItem {
   transaction_id: string;
@@ -594,13 +586,5 @@ export interface AnomaliesResponse {
   anomalies: AnomalyItem[];
 }
 
-export interface AnalyticsCompareResponse {
-  period1: AnalyticsSummary;
-  period2: AnalyticsSummary;
-  change: {
-    income_change: number;
-    expenses_change: number;
-    net_change: number | null;
-    count_change: number;
-  };
-}
+// AnalyticsCompareResponse is an alias for PeriodComparison (what the backend returns)
+export type AnalyticsCompareResponse = PeriodComparison;

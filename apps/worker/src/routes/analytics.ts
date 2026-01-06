@@ -530,10 +530,70 @@ analytics.get('/anomalies', async (c) => {
 analytics.get('/compare', async (c) => {
   try {
     const query = c.req.query();
-    const parsed = compareQuerySchema.safeParse(query);
+
+    // Support both query param shapes:
+    // Shape A: current_start, current_end, previous_start, previous_end
+    // Shape B: date_from_1, date_to_1, date_from_2, date_to_2 (legacy)
+    let normalizedQuery: {
+      current_start?: string;
+      current_end?: string;
+      previous_start?: string;
+      previous_end?: string;
+    };
+
+    if (query.date_from_1 || query.date_to_1 || query.date_from_2 || query.date_to_2) {
+      // Shape B: Map to Shape A
+      // date_from_1/date_to_1 = previous period, date_from_2/date_to_2 = current period
+      normalizedQuery = {
+        previous_start: query.date_from_1,
+        previous_end: query.date_to_1,
+        current_start: query.date_from_2,
+        current_end: query.date_to_2,
+      };
+    } else {
+      // Shape A: Use as-is
+      normalizedQuery = {
+        current_start: query.current_start,
+        current_end: query.current_end,
+        previous_start: query.previous_start,
+        previous_end: query.previous_end,
+      };
+    }
+
+    const parsed = compareQuerySchema.safeParse(normalizedQuery);
 
     if (!parsed.success) {
-      return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
+      // Build helpful error message
+      const dateFormat = /^\d{4}-\d{2}-\d{2}$/;
+      const missingFields: string[] = [];
+      const invalidFields: string[] = [];
+
+      const requiredFields = ['current_start', 'current_end', 'previous_start', 'previous_end'] as const;
+      for (const field of requiredFields) {
+        const value = normalizedQuery[field];
+        if (!value) {
+          missingFields.push(field);
+        } else if (!dateFormat.test(value)) {
+          invalidFields.push(`${field} (got: "${value}", expected: YYYY-MM-DD)`);
+        }
+      }
+
+      const errorParts: string[] = [];
+      if (missingFields.length > 0) {
+        errorParts.push(`Missing required fields: ${missingFields.join(', ')}`);
+      }
+      if (invalidFields.length > 0) {
+        errorParts.push(`Invalid date format: ${invalidFields.join(', ')}`);
+      }
+
+      return c.json({
+        error: 'Invalid query parameters',
+        details: errorParts.join('. ') || parsed.error.message,
+        accepted_params: {
+          shape_a: 'current_start, current_end, previous_start, previous_end',
+          shape_b: 'date_from_1, date_to_1, date_from_2, date_to_2',
+        },
+      }, 400);
     }
 
     const { current_start, current_end, previous_start, previous_end } = parsed.data;

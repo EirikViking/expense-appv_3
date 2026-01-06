@@ -2,6 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+### Recommended Project Rules
+
+- All frontend → Worker calls must go through `apps/web/src/lib/api.ts` `request()` helper
+- Authentication supports both methods (backend checks cookie first, then Bearer header):
+  1. Cookie-based: `auth_token` cookie (set automatically on login, used in production for same-origin)
+  2. Bearer token: `Authorization: Bearer <token>` header (for cross-origin or dev)
+- Frontend stores token in localStorage and sends via Bearer header; production also receives auth_token cookie
+- Do not set `Content-Type` on GET requests
+- Do not set `Content-Type` when sending FormData
+- Analytics compare accepts two query param shapes:
+  - Shape A: `current_start`, `current_end`, `previous_start`, `previous_end`
+  - Shape B (legacy): `date_from_1`, `date_to_1`, `date_from_2`, `date_to_2`
+
+
 ## Project Overview
 
 Personal Expense Analytics - A production-ready expense tracking app for Norwegian bank and credit card statements. Monorepo with pnpm workspaces.
@@ -76,8 +90,9 @@ Forbidden patterns in apps/web and packages/shared:
 ### API Authentication
 
 - Password-based login via `POST /auth/login`
-- JWT stored in HttpOnly cookie (24h expiry)
-- Protected routes: `/ingest/*`, `/transactions/*`
+- JWT returned in response body and sent as Authorization: Bearer <token>
+- Protected routes: `/ingest/*`, `/transactions/*`, `/analytics/*`
+
 
 ### Environment Variables
 
