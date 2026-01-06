@@ -62,7 +62,7 @@ export function formatMonth(dateStr: string): string {
 }
 
 // Format date as YYYY-MM-DD without timezone conversion
-function formatDateLocal(date: Date): string {
+export function formatDateLocal(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -93,8 +93,8 @@ export function getLast30DaysRange(): { start: string; end: string } {
   const start = new Date();
   start.setDate(start.getDate() - 30);
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
+    start: formatDateLocal(start),
+    end: formatDateLocal(end),
   };
 }
 
@@ -103,8 +103,8 @@ export function getLast90DaysRange(): { start: string; end: string } {
   const start = new Date();
   start.setDate(start.getDate() - 90);
   return {
-    start: start.toISOString().split('T')[0],
-    end: end.toISOString().split('T')[0],
+    start: formatDateLocal(start),
+    end: formatDateLocal(end),
   };
 }
 

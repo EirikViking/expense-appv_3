@@ -33,6 +33,7 @@ import {
   formatCurrency,
   formatCompactCurrency,
   formatDateShort,
+  formatDateLocal,
   getMonthRange,
   getPreviousMonthRange,
   cn,
@@ -145,8 +146,8 @@ export function InsightsPage() {
         setGranularity('day');
         break;
       case 'last3Months':
-        start = new Date(now.getFullYear(), now.getMonth() - 2, 1).toISOString().split('T')[0];
-        end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+        start = formatDateLocal(new Date(now.getFullYear(), now.getMonth() - 2, 1));
+        end = formatDateLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0));
         setGranularity('week');
         break;
       case 'thisYear':
