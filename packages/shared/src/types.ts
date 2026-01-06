@@ -359,6 +359,7 @@ export interface ApplyRulesRequest {
 
 export interface LoginResponse {
   success: boolean;
+  token?: string;
 }
 
 export interface IngestResponse {

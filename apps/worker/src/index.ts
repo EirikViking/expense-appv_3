@@ -16,13 +16,22 @@ import analyticsRoutes from './routes/analytics';
 
 const app = new Hono<{ Bindings: Env }>();
 
-// CORS for local development - allow any localhost port
+// CORS - allow localhost and Cloudflare Pages
 app.use(
   '*',
   cors({
     origin: (origin) => {
       if (!origin) return 'http://localhost:5173';
+      // Allow localhost
       if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+        return origin;
+      }
+      // Allow Cloudflare Pages (*.pages.dev and custom domains)
+      if (origin.endsWith('.pages.dev') || origin.endsWith('.cromkake.workers.dev')) {
+        return origin;
+      }
+      // Allow any https origin for staging
+      if (origin.startsWith('https://')) {
         return origin;
       }
       return 'http://localhost:5173';

@@ -3,13 +3,13 @@ main = "src/index.ts"
 compatibility_date = "2024-01-01"
 
 [vars]
-ADMIN_PASSWORD = "dev-password-change-me"
-JWT_SECRET = "dev-secret-change-me-in-production"
+ADMIN_PASSWORD = ""
+JWT_SECRET = "jwt-staging-secret-expense-api-2024"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "expense-db"
-database_id = "local-dev-id"
+database_id = "1002bca0-397d-4065-897e-447b1d48cd2e"
 
 # R2 is optional - uncomment to enable file storage
 # [[r2_buckets]]
