@@ -19,6 +19,7 @@ export function formatCurrency(amount: number, showSign = false): string {
 
 // Format compact currency (for charts)
 export function formatCompactCurrency(amount: number): string {
+  if (amount == null || isNaN(amount)) return '0 kr';
   if (Math.abs(amount) >= 1000000) {
     return `${(amount / 1000000).toFixed(1)}M kr`;
   }
@@ -30,35 +31,54 @@ export function formatCompactCurrency(amount: number): string {
 
 // Format percentage
 export function formatPercentage(value: number, decimals = 1): string {
+  if (value == null || isNaN(value)) return '+0.0%';
   return `${value >= 0 ? '+' : ''}${value.toFixed(decimals)}%`;
 }
 
 // Format date in Norwegian format
 export function formatDate(dateStr: string): string {
+  if (!dateStr) return '';
   const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('nb-NO', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  }).format(date);
+  if (isNaN(date.getTime())) return dateStr;
+  try {
+    return new Intl.DateTimeFormat('nb-NO', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return dateStr;
+  }
 }
 
 // Format date for display (shorter)
 export function formatDateShort(dateStr: string): string {
+  if (!dateStr) return '';
   const date = new Date(dateStr);
-  return new Intl.DateTimeFormat('nb-NO', {
-    day: 'numeric',
-    month: 'short',
-  }).format(date);
+  if (isNaN(date.getTime())) return dateStr; // Return original if invalid
+  try {
+    return new Intl.DateTimeFormat('nb-NO', {
+      day: 'numeric',
+      month: 'short',
+    }).format(date);
+  } catch {
+    return dateStr; // Return original string if formatting fails
+  }
 }
 
 // Format month
 export function formatMonth(dateStr: string): string {
+  if (!dateStr) return '';
   const date = new Date(dateStr + '-01');
-  return new Intl.DateTimeFormat('nb-NO', {
-    month: 'long',
-    year: 'numeric',
-  }).format(date);
+  if (isNaN(date.getTime())) return dateStr;
+  try {
+    return new Intl.DateTimeFormat('nb-NO', {
+      month: 'long',
+      year: 'numeric',
+    }).format(date);
+  } catch {
+    return dateStr;
+  }
 }
 
 // Format date as YYYY-MM-DD without timezone conversion
