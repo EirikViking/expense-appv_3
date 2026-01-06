@@ -71,9 +71,13 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<T> {
   // Build headers, including Authorization if token exists
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
+  const headers: Record<string, string> = {};
+
+  // Only set Content-Type for requests with a body (POST, PUT, PATCH)
+  const method = options.method?.toUpperCase() || 'GET';
+  if (method !== 'GET' && method !== 'DELETE') {
+    headers['Content-Type'] = 'application/json';
+  }
 
   // Add Authorization header if token exists
   const token = getAuthToken();
@@ -83,7 +87,6 @@ async function request<T>(
 
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
-    credentials: 'include',
     headers: {
       ...headers,
       ...(options.headers as Record<string, string>),
@@ -385,7 +388,7 @@ export const api = {
     }>(`/analytics/anomalies${qs}`);
   },
 
-  getAnalyticsCompare: (query: { date_from_1: string; date_to_1: string; date_from_2: string; date_to_2: string }) => {
+  getAnalyticsCompare: (query: { current_start: string; current_end: string; previous_start: string; previous_end: string }) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<AnalyticsCompareResponse>(`/analytics/compare${qs}`);
   },
