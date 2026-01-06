@@ -29,6 +29,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 import {
   formatCurrency,
   formatCompactCurrency,
@@ -46,6 +48,7 @@ import {
   CreditCard,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronRight,
 } from 'lucide-react';
 
 export function InsightsPage() {
@@ -61,6 +64,16 @@ export function InsightsPage() {
   const [dateFrom, setDateFrom] = useState(getMonthRange().start);
   const [dateTo, setDateTo] = useState(getMonthRange().end);
   const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
+  const [showCustomRange, setShowCustomRange] = useState(false);
+  const [customDateFrom, setCustomDateFrom] = useState('');
+  const [customDateTo, setCustomDateTo] = useState('');
+
+  // Drilldown dialog state
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownTitle, setDrilldownTitle] = useState('');
+  const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
+  const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
+  const [drilldownCategoryId, setDrilldownCategoryId] = useState<string | undefined>();
 
   const loadData = async () => {
     setLoading(true);
@@ -159,6 +172,40 @@ export function InsightsPage() {
 
     setDateFrom(start!);
     setDateTo(end!);
+    setShowCustomRange(false);
+  };
+
+  const applyCustomRange = () => {
+    if (customDateFrom && customDateTo) {
+      setDateFrom(customDateFrom);
+      setDateTo(customDateTo);
+      setShowCustomRange(false);
+      // Auto-select granularity based on range
+      const days = Math.ceil((new Date(customDateTo).getTime() - new Date(customDateFrom).getTime()) / (1000 * 60 * 60 * 24));
+      if (days > 90) {
+        setGranularity('month');
+      } else if (days > 31) {
+        setGranularity('week');
+      } else {
+        setGranularity('day');
+      }
+    }
+  };
+
+  const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
+    setDrilldownTitle(`Transactions: ${merchant.merchant_name}`);
+    setDrilldownSubtitle(`${merchant.count} transactions totaling ${formatCurrency(merchant.total)}`);
+    setDrilldownMerchantId(merchant.merchant_id ?? undefined);
+    setDrilldownCategoryId(undefined);
+    setDrilldownOpen(true);
+  };
+
+  const openCategoryDrilldown = (category: CategoryBreakdown) => {
+    setDrilldownTitle(`Transactions: ${category.category_name}`);
+    setDrilldownSubtitle(`${category.count} transactions totaling ${formatCurrency(category.total)}`);
+    setDrilldownCategoryId(category.category_id ?? undefined);
+    setDrilldownMerchantId(undefined);
+    setDrilldownOpen(true);
   };
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
@@ -212,14 +259,14 @@ export function InsightsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex gap-1">
             <Button
-              variant={dateFrom === getMonthRange().start ? 'default' : 'outline'}
+              variant={dateFrom === getMonthRange().start && !showCustomRange ? 'default' : 'outline'}
               size="sm"
               onClick={() => setPresetRange('thisMonth')}
             >
               This Month
             </Button>
             <Button
-              variant={dateFrom === getPreviousMonthRange().start ? 'default' : 'outline'}
+              variant={dateFrom === getPreviousMonthRange().start && !showCustomRange ? 'default' : 'outline'}
               size="sm"
               onClick={() => setPresetRange('lastMonth')}
             >
@@ -239,12 +286,61 @@ export function InsightsPage() {
             >
               This Year
             </Button>
+            <Button
+              variant={showCustomRange ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setShowCustomRange(!showCustomRange);
+                if (!customDateFrom) setCustomDateFrom(dateFrom);
+                if (!customDateTo) setCustomDateTo(dateTo);
+              }}
+            >
+              <Calendar className="h-4 w-4 mr-1" />
+              Custom
+            </Button>
           </div>
           <Button variant="ghost" size="sm" onClick={loadData}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
+
+      {/* Custom Date Range Panel */}
+      {showCustomRange && (
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="flex-1 min-w-[150px]">
+                <label className="text-sm font-medium text-gray-700 mb-1 block">From</label>
+                <Input
+                  type="date"
+                  value={customDateFrom}
+                  onChange={(e) => setCustomDateFrom(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+              <div className="flex-1 min-w-[150px]">
+                <label className="text-sm font-medium text-gray-700 mb-1 block">To</label>
+                <Input
+                  type="date"
+                  value={customDateTo}
+                  onChange={(e) => setCustomDateTo(e.target.value)}
+                  className="bg-white"
+                />
+              </div>
+              <Button onClick={applyCustomRange} disabled={!customDateFrom || !customDateTo}>
+                Apply Range
+              </Button>
+              <Button variant="ghost" onClick={() => setShowCustomRange(false)}>
+                Cancel
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Current range: {dateFrom} to {dateTo}
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Period Comparison */}
       {comparison && (
@@ -443,14 +539,19 @@ export function InsightsPage() {
                 </ResponsiveContainer>
                 <div className="space-y-2 w-full lg:w-auto">
                   {safeCategories.slice(0, 6).map((cat, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm">
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors -mx-2"
+                      onClick={() => openCategoryDrilldown(cat)}
+                    >
                       <div
-                        className="h-3 w-3 rounded-full"
+                        className="h-3 w-3 rounded-full shrink-0"
                         style={{ backgroundColor: cat.category_color || COLORS[i % COLORS.length] }}
                       />
                       <span className="flex-1 truncate">{cat.category_name}</span>
                       <span className="font-medium">{formatCurrency(cat.total)}</span>
                       <span className="text-gray-400 text-xs">{cat.percentage.toFixed(0)}%</span>
+                      <ChevronRight className="h-4 w-4 text-gray-400" />
                     </div>
                   ))}
                 </div>
@@ -470,28 +571,34 @@ export function InsightsPage() {
           </CardHeader>
           <CardContent>
             {safeMerchants.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={safeMerchants.slice(0, 8)} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
-                  <XAxis type="number" tickFormatter={formatCompactCurrency} className="text-xs" />
-                  <YAxis
-                    type="category"
-                    dataKey="merchant_name"
-                    width={100}
-                    className="text-xs"
-                    tick={{ fontSize: 11 }}
-                  />
-                  <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                    }}
-                  />
-                  <Bar dataKey="total" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="space-y-2">
+                {safeMerchants.slice(0, 8).map((merchant, i) => {
+                  const maxTotal = safeMerchants[0]?.total || 1;
+                  const barWidth = (merchant.total / maxTotal) * 100;
+                  return (
+                    <div
+                      key={i}
+                      className="cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors -mx-2"
+                      onClick={() => openMerchantDrilldown(merchant)}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium truncate flex-1">{merchant.merchant_name}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600">{formatCurrency(merchant.total)}</span>
+                          <Badge variant="outline" className="text-xs">{merchant.count}x</Badge>
+                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                        </div>
+                      </div>
+                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <div className="flex h-[250px] items-center justify-center text-gray-500">
                 No merchant data
@@ -546,6 +653,18 @@ export function InsightsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Transactions Drilldown Dialog */}
+      <TransactionsDrilldownDialog
+        open={drilldownOpen}
+        onOpenChange={setDrilldownOpen}
+        title={drilldownTitle}
+        subtitle={drilldownSubtitle}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        merchantId={drilldownMerchantId}
+        categoryId={drilldownCategoryId}
+      />
     </div>
   );
 }
