@@ -31,3 +31,6 @@ sample_data/
 
 # Cloudflare
 .mf/
+
+# Generated files
+seed.sql

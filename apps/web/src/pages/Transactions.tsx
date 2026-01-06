@@ -1,9 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
-import type { Transaction, TransactionStatus, SourceType } from '@expense/shared';
+import type { TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Search,
+  Tag,
+  Pencil,
+  X,
+} from 'lucide-react';
 
 export function TransactionsPage() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -13,231 +29,438 @@ export function TransactionsPage() {
   const [dateTo, setDateTo] = useState('');
   const [status, setStatus] = useState<TransactionStatus | ''>('');
   const [sourceType, setSourceType] = useState<SourceType | ''>('');
+  const [categoryId, setCategoryId] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   // Pagination
   const [page, setPage] = useState(0);
   const limit = 50;
 
-  const fetchTransactions = useCallback(async () => {
+  // Edit mode
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editCategory, setEditCategory] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+
+  const fetchData = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const result = await api.getTransactions({
-        date_from: dateFrom || undefined,
-        date_to: dateTo || undefined,
-        status: status || undefined,
-        source_type: sourceType || undefined,
-        limit,
-        offset: page * limit,
-      });
+      const [txResult, catResult] = await Promise.all([
+        api.getTransactions({
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+          status: status || undefined,
+          source_type: sourceType || undefined,
+          category_id: categoryId || undefined,
+          search: searchQuery || undefined,
+          limit,
+          offset: page * limit,
+        }),
+        categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
+      ]);
 
-      setTransactions(result.transactions);
-      setTotal(result.total);
+      setTransactions(txResult.transactions);
+      setTotal(txResult.total);
+      if ('categories' in catResult && catResult.categories) {
+        setCategories(catResult.categories);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, page]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, searchQuery, page, categories.length]);
 
   useEffect(() => {
-    fetchTransactions();
-  }, [fetchTransactions]);
-
-  const formatAmount = (amount: number, currency: string) => {
-    return new Intl.NumberFormat('nb-NO', {
-      style: 'currency',
-      currency: currency,
-    }).format(amount);
-  };
+    fetchData();
+  }, [fetchData]);
 
   const totalPages = Math.ceil(total / limit);
 
-  return (
-    <div className="px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Transactions</h1>
+  const handleSaveEdit = async (txId: string) => {
+    try {
+      await api.updateTransactionMeta(txId, {
+        category_id: editCategory || undefined,
+        notes: editNotes || undefined,
+      });
+      setEditingId(null);
+      fetchData();
+    } catch (err) {
+      console.error('Failed to update transaction:', err);
+    }
+  };
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow mb-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              From Date
-            </label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPage(0);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              To Date
-            </label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPage(0);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => {
-                setStatus(e.target.value as TransactionStatus | '');
-                setPage(0);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All</option>
-              <option value="booked">Booked</option>
-              <option value="pending">Pending</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Source
-            </label>
-            <select
-              value={sourceType}
-              onChange={(e) => {
-                setSourceType(e.target.value as SourceType | '');
-                setPage(0);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">All</option>
-              <option value="xlsx">Credit Card (XLSX)</option>
-              <option value="pdf">Bank Statement (PDF)</option>
-            </select>
-          </div>
-        </div>
+  const startEdit = (tx: TransactionWithMeta) => {
+    setEditingId(tx.id);
+    setEditCategory(tx.category_id || '');
+    setEditNotes(tx.notes || '');
+  };
+
+  const clearFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setStatus('');
+    setSourceType('');
+    setCategoryId('');
+    setSearchQuery('');
+    setPage(0);
+  };
+
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || searchQuery;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Transactions</h1>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowFilters(!showFilters)}
+        >
+          <Filter className="h-4 w-4 mr-2" />
+          Filters
+          {hasFilters && (
+            <Badge variant="secondary" className="ml-2">
+              Active
+            </Badge>
+          )}
+        </Button>
       </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Input
+          type="text"
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setPage(0);
+          }}
+          className="pl-10"
+        />
+      </div>
+
+      {/* Filters Panel */}
+      {showFilters && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  From Date
+                </label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setPage(0);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  To Date
+                </label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setPage(0);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => {
+                    setStatus(e.target.value as TransactionStatus | '');
+                    setPage(0);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All</option>
+                  <option value="booked">Booked</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Source
+                </label>
+                <select
+                  value={sourceType}
+                  onChange={(e) => {
+                    setSourceType(e.target.value as SourceType | '');
+                    setPage(0);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All</option>
+                  <option value="xlsx">Credit Card (XLSX)</option>
+                  <option value="pdf">Bank Statement (PDF)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Category
+                </label>
+                <select
+                  value={categoryId}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    setPage(0);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="mt-4"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Clear filters
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
           {error}
         </div>
       )}
 
       {/* Loading */}
       {isLoading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-12 w-12 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-3 w-1/2" />
+                  </div>
+                  <Skeleton className="h-6 w-24" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* Results count */}
-          <p className="text-sm text-gray-600 mb-4">
+          <p className="text-sm text-gray-600">
             Showing {transactions.length} of {total} transactions
           </p>
 
-          {/* Table */}
-          <div className="bg-white shadow rounded-lg overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Description
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Source
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+          {/* Transactions List */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="divide-y divide-gray-200">
                 {transactions.map((tx) => (
-                  <tr key={tx.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {tx.tx_date}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900">
-                      <div>{tx.description}</div>
-                      {tx.merchant && (
-                        <div className="text-gray-500 text-xs">{tx.merchant}</div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span
-                        className={
-                          tx.amount < 0 ? 'text-red-600' : 'text-green-600'
-                        }
-                      >
-                        {formatAmount(tx.amount, tx.currency)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          tx.status === 'booked'
-                            ? 'bg-green-100 text-green-800'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}
-                      >
-                        {tx.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {tx.source_type}
-                    </td>
-                  </tr>
+                  <div
+                    key={tx.id}
+                    className="p-4 hover:bg-gray-50 transition-colors"
+                  >
+                    {editingId === tx.id ? (
+                      // Edit Mode
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <p className="font-medium">{tx.description}</p>
+                            <p className="text-sm text-gray-500">{formatDate(tx.tx_date)}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleSaveEdit(tx.id)}>
+                              Save
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Category
+                            </label>
+                            <select
+                              value={editCategory}
+                              onChange={(e) => setEditCategory(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              <option value="">Uncategorized</option>
+                              {categories.map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Notes
+                            </label>
+                            <Input
+                              type="text"
+                              value={editNotes}
+                              onChange={(e) => setEditNotes(e.target.value)}
+                              placeholder="Add notes..."
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      // View Mode
+                      <div className="flex items-center gap-4">
+                        <div
+                          className="h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-medium"
+                          style={{
+                            backgroundColor: tx.category_color || '#6b7280',
+                          }}
+                        >
+                          {tx.category_name?.charAt(0) || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{tx.description}</p>
+                            {tx.is_recurring && (
+                              <Badge variant="outline" className="text-xs">
+                                Recurring
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <span>{formatDate(tx.tx_date)}</span>
+                            {tx.merchant_name && (
+                              <>
+                                <span>•</span>
+                                <span>{tx.merchant_name}</span>
+                              </>
+                            )}
+                            {tx.category_name && (
+                              <>
+                                <span>•</span>
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-xs"
+                                  style={tx.category_color ? {
+                                    backgroundColor: `${tx.category_color}20`,
+                                    color: tx.category_color,
+                                  } : { backgroundColor: '#6b728020', color: '#6b7280' }}
+                                >
+                                  {tx.category_name}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {tx.tags && tx.tags.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1">
+                              <Tag className="h-3 w-3 text-gray-400" />
+                              {tx.tags.map((tag) => (
+                                <Badge
+                                  key={tag.id}
+                                  variant="secondary"
+                                  className="text-xs"
+                                  style={tag.color ? {
+                                    backgroundColor: `${tag.color}20`,
+                                    color: tag.color,
+                                  } : undefined}
+                                >
+                                  {tag.name}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {tx.notes && (
+                            <p className="text-xs text-gray-400 mt-1 italic">
+                              {tx.notes}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p
+                            className={cn(
+                              'font-semibold',
+                              tx.amount < 0 ? 'text-red-600' : 'text-green-600'
+                            )}
+                          >
+                            {formatCurrency(tx.amount, true)}
+                          </p>
+                          <div className="flex items-center justify-end gap-2 mt-1">
+                            <Badge
+                              variant={tx.status === 'booked' ? 'default' : 'warning'}
+                            >
+                              {tx.status}
+                            </Badge>
+                            <button
+                              onClick={() => startEdit(tx)}
+                              className="p-1 hover:bg-gray-200 rounded"
+                            >
+                              <Pencil className="h-3 w-3 text-gray-400" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ))}
                 {transactions.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="px-6 py-12 text-center text-gray-500"
-                    >
-                      No transactions found
-                    </td>
-                  </tr>
+                  <div className="p-12 text-center text-gray-500">
+                    No transactions found
+                  </div>
                 )}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex justify-between items-center mt-4">
-              <button
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
+                <ChevronLeft className="h-4 w-4 mr-1" />
                 Previous
-              </button>
+              </Button>
               <span className="text-sm text-gray-600">
                 Page {page + 1} of {totalPages}
               </span>
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next
-              </button>
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
             </div>
           )}
         </>

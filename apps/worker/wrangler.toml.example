@@ -1,0 +1,21 @@
+name = "expense-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Change these in production!
+ADMIN_PASSWORD = "your-secure-password-here"
+JWT_SECRET = "your-secure-jwt-secret-here"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "expense-db"
+database_id = "your-d1-database-id"
+
+# R2 is optional - uncomment to enable file storage
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "expense-files"
+
+[dev]
+port = 8788

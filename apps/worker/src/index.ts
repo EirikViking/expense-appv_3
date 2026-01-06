@@ -5,6 +5,14 @@ import { authMiddleware } from './middleware/auth';
 import authRoutes from './routes/auth';
 import ingestRoutes from './routes/ingest';
 import transactionsRoutes from './routes/transactions';
+import categoriesRoutes from './routes/categories';
+import tagsRoutes from './routes/tags';
+import merchantsRoutes from './routes/merchants';
+import rulesRoutes from './routes/rules';
+import transactionMetaRoutes from './routes/transaction-meta';
+import budgetsRoutes from './routes/budgets';
+import recurringRoutes from './routes/recurring';
+import analyticsRoutes from './routes/analytics';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -20,7 +28,7 @@ app.use(
       return 'http://localhost:5173';
     },
     credentials: true,
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
   })
 );
@@ -33,12 +41,29 @@ app.get('/health', (c) => {
 // Auth routes (no auth required)
 app.route('/auth', authRoutes);
 
-// Protected routes
+// Protected routes - apply auth middleware
 app.use('/ingest/*', authMiddleware);
 app.use('/transactions/*', authMiddleware);
+app.use('/categories/*', authMiddleware);
+app.use('/tags/*', authMiddleware);
+app.use('/merchants/*', authMiddleware);
+app.use('/rules/*', authMiddleware);
+app.use('/transaction-meta/*', authMiddleware);
+app.use('/budgets/*', authMiddleware);
+app.use('/recurring/*', authMiddleware);
+app.use('/analytics/*', authMiddleware);
 
+// Mount routes
 app.route('/ingest', ingestRoutes);
 app.route('/transactions', transactionsRoutes);
+app.route('/categories', categoriesRoutes);
+app.route('/tags', tagsRoutes);
+app.route('/merchants', merchantsRoutes);
+app.route('/rules', rulesRoutes);
+app.route('/transaction-meta', transactionMetaRoutes);
+app.route('/budgets', budgetsRoutes);
+app.route('/recurring', recurringRoutes);
+app.route('/analytics', analyticsRoutes);
 
 // 404 handler
 app.notFound((c) => {

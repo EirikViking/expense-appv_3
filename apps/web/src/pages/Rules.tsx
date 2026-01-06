@@ -1,0 +1,533 @@
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
+import type { Rule, Category, Tag } from '@expense/shared';
+import { RULE_MATCH_FIELDS, RULE_MATCH_TYPES, RULE_ACTION_TYPES } from '@expense/shared';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Play,
+  Workflow,
+  CheckCircle,
+  XCircle,
+  GripVertical,
+} from 'lucide-react';
+
+export function RulesPage() {
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Edit/Create state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formName, setFormName] = useState('');
+  const [formField, setFormField] = useState<string>('description');
+  const [formMatchType, setFormMatchType] = useState<string>('contains');
+  const [formPattern, setFormPattern] = useState('');
+  const [formActionType, setFormActionType] = useState<string>('set_category');
+  const [formActionValue, setFormActionValue] = useState('');
+  const [formPriority, setFormPriority] = useState(0);
+  const [formEnabled, setFormEnabled] = useState(true);
+
+  // Test state
+  const [testText, setTestText] = useState('');
+  const [testResult, setTestResult] = useState<{ matches: boolean; message: string } | null>(null);
+  const [testingRuleId, setTestingRuleId] = useState<string | null>(null);
+
+  // Apply state
+  const [applyingRules, setApplyingRules] = useState(false);
+  const [applyResult, setApplyResult] = useState<{ affected: number } | null>(null);
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      const [rulesRes, catsRes, tagsRes] = await Promise.all([
+        api.getRules(),
+        api.getCategories(),
+        api.getTags(),
+      ]);
+      setRules(rulesRes.rules);
+      setCategories(catsRes.categories);
+      setTags(tagsRes.tags);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const startCreate = () => {
+    setIsCreating(true);
+    setEditingId(null);
+    setFormName('');
+    setFormField('description');
+    setFormMatchType('contains');
+    setFormPattern('');
+    setFormActionType('set_category');
+    setFormActionValue('');
+    setFormPriority(rules.length);
+    setFormEnabled(true);
+  };
+
+  const startEdit = (rule: Rule) => {
+    setEditingId(rule.id);
+    setIsCreating(false);
+    setFormName(rule.name);
+    setFormField(rule.match_field);
+    setFormMatchType(rule.match_type);
+    setFormPattern(rule.match_value);
+    setFormActionType(rule.action_type);
+    setFormActionValue(rule.action_value);
+    setFormPriority(rule.priority);
+    setFormEnabled(rule.enabled);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setIsCreating(false);
+    setFormName('');
+    setFormPattern('');
+    setFormActionValue('');
+  };
+
+  const handleSave = async () => {
+    try {
+      const data = {
+        name: formName,
+        match_field: formField as Rule['match_field'],
+        match_type: formMatchType as Rule['match_type'],
+        match_value: formPattern,
+        action_type: formActionType as Rule['action_type'],
+        action_value: formActionValue,
+        priority: formPriority,
+        enabled: formEnabled,
+      };
+
+      if (isCreating) {
+        await api.createRule(data);
+      } else if (editingId) {
+        await api.updateRule(editingId, data);
+      }
+      cancelEdit();
+      fetchData();
+    } catch (err) {
+      console.error('Failed to save rule:', err);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this rule?')) return;
+    try {
+      await api.deleteRule(id);
+      fetchData();
+    } catch (err) {
+      console.error('Failed to delete rule:', err);
+    }
+  };
+
+  const handleTest = async (ruleId: string) => {
+    setTestingRuleId(ruleId);
+    try {
+      const result = await api.testRule(ruleId, testText);
+      setTestResult({ matches: result.matches, message: result.message });
+    } catch (err) {
+      setTestResult({ matches: false, message: 'Test failed' });
+    }
+  };
+
+  const handleApplyAll = async () => {
+    setApplyingRules(true);
+    setApplyResult(null);
+    try {
+      const result = await api.applyRules({ all: true });
+      setApplyResult({ affected: result.updated });
+    } catch (err) {
+      console.error('Failed to apply rules:', err);
+    } finally {
+      setApplyingRules(false);
+    }
+  };
+
+  const toggleEnabled = async (rule: Rule) => {
+    try {
+      await api.updateRule(rule.id, { enabled: !rule.enabled });
+      fetchData();
+    } catch (err) {
+      console.error('Failed to toggle rule:', err);
+    }
+  };
+
+  const getActionValueLabel = (rule: Rule) => {
+    if (rule.action_type === 'set_category') {
+      const cat = categories.find((c) => c.id === rule.action_value);
+      return cat?.name || rule.action_value;
+    }
+    if (rule.action_type === 'add_tag') {
+      const tag = tags.find((t) => t.id === rule.action_value);
+      return tag?.name || rule.action_value;
+    }
+    return rule.action_value;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Rules</h1>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-20 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Rules</h1>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleApplyAll}
+            disabled={applyingRules || rules.length === 0}
+          >
+            <Play className="h-4 w-4 mr-2" />
+            {applyingRules ? 'Applying...' : 'Apply All Rules'}
+          </Button>
+          <Button onClick={startCreate}>
+            <Plus className="h-4 w-4 mr-2" />
+            New Rule
+          </Button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          {error}
+        </div>
+      )}
+
+      {applyResult && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          Applied rules to {applyResult.affected} transactions
+        </div>
+      )}
+
+      {/* Create/Edit Form */}
+      {(isCreating || editingId) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">
+              {isCreating ? 'New Rule' : 'Edit Rule'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Rule Name
+                </label>
+                <Input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g., Netflix Subscription"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <Input
+                  type="number"
+                  value={formPriority}
+                  onChange={(e) => setFormPriority(parseInt(e.target.value) || 0)}
+                  min={0}
+                />
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Match Condition</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Field</label>
+                  <select
+                    value={formField}
+                    onChange={(e) => setFormField(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {RULE_MATCH_FIELDS.map((f) => (
+                      <option key={f} value={f}>
+                        {f.charAt(0).toUpperCase() + f.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Match Type</label>
+                  <select
+                    value={formMatchType}
+                    onChange={(e) => setFormMatchType(e.target.value)}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {RULE_MATCH_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Pattern</label>
+                  <Input
+                    type="text"
+                    value={formPattern}
+                    onChange={(e) => setFormPattern(e.target.value)}
+                    placeholder="e.g., NETFLIX"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-3">Action</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Action Type</label>
+                  <select
+                    value={formActionType}
+                    onChange={(e) => {
+                      setFormActionType(e.target.value);
+                      setFormActionValue('');
+                    }}
+                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {RULE_ACTION_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t.replace('_', ' ')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Value</label>
+                  {formActionType === 'set_category' ? (
+                    <select
+                      value={formActionValue}
+                      onChange={(e) => setFormActionValue(e.target.value)}
+                      className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select category</option>
+                      {categories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : formActionType === 'add_tag' ? (
+                    <select
+                      value={formActionValue}
+                      onChange={(e) => setFormActionValue(e.target.value)}
+                      className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select tag</option>
+                      {tags.map((tag) => (
+                        <option key={tag.id} value={tag.id}>
+                          {tag.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      type="text"
+                      value={formActionValue}
+                      onChange={(e) => setFormActionValue(e.target.value)}
+                      placeholder="Value"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="enabled"
+                checked={formEnabled}
+                onChange={(e) => setFormEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <label htmlFor="enabled" className="text-sm text-gray-700">
+                Rule enabled
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                onClick={handleSave}
+                disabled={!formName.trim() || !formPattern.trim() || !formActionValue}
+              >
+                {isCreating ? 'Create' : 'Save'}
+              </Button>
+              <Button variant="outline" onClick={cancelEdit}>
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Test Rule Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Test Rules</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={testText}
+              onChange={(e) => {
+                setTestText(e.target.value);
+                setTestResult(null);
+              }}
+              placeholder="Enter text to test against rules..."
+              className="flex-1"
+            />
+          </div>
+          {testResult && (
+            <div
+              className={`mt-3 p-3 rounded-lg ${
+                testResult.matches
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-gray-50 text-gray-700'
+              }`}
+            >
+              {testResult.matches ? (
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  {testResult.message}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  {testResult.message}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Rules List */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Workflow className="h-5 w-5" />
+            Rules ({rules.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {rules.length > 0 ? (
+            <div className="space-y-2">
+              {rules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    rule.enabled
+                      ? 'bg-white border-gray-200'
+                      : 'bg-gray-50 border-gray-100 opacity-60'
+                  }`}
+                >
+                  <GripVertical className="h-4 w-4 text-gray-300" />
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{rule.name}</span>
+                      <Badge variant="outline" className="text-xs">
+                        Priority: {rule.priority}
+                      </Badge>
+                      {!rule.enabled && (
+                        <Badge variant="secondary" className="text-xs">
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      When <span className="font-mono text-xs bg-gray-100 px-1 rounded">{rule.match_field}</span>
+                      {' '}{rule.match_type.replace('_', ' ')}{' '}
+                      <span className="font-mono text-xs bg-gray-100 px-1 rounded">"{rule.match_value}"</span>
+                      {' → '}
+                      <span className="text-blue-600">{rule.action_type.replace('_', ' ')}</span>
+                      {': '}
+                      <span className="font-medium">{getActionValueLabel(rule)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {testText && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleTest(rule.id)}
+                      >
+                        <Play className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => toggleEnabled(rule)}
+                    >
+                      {rule.enabled ? (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-gray-400" />
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => startEdit(rule)}
+                    >
+                      <Pencil className="h-4 w-4 text-gray-400" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDelete(rule.id)}
+                    >
+                      <Trash2 className="h-4 w-4 text-red-400" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-center py-8">
+              No rules yet. Create one to automatically categorize transactions!
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
