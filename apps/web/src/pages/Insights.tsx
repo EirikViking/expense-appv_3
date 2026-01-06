@@ -84,21 +84,28 @@ export function InsightsPage() {
 
       const [summaryRes, categoriesRes, merchantsRes, timeseriesRes, subsRes, compareRes] = results;
 
-      // Set state only for fulfilled results
+      // Set state only for fulfilled results, normalizing response shapes
       if (summaryRes.status === 'fulfilled') {
-        setSummary(summaryRes.value);
+        // Handle both { summary: obj } and direct obj response shapes
+        const raw = summaryRes.value as any;
+        const normalized = raw?.summary ?? raw;
+        setSummary(normalized);
       }
       if (categoriesRes.status === 'fulfilled') {
-        setCategories(categoriesRes.value.categories);
+        const cats = (categoriesRes.value as any)?.categories;
+        setCategories(Array.isArray(cats) ? cats : []);
       }
       if (merchantsRes.status === 'fulfilled') {
-        setMerchants(merchantsRes.value.merchants);
+        const merchs = (merchantsRes.value as any)?.merchants;
+        setMerchants(Array.isArray(merchs) ? merchs : []);
       }
       if (timeseriesRes.status === 'fulfilled') {
-        setTimeseries(timeseriesRes.value.series);
+        const series = (timeseriesRes.value as any)?.series;
+        setTimeseries(Array.isArray(series) ? series : []);
       }
       if (subsRes.status === 'fulfilled') {
-        setSubscriptions(subsRes.value.subscriptions);
+        const subs = (subsRes.value as any)?.subscriptions;
+        setSubscriptions(Array.isArray(subs) ? subs : []);
       }
       if (compareRes.status === 'fulfilled') {
         setComparison(compareRes.value);
@@ -184,11 +191,18 @@ export function InsightsPage() {
     );
   }
 
-  const monthlySubTotal = subscriptions.reduce((sum, s) => {
-    if (s.frequency === 'monthly') return sum + s.amount;
-    if (s.frequency === 'yearly') return sum + s.amount / 12;
+  // Safely compute monthly subscription total
+  const safeSubscriptions = Array.isArray(subscriptions) ? subscriptions : [];
+  const monthlySubTotal = safeSubscriptions.reduce((sum, s) => {
+    if (s?.frequency === 'monthly') return sum + (s?.amount ?? 0);
+    if (s?.frequency === 'yearly') return sum + ((s?.amount ?? 0) / 12);
     return sum;
   }, 0);
+
+  // Safe arrays for rendering
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeMerchants = Array.isArray(merchants) ? merchants : [];
+  const safeTimeseries = Array.isArray(timeseries) ? timeseries : [];
 
   return (
     <div className="space-y-6">
@@ -240,25 +254,25 @@ export function InsightsPage() {
                 <div>
                   <p className="text-sm text-gray-500">Total Expenses</p>
                   <p className="text-2xl font-bold">
-                    {formatCurrency(comparison.current.total_expenses)}
+                    {formatCurrency(comparison?.current?.total_expenses ?? 0)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  comparison.change_percentage.expenses > 0
+                  (comparison?.change_percentage?.expenses ?? 0) > 0
                     ? 'bg-red-100 text-red-700'
                     : 'bg-green-100 text-green-700'
                 )}>
-                  {comparison.change_percentage.expenses > 0 ? (
+                  {(comparison?.change_percentage?.expenses ?? 0) > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {Math.abs(comparison.change_percentage.expenses).toFixed(1)}%
+                  {Math.abs(comparison?.change_percentage?.expenses ?? 0).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.previous.total_expenses)} last period
+                vs {formatCurrency(comparison?.previous?.total_expenses ?? 0)} last period
               </p>
             </CardContent>
           </Card>
@@ -269,25 +283,25 @@ export function InsightsPage() {
                 <div>
                   <p className="text-sm text-gray-500">Total Income</p>
                   <p className="text-2xl font-bold text-green-600">
-                    {formatCurrency(comparison.current.total_income)}
+                    {formatCurrency(comparison?.current?.total_income ?? 0)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  comparison.change_percentage.income > 0
+                  (comparison?.change_percentage?.income ?? 0) > 0
                     ? 'bg-green-100 text-green-700'
                     : 'bg-red-100 text-red-700'
                 )}>
-                  {comparison.change_percentage.income > 0 ? (
+                  {(comparison?.change_percentage?.income ?? 0) > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {Math.abs(comparison.change_percentage.income).toFixed(1)}%
+                  {Math.abs(comparison?.change_percentage?.income ?? 0).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.previous.total_income)} last period
+                vs {formatCurrency(comparison?.previous?.total_income ?? 0)} last period
               </p>
             </CardContent>
           </Card>
@@ -299,27 +313,27 @@ export function InsightsPage() {
                   <p className="text-sm text-gray-500">Net Savings</p>
                   <p className={cn(
                     'text-2xl font-bold',
-                    comparison.current.net >= 0 ? 'text-green-600' : 'text-red-600'
+                    (comparison?.current?.net ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
                   )}>
-                    {formatCurrency(comparison.current.net, true)}
+                    {formatCurrency(comparison?.current?.net ?? 0, true)}
                   </p>
                 </div>
                 <div className={cn(
                   'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  comparison.change_percentage.net > 0
+                  (comparison?.change_percentage?.net ?? 0) > 0
                     ? 'bg-green-100 text-green-700'
                     : 'bg-red-100 text-red-700'
                 )}>
-                  {comparison.change_percentage.net > 0 ? (
+                  {(comparison?.change_percentage?.net ?? 0) > 0 ? (
                     <ArrowUpRight className="h-4 w-4" />
                   ) : (
                     <ArrowDownRight className="h-4 w-4" />
                   )}
-                  {Math.abs(comparison.change_percentage.net).toFixed(1)}%
+                  {Math.abs(comparison?.change_percentage?.net ?? 0).toFixed(1)}%
                 </div>
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison.previous.net, true)} last period
+                vs {formatCurrency(comparison?.previous?.net ?? 0, true)} last period
               </p>
             </CardContent>
           </Card>
@@ -346,9 +360,9 @@ export function InsightsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {timeseries.length > 0 ? (
+          {safeTimeseries.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={timeseries}>
+              <AreaChart data={safeTimeseries}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
                 <XAxis dataKey="date" tickFormatter={formatDateShort} className="text-xs" />
                 <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
@@ -395,12 +409,12 @@ export function InsightsPage() {
             <CardTitle>Spending by Category</CardTitle>
           </CardHeader>
           <CardContent>
-            {categories.length > 0 ? (
+            {safeCategories.length > 0 ? (
               <div className="flex flex-col lg:flex-row items-center gap-4">
                 <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie
-                      data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                      data={safeCategories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
@@ -409,7 +423,7 @@ export function InsightsPage() {
                       dataKey="total"
                       nameKey="name"
                     >
-                      {categories.slice(0, 8).map((entry, index) => (
+                      {safeCategories.slice(0, 8).map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={entry.category_color || COLORS[index % COLORS.length]}
@@ -427,7 +441,7 @@ export function InsightsPage() {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2 w-full lg:w-auto">
-                  {categories.slice(0, 6).map((cat, i) => (
+                  {safeCategories.slice(0, 6).map((cat, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <div
                         className="h-3 w-3 rounded-full"
@@ -454,9 +468,9 @@ export function InsightsPage() {
             <CardTitle>Top Merchants</CardTitle>
           </CardHeader>
           <CardContent>
-            {merchants.length > 0 ? (
+            {safeMerchants.length > 0 ? (
               <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={merchants.slice(0, 8)} layout="vertical">
+                <BarChart data={safeMerchants.slice(0, 8)} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
                   <XAxis type="number" tickFormatter={formatCompactCurrency} className="text-xs" />
                   <YAxis
@@ -500,9 +514,9 @@ export function InsightsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {subscriptions.length > 0 ? (
+          {safeSubscriptions.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {subscriptions.map((sub, i) => (
+              {safeSubscriptions.map((sub, i) => (
                 <div
                   key={i}
                   className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50"
