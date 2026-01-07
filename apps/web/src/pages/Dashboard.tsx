@@ -62,6 +62,23 @@ export function DashboardPage() {
   const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
   const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
   const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
+  const [drilldownStatus, setDrilldownStatus] = useState<string | undefined>();
+  const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
+  const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
+
+  const openKPIDrilldown = (title: string, opts: { status?: string, min?: number, max?: number }) => {
+    setDrilldownTitle(title);
+    setDrilldownSubtitle(`${summary?.period.start} - ${summary?.period.end}`);
+    setDrilldownStatus(opts.status);
+    setDrilldownMinAmount(opts.min);
+    setDrilldownMaxAmount(opts.max);
+    setDrilldownCategory(undefined);
+    setDrilldownMerchantId(undefined);
+    setDrilldownMerchantName(undefined);
+    setDrilldownDateFrom(summary?.period.start);
+    setDrilldownDateTo(summary?.period.end);
+    setDrilldownOpen(true);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -145,7 +162,10 @@ export function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => openKPIDrilldown('Total Expenses', { max: 0 })}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
@@ -170,7 +190,10 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => openKPIDrilldown('Total Income', { min: 0 })}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Income</CardTitle>
             <TrendingUp className="h-4 w-4 text-green-500" />
@@ -183,7 +206,10 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => openKPIDrilldown('Pending Transactions', { status: 'pending' })}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pending</CardTitle>
             <Clock className="h-4 w-4 text-yellow-500" />
@@ -196,7 +222,10 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => openKPIDrilldown('Booked Transactions', { status: 'booked' })}
+        >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Booked</CardTitle>
             <CheckCircle className="h-4 w-4 text-blue-500" />
@@ -447,6 +476,9 @@ export function DashboardPage() {
         categoryId={drilldownCategory}
         merchantId={drilldownMerchantId}
         merchantName={drilldownMerchantName}
+        status={drilldownStatus}
+        minAmount={drilldownMinAmount}
+        maxAmount={drilldownMaxAmount}
       />
     </div>
   );
