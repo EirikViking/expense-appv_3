@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { ApiGuardScreen } from './components/ApiGuard';
+import { isApiUrlConfigured, getApiBaseUrl } from './lib/version';
 import { LoginPage } from './pages/Login';
 import { DashboardPage } from './pages/Dashboard';
 import { UploadPage } from './pages/Upload';
@@ -12,7 +14,15 @@ import { BudgetsPage } from './pages/Budgets';
 import { InsightsPage } from './pages/Insights';
 import { SettingsPage } from './pages/Settings';
 
+// Log API_BASE_URL on startup
+console.log(`[App Startup] API_BASE_URL=${getApiBaseUrl()}`);
+
 function App() {
+  // Show API configuration error in production if not configured
+  if (!isApiUrlConfigured()) {
+    return <ApiGuardScreen />;
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -107,3 +117,4 @@ function App() {
 }
 
 export default App;
+

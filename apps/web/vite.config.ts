@@ -99,5 +99,8 @@ export default defineConfig({
   define: {
     // Ensure no Node.js globals are polyfilled
     global: 'globalThis',
+    // Inject build-time values (these get replaced in the bundle)
+    '__BUILD_TIME__': JSON.stringify(new Date().toISOString()),
+    '__GIT_COMMIT__': JSON.stringify(process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || 'local'),
   },
 });
