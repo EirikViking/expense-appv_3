@@ -370,6 +370,19 @@ export interface IngestResponse {
   skipped_duplicates: number;
   skipped_invalid: number;
   file_duplicate: boolean;
+  /**
+   * For PDF parsing: summary of skipped lines by reason
+   * This helps users understand why some lines weren't parsed as transactions
+   */
+  skipped_lines_summary?: {
+    header: number;
+    section_marker: number;
+    page_number: number;
+    no_date: number;
+    no_amount: number;
+    parse_failed: number;
+    excluded_pattern: number;
+  };
 }
 
 export interface TransactionsResponse {
