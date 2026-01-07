@@ -10,8 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate:local": "wrangler d1 execute expense-db --local --file=../../migrations/001_initial.sql && wrangler d1 execute expense-db --local --file=../../migrations/002_analytics.sql",
-    "db:migrate:remote": "wrangler d1 execute expense-db --remote --file=../../migrations/001_initial.sql && wrangler d1 execute expense-db --remote --file=../../migrations/002_analytics.sql"
+    "db:migrate:local": "wrangler d1 execute expense-db --local --file=../../migrations/001_initial.sql && wrangler d1 execute expense-db --local --file=../../migrations/002_analytics.sql && wrangler d1 execute expense-db --local --file=../../migrations/003_exclusions_and_transfers.sql",
+    "db:migrate:remote": "wrangler d1 execute expense-db --remote --file=../../migrations/001_initial.sql && wrangler d1 execute expense-db --remote --file=../../migrations/002_analytics.sql && wrangler d1 execute expense-db --remote --file=../../migrations/003_exclusions_and_transfers.sql"
   },
   "dependencies": {
     "@expense/shared": "workspace:*",

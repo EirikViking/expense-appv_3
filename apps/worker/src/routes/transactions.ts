@@ -341,6 +341,125 @@ transactions.delete('/:id', async (c) => {
   }
 });
 
+// Exclude a single transaction from analytics
+transactions.post('/:id/exclude', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const result = await c.env.DB.prepare(
+      'UPDATE transactions SET is_excluded = 1 WHERE id = ?'
+    ).bind(id).run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: 'Transaction not found' }, 404);
+    }
+
+    return c.json({ success: true, id, is_excluded: true });
+  } catch (error) {
+    console.error('Exclude transaction error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Include a transaction back into analytics
+transactions.post('/:id/include', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const result = await c.env.DB.prepare(
+      'UPDATE transactions SET is_excluded = 0 WHERE id = ?'
+    ).bind(id).run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: 'Transaction not found' }, 404);
+    }
+
+    return c.json({ success: true, id, is_excluded: false });
+  } catch (error) {
+    console.error('Include transaction error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Bulk exclude transactions by criteria
+transactions.post('/bulk/exclude', async (c) => {
+  try {
+    const body = await c.req.json() as {
+      transaction_ids?: string[];
+      amount_threshold?: number; // Exclude transactions >= this absolute amount
+      merchant_name?: string;
+    };
+
+    const { transaction_ids, amount_threshold, merchant_name } = body;
+
+    let updated = 0;
+
+    if (transaction_ids && transaction_ids.length > 0) {
+      // Exclude specific transactions
+      const placeholders = transaction_ids.map(() => '?').join(',');
+      const result = await c.env.DB.prepare(
+        `UPDATE transactions SET is_excluded = 1 WHERE id IN (${placeholders})`
+      ).bind(...transaction_ids).run();
+      updated = result.meta.changes || 0;
+    } else if (amount_threshold !== undefined) {
+      // Exclude by amount threshold (absolute value)
+      const result = await c.env.DB.prepare(
+        'UPDATE transactions SET is_excluded = 1 WHERE ABS(amount) >= ?'
+      ).bind(amount_threshold).run();
+      updated = result.meta.changes || 0;
+    } else if (merchant_name) {
+      // Exclude by merchant name (matches description)
+      const result = await c.env.DB.prepare(
+        'UPDATE transactions SET is_excluded = 1 WHERE description LIKE ?'
+      ).bind(`%${merchant_name}%`).run();
+      updated = result.meta.changes || 0;
+    } else {
+      return c.json({ error: 'No criteria provided. Use transaction_ids, amount_threshold, or merchant_name.' }, 400);
+    }
+
+    return c.json({ success: true, updated });
+  } catch (error) {
+    console.error('Bulk exclude error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Bulk include (un-exclude) transactions
+transactions.post('/bulk/include', async (c) => {
+  try {
+    const body = await c.req.json() as {
+      transaction_ids?: string[];
+      all?: boolean; // Include all excluded transactions back
+    };
+
+    const { transaction_ids, all } = body;
+
+    let updated = 0;
+
+    if (all === true) {
+      // Un-exclude all transactions
+      const result = await c.env.DB.prepare(
+        'UPDATE transactions SET is_excluded = 0 WHERE is_excluded = 1'
+      ).run();
+      updated = result.meta.changes || 0;
+    } else if (transaction_ids && transaction_ids.length > 0) {
+      // Include specific transactions
+      const placeholders = transaction_ids.map(() => '?').join(',');
+      const result = await c.env.DB.prepare(
+        `UPDATE transactions SET is_excluded = 0 WHERE id IN (${placeholders})`
+      ).bind(...transaction_ids).run();
+      updated = result.meta.changes || 0;
+    } else {
+      return c.json({ error: 'No criteria provided. Use transaction_ids or all=true.' }, 400);
+    }
+
+    return c.json({ success: true, updated });
+  } catch (error) {
+    console.error('Bulk include error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Reset all data (DANGER)
 transactions.delete('/admin/reset', async (c) => {
   try {
