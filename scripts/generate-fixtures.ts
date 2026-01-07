@@ -79,12 +79,46 @@ End of statement
   console.log(`Generated ${outputPath}`);
 }
 
+// Generate headerless XLSX file like Storebrand exports (no headers, Excel serial dates)
+function generateStorebrandHeaderlessXlsx() {
+  // Excel serial dates: Jan 1, 2024 = 45292
+  // Storebrand format: Date (serial), Description, Amount, Currency (no headers!)
+  const data = [
+    // No header row - first row is data
+    [45307, 'REMA 1000 OSLO', -523.45, 'NOK'],      // 2024-01-16
+    [45308, 'NETFLIX MONTHLY', -149.00, 'NOK'],     // 2024-01-17
+    [45309, 'SPOTIFY AB', -119.00, 'NOK'],          // 2024-01-18
+    [45310, 'SHELL MAJORSTUEN', -687.32, 'NOK'],    // 2024-01-19
+    [45312, 'COOP MEGA TORSHOV', -892.15, 'NOK'],   // 2024-01-21
+    [45315, 'VINMONOPOLET', -459.00, 'NOK'],        // 2024-01-24
+    [45320, 'SALARY COMPANY AS', 45678.90, 'NOK'],  // 2024-01-29
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+
+  // Set column widths
+  worksheet['!cols'] = [
+    { wch: 10 },  // Date (serial)
+    { wch: 25 },  // Description
+    { wch: 12 },  // Amount
+    { wch: 6 },   // Currency
+  ];
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Transaksjoner');
+
+  const outputPath = path.join(SAMPLE_DATA_DIR, 'storebrand_headerless.xlsx');
+  XLSX.writeFile(workbook, outputPath);
+  console.log(`Generated ${outputPath} (headerless with Excel serial dates)`);
+}
+
 // Run generators
 console.log('Generating test fixtures...\n');
 
 try {
   generateTestXlsx();
   generateTestBankStatement();
+  generateStorebrandHeaderlessXlsx();
   console.log('\nDone! Test fixtures created in sample_data/');
 } catch (error) {
   console.error('Error generating fixtures:', error);

@@ -218,7 +218,7 @@ ingest.post('/pdf', async (c) => {
     }
 
     // Parse PDF text into transactions
-    const { transactions: parsedTxs, error: parseError, stats } = parsePdfText(extracted_text);
+    const { transactions: parsedTxs, error: parseError, stats, skipped_lines } = parsePdfText(extracted_text);
 
     // Log parsing stats for debugging
     console.log(`[PDF Ingest] File: ${filename}, Stats:`, JSON.stringify(stats));
