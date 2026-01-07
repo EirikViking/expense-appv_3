@@ -8,7 +8,7 @@ export default defineConfig({
     workers: 1,
     reporter: 'html',
     use: {
-        baseURL: 'http://localhost:5173',
+        baseURL: 'http://localhost:5199',
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
     },
@@ -27,7 +27,7 @@ export default defineConfig({
         },
         {
             command: 'pnpm dev:web',
-            port: 5173,
+            port: 5199,
             timeout: 30000,
             reuseExistingServer: !process.env.CI,
         },
