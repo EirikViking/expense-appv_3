@@ -14,7 +14,18 @@ export interface ParsedXlsxTransaction {
 export interface XlsxParseResult {
   transactions: ParsedXlsxTransaction[];
   error?: string;
+  detectedFormat?: string;
 }
+
+// Possible column name variations for different Norwegian banks
+const COLUMN_VARIATIONS = {
+  DATE: ['Dato', 'Transaksjonsdato', 'Bokføringsdato', 'Date', 'Utført dato', 'Valuteringsdato', 'Handledato'],
+  BOOKED_DATE: ['Bokført', 'Bokført dato', 'Regnskapsdato', 'Rentedato', 'Booked date'],
+  DESCRIPTION: ['Spesifikasjon', 'Beskrivelse', 'Tekst', 'Forklaring', 'Melding', 'Description', 'Transaksjonstekst', 'Transaksjon'],
+  AMOUNT: ['Beløp', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn', 'Transaksjonsbeløp', 'NOK'],
+  CURRENCY: ['Valuta', 'Currency', 'Valutakode'],
+  MERCHANT: ['Sted', 'Mottaker', 'Avsender', 'Fra/Til', 'Recipient', 'Location'],
+};
 
 // Parse Norwegian date format DD.MM.YYYY to ISO YYYY-MM-DD
 function parseNorwegianDate(dateStr: string): string | null {
@@ -24,9 +35,22 @@ function parseNorwegianDate(dateStr: string): string | null {
   const str = String(dateStr).trim();
 
   // Match DD.MM.YYYY format
-  const match = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (match) {
-    const [, day, month, year] = match;
+  const dotMatch = str.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, day, month, year] = dotMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
+  // Match YYYY-MM-DD format (ISO)
+  const isoMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return str;
+  }
+
+  // Match DD/MM/YYYY format
+  const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
     return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
   }
 
@@ -49,30 +73,63 @@ function parseNorwegianAmount(value: unknown): number | null {
   return null;
 }
 
-// Find the header row by looking for key column names
-function findHeaderRow(sheet: XLSX.WorkSheet): number {
+// Find which column name matches any of the variations
+function findColumnName(headers: string[], variations: string[]): string | null {
+  const normalizedVariations = variations.map(v => v.toLowerCase());
+
+  for (const header of headers) {
+    const normalized = header.toLowerCase().trim();
+    if (normalizedVariations.includes(normalized)) {
+      return header;
+    }
+  }
+  return null;
+}
+
+// Detailed header row finder with column mapping
+interface ColumnMapping {
+  dateCol: string;
+  amountCol: string;
+  descriptionCol: string | null;
+  bookedDateCol: string | null;
+  currencyCol: string | null;
+  merchantCol: string | null;
+  headerRow: number;
+}
+
+function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | null {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
 
+  // Scan first 20 rows for header
   for (let row = range.s.r; row <= Math.min(range.e.r, 20); row++) {
-    let foundDato = false;
-    let foundBeløp = false;
+    const headers: string[] = [];
 
+    // Collect all headers in this row
     for (let col = range.s.c; col <= range.e.c; col++) {
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
       const cell = sheet[cellRef];
-      if (cell && cell.v) {
-        const value = String(cell.v).trim();
-        if (value === XLSX_COLUMNS.DATE) foundDato = true;
-        if (value === XLSX_COLUMNS.AMOUNT) foundBeløp = true;
-      }
+      headers.push(cell && cell.v ? String(cell.v).trim() : '');
     }
 
-    if (foundDato && foundBeløp) {
-      return row;
+    // Try to find required columns
+    const dateCol = findColumnName(headers, COLUMN_VARIATIONS.DATE);
+    const amountCol = findColumnName(headers, COLUMN_VARIATIONS.AMOUNT);
+
+    // We need at least date and amount columns
+    if (dateCol && amountCol) {
+      return {
+        dateCol,
+        amountCol,
+        descriptionCol: findColumnName(headers, COLUMN_VARIATIONS.DESCRIPTION),
+        bookedDateCol: findColumnName(headers, COLUMN_VARIATIONS.BOOKED_DATE),
+        currencyCol: findColumnName(headers, COLUMN_VARIATIONS.CURRENCY),
+        merchantCol: findColumnName(headers, COLUMN_VARIATIONS.MERCHANT),
+        headerRow: row,
+      };
     }
   }
 
-  return -1;
+  return null;
 }
 
 export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
@@ -85,27 +142,39 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
       return { transactions: [], error: 'No worksheet found in XLSX file' };
     }
 
-    // Find the header row
-    const headerRow = findHeaderRow(sheet);
-    if (headerRow === -1) {
-      return { transactions: [], error: 'Could not find header row with Dato and Beløp columns' };
+    // Find the header row and column mapping
+    const mapping = findHeaderRowAndColumns(sheet);
+    if (!mapping) {
+      // Provide helpful error with what we're looking for
+      return {
+        transactions: [],
+        error: `Could not detect column headers. Looking for date column (${COLUMN_VARIATIONS.DATE.slice(0, 3).join(', ')}...) and amount column (${COLUMN_VARIATIONS.AMOUNT.slice(0, 3).join(', ')}...). Please check your file format.`
+      };
     }
+
+    const detectedFormat = `Date: "${mapping.dateCol}", Amount: "${mapping.amountCol}"${mapping.descriptionCol ? `, Desc: "${mapping.descriptionCol}"` : ''}`;
+    console.log(`[XLSX Parser] Detected format: ${detectedFormat} at row ${mapping.headerRow + 1}`);
 
     // Parse as JSON starting from header row
     const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      range: headerRow,
+      range: mapping.headerRow,
       defval: '',
     });
 
     const transactions: ParsedXlsxTransaction[] = [];
 
     for (const row of jsonData) {
-      const txDateRaw = row[XLSX_COLUMNS.DATE];
-      const bookedDateRaw = row[XLSX_COLUMNS.BOOKED_DATE];
-      const description = row[XLSX_COLUMNS.DESCRIPTION];
-      const location = row[XLSX_COLUMNS.LOCATION];
-      const currency = row[XLSX_COLUMNS.CURRENCY];
-      const amountRaw = row[XLSX_COLUMNS.AMOUNT];
+      // Get values using detected column names
+      const txDateRaw = row[mapping.dateCol];
+      const amountRaw = row[mapping.amountCol];
+
+      // Optional columns - try mapped column or fallback to standard
+      const bookedDateRaw = mapping.bookedDateCol ? row[mapping.bookedDateCol] : row[XLSX_COLUMNS.BOOKED_DATE];
+      const description = mapping.descriptionCol
+        ? row[mapping.descriptionCol]
+        : row[XLSX_COLUMNS.DESCRIPTION] || row['Tekst'] || row['Beskrivelse'] || '';
+      const currency = mapping.currencyCol ? row[mapping.currencyCol] : row[XLSX_COLUMNS.CURRENCY];
+      const merchant = mapping.merchantCol ? row[mapping.merchantCol] : row[XLSX_COLUMNS.LOCATION];
 
       // Parse date (required)
       const txDate = parseNorwegianDate(String(txDateRaw || ''));
@@ -117,10 +186,29 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
 
       // Parse optional fields
       const bookedDate = parseNorwegianDate(String(bookedDateRaw || '')) || undefined;
-      const descriptionStr = String(description || '').trim();
-      const merchantStr = String(location || '').trim() || undefined;
+      let descriptionStr = String(description || '').trim();
+      const merchantStr = String(merchant || '').trim() || undefined;
       const currencyStr = String(currency || 'NOK').trim();
 
+      // If no description column found, try to construct one from other columns
+      if (!descriptionStr) {
+        // Try using merchant as description if no dedicated description column
+        if (merchantStr) {
+          descriptionStr = merchantStr;
+        } else {
+          // Try any column that might contain text
+          const possibleDescFields = ['Tekst', 'Melding', 'Forklaring', 'Transaksjon', 'Mottaker'];
+          for (const field of possibleDescFields) {
+            const val = row[field];
+            if (val && String(val).trim()) {
+              descriptionStr = String(val).trim();
+              break;
+            }
+          }
+        }
+      }
+
+      // Still no description? Skip this row
       if (!descriptionStr) continue;
 
       transactions.push({
@@ -135,12 +223,13 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
     }
 
     if (transactions.length === 0) {
-      return { transactions: [], error: 'No valid transactions found in XLSX file' };
+      return { transactions: [], error: 'No valid transactions found in XLSX file. Check that rows have dates and amounts.' };
     }
 
-    return { transactions };
+    return { transactions, detectedFormat };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return { transactions: [], error: `Failed to parse XLSX: ${message}` };
   }
 }
+
