@@ -74,6 +74,21 @@ export function InsightsPage() {
   const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
   const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<string | undefined>();
+  const [drilldownStatus, setDrilldownStatus] = useState<string | undefined>();
+  const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
+  const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
+
+  const openKPIDrilldown = (title: string, opts: { status?: string, min?: number, max?: number } = {}) => {
+    setDrilldownTitle(title);
+    setDrilldownSubtitle(`${dateFrom} - ${dateTo}`);
+    setDrilldownStatus(opts.status);
+    setDrilldownMinAmount(opts.min);
+    setDrilldownMaxAmount(opts.max);
+    setDrilldownMerchantId(undefined);
+    setDrilldownMerchantName(undefined);
+    setDrilldownCategoryId(undefined);
+    setDrilldownOpen(true);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -367,7 +382,10 @@ export function InsightsPage() {
       {/* Period Comparison */}
       {comparison && (
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => openKPIDrilldown('Total Expenses', { max: 0 })}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -396,7 +414,10 @@ export function InsightsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => openKPIDrilldown('Total Income', { min: 0 })}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -425,7 +446,10 @@ export function InsightsPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            onClick={() => openKPIDrilldown('Net Savings')}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -695,6 +719,9 @@ export function InsightsPage() {
         merchantId={drilldownMerchantId}
         merchantName={drilldownMerchantName}
         categoryId={drilldownCategoryId}
+        status={drilldownStatus}
+        minAmount={drilldownMinAmount}
+        maxAmount={drilldownMaxAmount}
       />
     </div>
   );
