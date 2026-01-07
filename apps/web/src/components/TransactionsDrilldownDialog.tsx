@@ -23,6 +23,7 @@ interface TransactionsDrilldownDialogProps {
     dateFrom?: string;
     dateTo?: string;
     merchantId?: string;
+    merchantName?: string;
     categoryId?: string;
 }
 
@@ -34,6 +35,7 @@ export function TransactionsDrilldownDialog({
     dateFrom,
     dateTo,
     merchantId,
+    merchantName,
     categoryId,
 }: TransactionsDrilldownDialogProps) {
     const [loading, setLoading] = useState(true);
@@ -46,7 +48,7 @@ export function TransactionsDrilldownDialog({
         if (open) {
             loadTransactions();
         }
-    }, [open, page, dateFrom, dateTo, merchantId, categoryId]);
+    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId]);
 
     const loadTransactions = async () => {
         setLoading(true);
@@ -55,7 +57,11 @@ export function TransactionsDrilldownDialog({
                 date_from: dateFrom,
                 date_to: dateTo,
                 merchant_id: merchantId,
+                merchant_name: merchantName,
                 category_id: categoryId,
+                // Aggregates we drill down from are usually explicitly expenses
+                // Todo: Make this configurable if we drill down into income later
+                max_amount: (merchantId || merchantName || categoryId) ? 0 : undefined,
                 limit,
                 offset: page * limit,
                 sort_by: 'date',

@@ -532,6 +532,7 @@ export interface TransactionsQuery {
   category_id?: string;
   tag_id?: string;
   merchant_id?: string;
+  merchant_name?: string;
   min_amount?: number;
   max_amount?: number;
   search?: string;
@@ -563,7 +564,7 @@ export interface CompareQuery {
 // Analytics response types
 // ============================================
 
-export interface AnalyticsSummaryResponse extends AnalyticsSummary {}
+export interface AnalyticsSummaryResponse extends AnalyticsSummary { }
 
 export interface CategoryBreakdownResponse {
   categories: CategoryBreakdown[];
