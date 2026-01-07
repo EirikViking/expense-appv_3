@@ -15,7 +15,11 @@ import {
   Tag,
   Pencil,
   X,
+  Plus,
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 
 export function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
@@ -41,6 +45,36 @@ export function TransactionsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState('');
   const [editNotes, setEditNotes] = useState('');
+
+  // Details & Add
+  const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithMeta | null>(null);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [newTx, setNewTx] = useState({
+    date: new Date().toISOString().split('T')[0],
+    amount: '',
+    description: '',
+    category_id: ''
+  });
+
+  const handleCreate = async () => {
+    if (!newTx.amount || !newTx.description || !newTx.date) {
+      alert('Please fill in required fields');
+      return;
+    }
+    try {
+      await api.createTransaction({
+        date: newTx.date,
+        amount: parseFloat(newTx.amount), // Ensure number
+        description: newTx.description,
+        category_id: newTx.category_id || undefined
+      });
+      setIsAddOpen(false);
+      setNewTx({ date: new Date().toISOString().split('T')[0], amount: '', description: '', category_id: '' });
+      fetchData();
+    } catch (err) {
+      alert('Failed to create transaction');
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -114,19 +148,25 @@ export function TransactionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transactions</h1>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setShowFilters(!showFilters)}
-        >
-          <Filter className="h-4 w-4 mr-2" />
-          Filters
-          {hasFilters && (
-            <Badge variant="secondary" className="ml-2">
-              Active
-            </Badge>
-          )}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setIsAddOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Transaction
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filters
+            {hasFilters && (
+              <Badge variant="secondary" className="ml-2">
+                Active
+              </Badge>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -284,7 +324,8 @@ export function TransactionsPage() {
                 {transactions.map((tx) => (
                   <div
                     key={tx.id}
-                    className="p-4 hover:bg-gray-50 transition-colors"
+                    className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => !editingId && setSelectedTransaction(tx)}
                   >
                     {editingId === tx.id ? (
                       // Edit Mode
@@ -417,7 +458,10 @@ export function TransactionsPage() {
                               {tx.status}
                             </Badge>
                             <button
-                              onClick={() => startEdit(tx)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startEdit(tx);
+                              }}
                               className="p-1 hover:bg-gray-200 rounded"
                             >
                               <Pencil className="h-3 w-3 text-gray-400" />
@@ -465,6 +509,52 @@ export function TransactionsPage() {
           )}
         </>
       )}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Transaction</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Date</Label>
+              <Input className="col-span-3" type="date" value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Amount</Label>
+              <Input className="col-span-3" type="number" step="0.01" value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Description</Label>
+              <Input className="col-span-3" value={newTx.description} onChange={e => setNewTx({ ...newTx, description: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Category</Label>
+              <select
+                className="col-span-3 flex h-10 w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                value={newTx.category_id}
+                onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
+              >
+                <option value="">Uncategorized</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleCreate}>Save Transaction</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <TransactionDetailsDialog
+        transaction={selectedTransaction}
+        open={!!selectedTransaction}
+        onOpenChange={(open) => !open && setSelectedTransaction(null)}
+        onDeleteSuccess={() => { fetchData(); setSelectedTransaction(null); }}
+      />
     </div>
   );
 }
