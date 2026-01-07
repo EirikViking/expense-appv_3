@@ -111,7 +111,7 @@ export function TransactionsDrilldownDialog({
                             {transactions.map((tx) => (
                                 <div
                                     key={tx.id}
-                                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+                                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer group"
                                     onClick={() => setSelectedTx(tx)}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
@@ -165,6 +165,7 @@ export function TransactionsDrilldownDialog({
                                         >
                                             {formatCurrency(tx.amount, true)}
                                         </span>
+                                        <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors ml-2" />
                                     </div>
                                 </div>
                             ))}
