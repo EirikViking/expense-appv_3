@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TransactionDetailsDialog } from './TransactionDetailsDialog';
 
 interface TransactionsDrilldownDialogProps {
     open: boolean;
@@ -25,6 +26,9 @@ interface TransactionsDrilldownDialogProps {
     merchantId?: string;
     merchantName?: string;
     categoryId?: string;
+    status?: string;
+    minAmount?: number;
+    maxAmount?: number;
 }
 
 export function TransactionsDrilldownDialog({
