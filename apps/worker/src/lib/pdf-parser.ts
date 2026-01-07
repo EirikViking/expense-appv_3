@@ -13,22 +13,35 @@ export interface ParsedPdfTransaction {
 }
 
 // Multiple regex patterns to handle different PDF text extraction formats
+// Order matters - more specific patterns first
 const TX_PATTERNS = [
   // Standard: DD.MM.YYYY  Description  -1 234,56
-  /(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,\d{2})\s*$/,
+  /^(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,\d{2})\s*$/,
+  // Two dates (transaction + booked): DD.MM.YY DD.MM.YY Description Amount
+  /^(\d{2})\.(\d{2})\.(\d{2,4})\s+\d{2}\.\d{2}\.\d{2,4}\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
+  // Date at start, amount with "kr" suffix: DD.MM.YYYY  Description  1 234,56 kr
+  /^(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*(?:kr)?\s*$/i,
+  // Date at start, amount can have spaces: DD.MM.YY Description 1234,56
+  /^(\d{2})\.(\d{2})\.(\d{2})\s+(.+?)\s+(-?\d[\d\s]*,\d{2})\s*$/,
   // Without decimals: DD.MM.YYYY  Description  -1234
-  /(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]+)\s*$/,
-  // With NOK prefix: DD.MM.YYYY  Description  NOK -1 234,56
-  /(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(?:NOK\s*)?(-?\d[\d\s]*,?\d*)\s*$/,
-  // Flexible: date anywhere, amount at end
-  /(\d{2})[\.\-\/](\d{2})[\.\-\/](\d{4})\s+(.+?)\s+(-?[\d\s]+[,.]?\d*)\s*$/,
+  /^(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]+)\s*$/,
+  // Date with dashes: DD-MM-YYYY  Description  Amount
+  /^(\d{2})-(\d{2})-(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
+  // Date with slashes: DD/MM/YYYY  Description  Amount
+  /^(\d{2})\/(\d{2})\/(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
+  // Storebrand format: may have extra columns, be flexible
+  /(\d{2})\.(\d{2})\.(\d{4})\s+(.{3,50}?)\s+(-?\d[\d\s]*[,.]?\d*)\s*$/,
+  // Very flexible: date anywhere, description, amount at end
+  /(\d{2})[.\-\/](\d{2})[.\-\/](\d{4})\s+(.+?)\s+(-?[\d\s]+[,.]?\d*)\s*$/,
+  // Fallback for short year: DD.MM.YY Description Amount
+  /(\d{2})\.(\d{2})\.(\d{2})\s+(.{3,}?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
 ];
 
 // Pattern to find dates in text
-const DATE_PATTERN = /(\d{2})[\.\-\/](\d{2})[\.\-\/](\d{2,4})/g;
+const DATE_PATTERN = /(\d{2})[.\-\/](\d{2})[.\-\/](\d{2,4})/g;
 
-// Pattern to find amounts (Norwegian format: -1 234,56 or -1234.56)
-const AMOUNT_PATTERN = /(-?\d[\d\s]*[,\.]\d{2}|-?\d+)\s*$/;
+// Pattern to find amounts (Norwegian format: -1 234,56 or -1234.56 or 1234 kr)
+const AMOUNT_PATTERN = /(-?\d[\d\s]*[,.]?\d{0,2})\s*(?:kr)?\s*$/i;
 
 function parseNorwegianAmount(amountStr: string): number {
   // Remove spaces (thousands separators)
