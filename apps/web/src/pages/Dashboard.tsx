@@ -220,7 +220,23 @@ export function DashboardPage() {
           <CardContent>
             {timeseries.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={timeseries}>
+                <LineChart
+                  data={timeseries}
+                  onClick={(state: any) => {
+                    if (state && state.activePayload && state.activePayload.length > 0) {
+                      const point = state.activePayload[0].payload as TimeSeriesPoint;
+                      setDrilldownDateFrom(point.date);
+                      setDrilldownDateTo(point.date);
+                      setDrilldownTitle(`Transactions: ${formatDateShort(point.date)}`);
+                      setDrilldownSubtitle('');
+                      setDrilldownCategory(undefined);
+                      setDrilldownMerchantId(undefined);
+                      setDrilldownMerchantName(undefined);
+                      setDrilldownOpen(true);
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
                   <XAxis
                     dataKey="date"
@@ -286,24 +302,22 @@ export function DashboardPage() {
                     }
                     labelLine={false}
                     className="cursor-pointer outline-none"
-                    onClick={(data: any) => {
-                      // Recharts payload structure
-                      const category = data.payload as CategoryBreakdown;
-
-                      setDrilldownCategory(category.category_id || undefined);
-                      setDrilldownMerchantId(undefined);
-                      setDrilldownMerchantName(undefined);
-                      setDrilldownDateFrom(getMonthRange().start);
-                      setDrilldownDateTo(getMonthRange().end);
-                      setDrilldownTitle(`Category: ${category.category_name}`);
-                      setDrilldownSubtitle(`${formatCurrency(category.total)} spent this month`);
-                      setDrilldownOpen(true);
-                    }}
                   >
                     {categories.slice(0, 8).map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={entry.category_color || COLORS[index % COLORS.length]}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => {
+                          setDrilldownCategory(entry.category_id || undefined);
+                          setDrilldownMerchantId(undefined);
+                          setDrilldownMerchantName(undefined);
+                          setDrilldownDateFrom(getMonthRange().start);
+                          setDrilldownDateTo(getMonthRange().end);
+                          setDrilldownTitle(`Category: ${entry.category_name}`);
+                          setDrilldownSubtitle(`${formatCurrency(entry.total)} spent this month`);
+                          setDrilldownOpen(true);
+                        }}
                       />
                     ))}
                   </Pie>
