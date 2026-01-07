@@ -218,7 +218,10 @@ ingest.post('/pdf', async (c) => {
     }
 
     // Parse PDF text into transactions
-    const { transactions: parsedTxs, error: parseError } = parsePdfText(extracted_text);
+    const { transactions: parsedTxs, error: parseError, stats } = parsePdfText(extracted_text);
+
+    // Log parsing stats for debugging
+    console.log(`[PDF Ingest] File: ${filename}, Stats:`, JSON.stringify(stats));
 
     if (parseError) {
       return c.json({ error: parseError }, 400);
@@ -232,6 +235,7 @@ ingest.post('/pdf', async (c) => {
     await insertFileRecord(c.env.DB, file_hash, 'pdf', filename, {
       extracted_text_length: extracted_text.length,
       parsed_count: parsedTxs.length,
+      ...stats,
     });
 
     // Process transactions

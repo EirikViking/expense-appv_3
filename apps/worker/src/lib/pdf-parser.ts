@@ -98,15 +98,21 @@ function tryParseTransactionLine(line: string): { date: string; description: str
 export function parsePdfText(extractedText: string): {
   transactions: ParsedPdfTransaction[];
   error?: string;
+  stats?: {
+    totalLines: number;
+    parsedCount: number;
+    dateContainingLines: number;
+  };
 } {
   // Check for section markers (case-insensitive)
   const textLower = extractedText.toLowerCase();
   const hasPending = textLower.includes(PDF_SECTION_PENDING.toLowerCase()) ||
-                     textLower.includes('reservasjon');
+    textLower.includes('reservasjon');
   const hasBooked = textLower.includes(PDF_SECTION_BOOKED.toLowerCase()) ||
-                    textLower.includes('kontobevegelse') ||
-                    textLower.includes('transaksjoner') ||
-                    textLower.includes('bevegelser');
+    textLower.includes('kontobevegelse') ||
+    textLower.includes('transaksjoner') ||
+    textLower.includes('bevegelser') ||
+    textLower.includes('saldo'); // Storebrand uses "saldo"
 
   if (!hasPending && !hasBooked) {
     return {
@@ -123,10 +129,11 @@ export function parsePdfText(extractedText: string): {
   // If very few lines, the PDF might have all text on one "line" - try to split differently
   if (lines.length < 5) {
     // Try splitting on date patterns to find transaction boundaries
-    lines = extractedText.split(/(?=\d{2}[\.\-\/]\d{2}[\.\-\/]\d{2,4})/).map(l => l.trim()).filter(Boolean);
+    lines = extractedText.split(/(?=\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4})/).map(l => l.trim()).filter(Boolean);
   }
 
   let currentStatus: TransactionStatus = 'booked'; // Default to booked if no section marker before transactions
+  let dateContainingLines = 0;
 
   for (const line of lines) {
     const lineLower = line.toLowerCase();
@@ -137,10 +144,15 @@ export function parsePdfText(extractedText: string): {
       continue;
     }
     if (lineLower.includes(PDF_SECTION_BOOKED.toLowerCase()) ||
-        lineLower.includes('kontobevegelse') ||
-        lineLower.includes('transaksjoner')) {
+      lineLower.includes('kontobevegelse') ||
+      lineLower.includes('transaksjoner')) {
       currentStatus = 'booked';
       continue;
+    }
+
+    // Check if line contains a date (for stats)
+    if (/\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}/.test(line)) {
+      dateContainingLines++;
     }
 
     // Try to parse as transaction line
@@ -156,5 +168,12 @@ export function parsePdfText(extractedText: string): {
     }
   }
 
-  return { transactions };
+  return {
+    transactions,
+    stats: {
+      totalLines: lines.length,
+      parsedCount: transactions.length,
+      dateContainingLines,
+    }
+  };
 }
