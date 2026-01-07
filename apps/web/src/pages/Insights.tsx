@@ -192,10 +192,31 @@ export function InsightsPage() {
     }
   };
 
+  const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
+
   const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
     setDrilldownTitle(`Transactions: ${merchant.merchant_name}`);
     setDrilldownSubtitle(`${merchant.count} transactions totaling ${formatCurrency(merchant.total)}`);
     setDrilldownMerchantId(merchant.merchant_id ?? undefined);
+
+    // Pass name if ID is missing, or even if it is present to be safe, 
+    // but the backend will prioritize ID if both are sent (or AND them).
+    // Actually, if we have ID, we SHOULD only use ID. 
+    // If we don't have ID, we use Name.
+    // The backend logic I wrote ANDs them if both are present.
+    // So usually we should pass one or the other if we want "either/or" behavior?
+    // Wait, the backend logic I added does:
+    // if (merchant_id) ...
+    // if (merchant_name) ...
+    // So if both are passed, it checks BOTH.
+    // So we should only pass name if id is undefined.
+
+    if (!merchant.merchant_id) {
+      setDrilldownMerchantName(merchant.merchant_name);
+    } else {
+      setDrilldownMerchantName(undefined);
+    }
+
     setDrilldownCategoryId(undefined);
     setDrilldownOpen(true);
   };
@@ -205,6 +226,7 @@ export function InsightsPage() {
     setDrilldownSubtitle(`${category.count} transactions totaling ${formatCurrency(category.total)}`);
     setDrilldownCategoryId(category.category_id ?? undefined);
     setDrilldownMerchantId(undefined);
+    setDrilldownMerchantName(undefined);
     setDrilldownOpen(true);
   };
 
@@ -627,7 +649,15 @@ export function InsightsPage() {
               {safeSubscriptions.map((sub, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => openMerchantDrilldown({
+                    merchant_id: sub.merchant_id,
+                    merchant_name: sub.merchant_name,
+                    total: sub.amount * sub.transaction_ids.length, // Approx total
+                    count: sub.transaction_ids.length,
+                    avg: sub.amount,
+                    trend: 0
+                  })}
                 >
                   <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
                     <CreditCard className="h-5 w-5 text-blue-600" />
@@ -663,6 +693,7 @@ export function InsightsPage() {
         dateFrom={dateFrom}
         dateTo={dateTo}
         merchantId={drilldownMerchantId}
+        merchantName={drilldownMerchantName}
         categoryId={drilldownCategoryId}
       />
     </div>

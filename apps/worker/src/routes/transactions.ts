@@ -110,6 +110,7 @@ transactions.get('/', async (c) => {
       category_id,
       tag_id,
       merchant_id,
+      merchant_name,
       min_amount,
       max_amount,
       search,
@@ -178,6 +179,28 @@ transactions.get('/', async (c) => {
       }
       conditions.push('tm.merchant_id = ?');
       params.push(merchant_id);
+    }
+
+    if (merchant_name) {
+      // Join merchants to match canonical name OR raw description, mirroring the aggregate logic
+      if (!joinClause.includes('transaction_meta')) {
+        joinClause += ' LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id';
+      }
+      // We also need merchants table joined to check canonical_name
+      // Note: enrichTransactions does this later, but we need it here for filtering
+      // check if we can join merchants easily.
+      // Wait, we can't easily join 'merchants' here without conflicting with potential future logic?
+      // Actually, we can just LEFT JOIN merchants m ON tm.merchant_id = m.id
+      // But we need to make sure we don't double join if we add other filters later.
+      // For now, let's just add it to joinClause if not present.
+
+      const merchantsJoin = ' LEFT JOIN merchants m ON tm.merchant_id = m.id';
+      if (!joinClause.includes('merchants m')) {
+        joinClause += merchantsJoin;
+      }
+
+      conditions.push('COALESCE(m.canonical_name, t.description) = ?');
+      params.push(merchant_name);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
