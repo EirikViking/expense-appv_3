@@ -37,18 +37,22 @@ export function TransactionsDrilldownDialog({
     merchantId,
     merchantName,
     categoryId,
+    status,
+    minAmount,
+    maxAmount,
 }: TransactionsDrilldownDialogProps) {
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
+    const [selectedTx, setSelectedTx] = useState<TransactionWithMeta | null>(null);
     const limit = 20;
 
     useEffect(() => {
         if (open) {
             loadTransactions();
         }
-    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId]);
+    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId, status, minAmount, maxAmount]);
 
     const loadTransactions = async () => {
         setLoading(true);
@@ -59,9 +63,9 @@ export function TransactionsDrilldownDialog({
                 merchant_id: merchantId,
                 merchant_name: merchantName,
                 category_id: categoryId,
-                // Aggregates we drill down from are usually explicitly expenses
-                // Todo: Make this configurable if we drill down into income later
-                max_amount: (merchantId || merchantName || categoryId) ? 0 : undefined,
+                status: status,
+                min_amount: minAmount,
+                max_amount: maxAmount,
                 limit,
                 offset: page * limit,
                 sort_by: 'date',
@@ -107,7 +111,8 @@ export function TransactionsDrilldownDialog({
                             {transactions.map((tx) => (
                                 <div
                                     key={tx.id}
-                                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+                                    className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+                                    onClick={() => setSelectedTx(tx)}
                                 >
                                     <div className="flex items-center gap-3 min-w-0">
                                         <div
@@ -200,6 +205,13 @@ export function TransactionsDrilldownDialog({
                     </div>
                 )}
             </DialogContent>
+
+            <TransactionDetailsDialog
+                transaction={selectedTx}
+                open={!!selectedTx}
+                onOpenChange={(open) => !open && setSelectedTx(null)}
+                onDeleteSuccess={() => { setSelectedTx(null); loadTransactions(); }}
+            />
         </Dialog>
     );
 }

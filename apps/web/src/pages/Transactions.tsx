@@ -56,6 +56,22 @@ export function TransactionsPage() {
     category_id: ''
   });
 
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} transactions? This cannot be undone.`)) return;
+
+    try {
+      await Promise.all(selectedIds.map(id => api.deleteTransaction(id)));
+      setSelectedIds([]);
+      fetchData();
+    } catch (err) {
+      alert('Failed to delete transactions');
+      fetchData();
+    }
+  };
+
   const handleCreate = async () => {
     if (!newTx.amount || !newTx.description || !newTx.date) {
       alert('Please fill in required fields');
@@ -149,6 +165,12 @@ export function TransactionsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Transactions</h1>
         <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <Button variant="destructive" onClick={handleBulkDelete}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete ({selectedIds.length})
+            </Button>
+          )}
           <Button onClick={() => setIsAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Transaction
@@ -378,6 +400,16 @@ export function TransactionsPage() {
                     ) : (
                       // View Mode
                       <div className="flex items-center gap-4">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(tx.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedIds([...selectedIds, tx.id]);
+                            else setSelectedIds(selectedIds.filter(id => id !== tx.id));
+                          }}
+                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
                         <div
                           className="h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-medium"
                           style={{
