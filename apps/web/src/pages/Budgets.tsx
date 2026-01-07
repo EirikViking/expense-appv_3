@@ -16,12 +16,21 @@ import {
   AlertTriangle,
   TrendingUp,
 } from 'lucide-react';
+import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 
 export function BudgetsPage() {
   const [budgets, setBudgets] = useState<BudgetWithSpent[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Drilldown state
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownTitle, setDrilldownTitle] = useState('');
+  const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
+  const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
+  const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
+  const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
 
   // Edit/Create state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -277,10 +286,23 @@ export function BudgetsPage() {
             const category = categories.find((c) => c.id === budget.category_id);
 
             return (
-              <Card key={budget.id} className={cn(
-                'relative overflow-hidden',
-                isOverBudget && 'border-red-300'
-              )}>
+              <Card
+                key={budget.id}
+                className={cn(
+                  'relative overflow-hidden cursor-pointer hover:shadow-md transition-shadow',
+                  isOverBudget && 'border-red-300'
+                )}
+                onClick={(e) => {
+                  // Prevent drilldown if clicking edit/delete buttons
+                  if ((e.target as HTMLElement).closest('button')) return;
+                  setDrilldownCategory(budget.category_id || undefined);
+                  setDrilldownDateFrom(budget.start_date);
+                  setDrilldownDateTo(budget.end_date || undefined);
+                  setDrilldownTitle(budget.name);
+                  setDrilldownSubtitle(`${formatCurrency(budget.spent)} spent of ${formatCurrency(budget.amount)}`);
+                  setDrilldownOpen(true);
+                }}
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <div>
@@ -310,13 +332,13 @@ export function BudgetsPage() {
                     </div>
                     <div className="flex gap-1">
                       <button
-                        onClick={() => startEdit(budget)}
+                        onClick={(e) => { e.stopPropagation(); startEdit(budget); }}
                         className="p-1 hover:bg-gray-100 rounded"
                       >
                         <Pencil className="h-4 w-4 text-gray-400" />
                       </button>
                       <button
-                        onClick={() => handleDelete(budget.id)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(budget.id); }}
                         className="p-1 hover:bg-red-50 rounded"
                       >
                         <Trash2 className="h-4 w-4 text-red-400" />
@@ -403,6 +425,20 @@ export function BudgetsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Drilldown Dialog */}
+      <TransactionsDrilldownDialog
+        open={drilldownOpen}
+        onOpenChange={setDrilldownOpen}
+        title={drilldownTitle}
+        subtitle={drilldownSubtitle}
+        dateFrom={drilldownDateFrom}
+        dateTo={drilldownDateTo}
+        categoryId={drilldownCategory}
+      // Force expense filter for budgets
+      // The dialog already handles max_amount: 0 if category/merchant is present. 
+      // But for budgets, we want to see expenses.
+      />
     </div>
   );
 }
