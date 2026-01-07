@@ -15,16 +15,43 @@ export interface XlsxParseResult {
   transactions: ParsedXlsxTransaction[];
   error?: string;
   detectedFormat?: string;
+  debugInfo?: string;
 }
 
 // Possible column name variations for different Norwegian banks
+// EXPANDED to cover Storebrand, DNB, Skandiabanken, Nordea, Sparebank1, etc.
 const COLUMN_VARIATIONS = {
-  DATE: ['Dato', 'Transaksjonsdato', 'Bokføringsdato', 'Date', 'Utført dato', 'Valuteringsdato', 'Handledato'],
-  BOOKED_DATE: ['Bokført', 'Bokført dato', 'Regnskapsdato', 'Rentedato', 'Booked date'],
-  DESCRIPTION: ['Spesifikasjon', 'Beskrivelse', 'Tekst', 'Forklaring', 'Melding', 'Description', 'Transaksjonstekst', 'Transaksjon'],
-  AMOUNT: ['Beløp', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn', 'Transaksjonsbeløp', 'NOK'],
-  CURRENCY: ['Valuta', 'Currency', 'Valutakode'],
-  MERCHANT: ['Sted', 'Mottaker', 'Avsender', 'Fra/Til', 'Recipient', 'Location'],
+  DATE: [
+    'Dato', 'Transaksjonsdato', 'Bokføringsdato', 'Date', 'Utført dato',
+    'Valuteringsdato', 'Handledato', 'Trans.dato', 'Bokført', 'Rentedato',
+    'Kjøpsdato', 'Posteringsdato', 'Forfall', 'Transaksjon dato',
+    // Storebrand specific
+    'Transaksjons dato', 'Betalingsdato', 'Oppgjørsdato',
+  ],
+  BOOKED_DATE: [
+    'Bokført', 'Bokført dato', 'Regnskapsdato', 'Rentedato', 'Booked date',
+    'Posteringsdato', 'Oppgjørsdato',
+  ],
+  DESCRIPTION: [
+    'Spesifikasjon', 'Beskrivelse', 'Tekst', 'Forklaring', 'Melding',
+    'Description', 'Transaksjonstekst', 'Transaksjon', 'Kontotekst',
+    'Betalingsmottaker', 'Til konto', 'Fra konto', 'Mottaker',
+    'Avsender', 'Navn', 'Type', 'Kategori',
+    // Storebrand specific
+    'Transaksjonstype', 'Merknad', 'Kommentar', 'Detaljer',
+  ],
+  AMOUNT: [
+    'Beløp', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn',
+    'Transaksjonsbeløp', 'NOK', 'Utbetalt', 'Innskudd', 'Belastet',
+    'Kreditert', 'Debitert', 'Saldo endring', 'Kr', 'Verdi',
+    // Storebrand specific
+    'Transaksjons beløp', 'Beløp NOK', 'Beløp (NOK)', 'NOK beløp',
+  ],
+  CURRENCY: ['Valuta', 'Currency', 'Valutakode', 'Myntslag'],
+  MERCHANT: [
+    'Sted', 'Mottaker', 'Avsender', 'Fra/Til', 'Recipient', 'Location',
+    'Butikk', 'Forhandler', 'Betalingsmottaker',
+  ],
 };
 
 // Parse Norwegian date format DD.MM.YYYY to ISO YYYY-MM-DD
@@ -95,12 +122,18 @@ interface ColumnMapping {
   currencyCol: string | null;
   merchantCol: string | null;
   headerRow: number;
+  foundHeaders: string[];
 }
 
-function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | null {
+interface HeadersOnlyResult {
+  foundHeaders: string[];
+}
+
+function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | HeadersOnlyResult {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
 
   // Scan first 20 rows for header
+  let lastRowHeaders: string[] = [];
   for (let row = range.s.r; row <= Math.min(range.e.r, 20); row++) {
     const headers: string[] = [];
 
@@ -109,6 +142,12 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | null {
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
       const cell = sheet[cellRef];
       headers.push(cell && cell.v ? String(cell.v).trim() : '');
+    }
+
+    // Keep track of non-empty headers for debug
+    const nonEmptyHeaders = headers.filter(h => h.length > 0);
+    if (nonEmptyHeaders.length > lastRowHeaders.length) {
+      lastRowHeaders = nonEmptyHeaders;
     }
 
     // Try to find required columns
@@ -125,11 +164,13 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | null {
         currencyCol: findColumnName(headers, COLUMN_VARIATIONS.CURRENCY),
         merchantCol: findColumnName(headers, COLUMN_VARIATIONS.MERCHANT),
         headerRow: row,
+        foundHeaders: headers.filter(h => h.length > 0),
       };
     }
   }
 
-  return null;
+  // Return the best row of headers we found for debugging
+  return { foundHeaders: lastRowHeaders };
 }
 
 export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
@@ -144,11 +185,16 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
 
     // Find the header row and column mapping
     const mapping = findHeaderRowAndColumns(sheet);
-    if (!mapping) {
-      // Provide helpful error with what we're looking for
+    if (!mapping || !('dateCol' in mapping)) {
+      // Provide helpful error with headers found
+      const headersFound = mapping?.foundHeaders || [];
+      const headersList = headersFound.length > 0
+        ? `Headers found: [${headersFound.slice(0, 10).join(', ')}${headersFound.length > 10 ? '...' : ''}]`
+        : 'No headers detected in first 20 rows';
       return {
         transactions: [],
-        error: `Could not detect column headers. Looking for date column (${COLUMN_VARIATIONS.DATE.slice(0, 3).join(', ')}...) and amount column (${COLUMN_VARIATIONS.AMOUNT.slice(0, 3).join(', ')}...). Please check your file format.`
+        error: `Could not detect required columns (need Date + Amount). ${headersList}`,
+        debugInfo: `All headers: ${JSON.stringify(headersFound)}`,
       };
     }
 
