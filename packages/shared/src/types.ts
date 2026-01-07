@@ -47,6 +47,7 @@ export interface TransactionWithMeta extends Transaction {
   merchant_name: string | null;
   notes: string | null;
   is_recurring: boolean;
+  source_filename: string | null;
   tags: Array<{ id: string; name: string; color: string | null }>;
 }
 

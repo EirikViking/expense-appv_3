@@ -74,10 +74,22 @@ async function enrichTransactions(
     tagsMap.set(tag.transaction_id, existing);
   }
 
+  // Get source filenames
+  const fileHashes = [...new Set(txs.map(t => t.source_file_hash).filter(Boolean))];
+  let filesMap = new Map<string, string>();
+
+  if (fileHashes.length > 0) {
+    const filePlaceholders = fileHashes.map(() => '?').join(',');
+    const filesQuery = `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
+    const filesResult = await db.prepare(filesQuery).bind(...fileHashes).all<{ file_hash: string; original_filename: string }>();
+    filesMap = new Map((filesResult.results || []).map(f => [f.file_hash, f.original_filename]));
+  }
+
   // Enrich transactions
   return txs.map(tx => {
     const meta = metaMap.get(tx.id);
     const tags = tagsMap.get(tx.id) || [];
+    const sourceFilename = filesMap.get(tx.source_file_hash);
 
     return {
       ...tx,
@@ -88,6 +100,7 @@ async function enrichTransactions(
       merchant_name: meta?.merchant_name || null,
       notes: meta?.notes || null,
       is_recurring: meta?.is_recurring === 1,
+      source_filename: sourceFilename || null,
       tags,
     };
   });

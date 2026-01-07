@@ -132,6 +132,11 @@ export function TransactionsDrilldownDialog({
                                                         <span className="truncate">{tx.merchant_name}</span>
                                                     </>
                                                 )}
+                                                {tx.source_filename && (
+                                                    <span className="text-xs text-gray-400 ml-2" title={`Source: ${tx.source_filename}`}>
+                                                        ({tx.source_filename})
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
