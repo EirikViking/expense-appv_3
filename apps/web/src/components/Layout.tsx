@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   X,
+  Settings,
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,7 @@ const navItems = [
   { path: '/rules', label: 'Rules', icon: Workflow },
   { path: '/budgets', label: 'Budgets', icon: PiggyBank },
   { path: '/insights', label: 'Insights', icon: BarChart3 },
+  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Layout({ children }: LayoutProps) {
@@ -76,7 +78,7 @@ export function Layout({ children }: LayoutProps) {
         {isAuthenticated && (
           <nav className="flex flex-col h-[calc(100vh-4rem)]">
             <div className="flex-1 px-3 py-4 space-y-1">
-              {navItems.map((item) => {
+              {navItems.filter(item => item.path !== '/budgets' || localStorage.getItem('show_budgets') !== 'false').map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
                 return (

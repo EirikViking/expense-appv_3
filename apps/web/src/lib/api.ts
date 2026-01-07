@@ -165,6 +165,23 @@ export const api = {
   getTransaction: (id: string) =>
     request<TransactionWithMeta>(`/transactions/${id}`),
 
+  createTransaction: (data: any) =>
+    request<TransactionWithMeta>('/transactions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteTransaction: (id: string) =>
+    request<{ success: boolean }>(`/transactions/${id}`, {
+      method: 'DELETE',
+    }),
+
+  resetData: (confirm: boolean) =>
+    request<{ success: boolean; message: string }>('/transactions/admin/reset', {
+      method: 'DELETE',
+      body: JSON.stringify({ confirm }),
+    }),
+
   // Transaction Meta
   updateTransactionMeta: (id: string, data: UpdateTransactionMetaRequest) =>
     request<TransactionWithMeta>(`/transaction-meta/${id}`, {

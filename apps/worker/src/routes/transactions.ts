@@ -212,8 +212,8 @@ transactions.get('/', async (c) => {
         joinClause += merchantsJoin;
       }
 
-      conditions.push('COALESCE(m.canonical_name, t.description) = ?');
-      params.push(merchant_name);
+      conditions.push('COALESCE(m.canonical_name, TRIM(t.description)) = ?');
+      params.push(merchant_name.trim());
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -274,6 +274,95 @@ transactions.get('/:id', async (c) => {
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction get error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Create manual transaction
+transactions.post('/', async (c) => {
+  try {
+    const body = await c.req.json();
+    // Basic validation
+    // TODO: Use Zod schema
+    const { date, amount, description, category_id, merchant_id, notes } = body;
+
+    if (!date || amount === undefined || !description) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Insert transaction
+    await c.env.DB.prepare(`
+      INSERT INTO transactions (id, created_at, updated_at, tx_date, amount, description, currency, status, source_type)
+      VALUES (?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual')
+    `).bind(id, now, now, date, amount, description).run();
+
+    // Insert meta
+    if (category_id || merchant_id || notes) {
+      await c.env.DB.prepare(`
+        INSERT INTO transaction_meta (transaction_id, category_id, merchant_id, notes, is_recurring)
+        VALUES (?, ?, ?, ?, 0)
+      `).bind(id, category_id || null, merchant_id || null, notes || null).run();
+    }
+
+    // Return the new transaction
+    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<Transaction>();
+    return c.json(newTx, 201);
+  } catch (error) {
+    console.error('Create transaction error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Delete specific transaction
+transactions.delete('/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    // Check if exists
+    const exists = await c.env.DB.prepare('SELECT id FROM transactions WHERE id = ?').bind(id).first();
+    if (!exists) {
+      return c.json({ error: 'Transaction not found' }, 404);
+    }
+
+    // Delete (cascade should handle meta/tags if set up, but let's be safe)
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM transaction_meta WHERE transaction_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM transaction_tags WHERE transaction_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(id)
+    ]);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Delete transaction error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Reset all data (DANGER)
+transactions.delete('/admin/reset', async (c) => {
+  try {
+    // Verify some secret or just allow it? User requested it.
+    // Ideally requires a confirmation flag in body?
+    const { confirm } = await c.req.json() as { confirm: boolean };
+    if (confirm !== true) {
+      return c.json({ error: 'Confirmation required' }, 400);
+    }
+
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM transaction_meta'),
+      c.env.DB.prepare('DELETE FROM transaction_tags'),
+      c.env.DB.prepare('DELETE FROM transactions'),
+      c.env.DB.prepare('DELETE FROM ingested_files'),
+      // Also clear budgets and rules?? User said "delete all data".
+      // Maybe not config? I'll stick to transaction data for now.
+    ]);
+
+    return c.json({ success: true, message: 'All transaction data deleted' });
+  } catch (error) {
+    console.error('Reset error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

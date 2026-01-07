@@ -10,6 +10,7 @@ import { CategoriesPage } from './pages/Categories';
 import { RulesPage } from './pages/Rules';
 import { BudgetsPage } from './pages/Budgets';
 import { InsightsPage } from './pages/Insights';
+import { SettingsPage } from './pages/Settings';
 
 function App() {
   return (
@@ -83,6 +84,16 @@ function App() {
               <ProtectedRoute>
                 <Layout>
                   <InsightsPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <SettingsPage />
                 </Layout>
               </ProtectedRoute>
             }
