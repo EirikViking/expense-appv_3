@@ -296,7 +296,7 @@ export function BudgetsPage() {
                   // Prevent drilldown if clicking edit/delete buttons
                   if ((e.target as HTMLElement).closest('button')) return;
                   setDrilldownCategory(budget.category_id || undefined);
-                  setDrilldownDateFrom(budget.start_date);
+                  setDrilldownDateFrom(budget.start_date ?? undefined);
                   setDrilldownDateTo(budget.end_date || undefined);
                   setDrilldownTitle(budget.name);
                   setDrilldownSubtitle(`${formatCurrency(budget.spent)} spent of ${formatCurrency(budget.amount)}`);

@@ -24,6 +24,7 @@ import type {
   TimeSeriesPoint,
   RecurringItem,
   AnalyticsCompareResponse,
+  TransactionStatus,
 } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,11 +75,11 @@ export function InsightsPage() {
   const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
   const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<string | undefined>();
-  const [drilldownStatus, setDrilldownStatus] = useState<string | undefined>();
+  const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
   const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
   const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
 
-  const openKPIDrilldown = (title: string, opts: { status?: string, min?: number, max?: number } = {}) => {
+  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, min?: number, max?: number } = {}) => {
     setDrilldownTitle(title);
     setDrilldownSubtitle(`${dateFrom} - ${dateTo}`);
     setDrilldownStatus(opts.status);

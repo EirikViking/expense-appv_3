@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import type { TransactionWithMeta } from '@expense/shared';
+import type { TransactionWithMeta, TransactionStatus } from '@expense/shared';
 import {
     Dialog,
     DialogContent,
@@ -26,7 +26,7 @@ interface TransactionsDrilldownDialogProps {
     merchantId?: string;
     merchantName?: string;
     categoryId?: string;
-    status?: string;
+    status?: TransactionStatus;
     minAmount?: number;
     maxAmount?: number;
 }
