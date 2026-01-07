@@ -15,9 +15,15 @@ import type { Env } from '../types';
 const analytics = new Hono<{ Bindings: Env }>();
 
 // Build WHERE clause from query params
-function buildWhereClause(params: Record<string, unknown>): { clause: string; bindings: (string | number)[] } {
+// By default, excludes transactions marked as is_excluded unless include_excluded is true
+function buildWhereClause(params: Record<string, unknown>, options?: { include_excluded?: boolean }): { clause: string; bindings: (string | number)[] } {
   const conditions: string[] = [];
   const bindings: (string | number)[] = [];
+
+  // Default: exclude transactions marked as excluded (is_excluded = 0 or NULL for old rows)
+  if (!options?.include_excluded) {
+    conditions.push('COALESCE(t.is_excluded, 0) = 0');
+  }
 
   if (params.date_from) {
     conditions.push('t.tx_date >= ?');
@@ -67,10 +73,15 @@ analytics.get('/summary', async (c) => {
     const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id } = parsed.data;
     const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id });
 
+    // Join with categories to check is_transfer for income calculation
+    // Transfers (where category is_transfer=1) should NOT count as income
     const result = await c.env.DB
       .prepare(`
         SELECT
-          COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount ELSE 0 END), 0) as total_income,
+          COALESCE(SUM(CASE 
+            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 
+            THEN t.amount ELSE 0 
+          END), 0) as total_income,
           COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
           COALESCE(SUM(t.amount), 0) as net,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
@@ -81,6 +92,7 @@ analytics.get('/summary', async (c) => {
           COALESCE(AVG(ABS(t.amount)), 0) as avg_transaction
         FROM transactions t
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        LEFT JOIN categories c ON tm.category_id = c.id
         ${clause}
       `)
       .bind(...bindings)
@@ -685,6 +697,175 @@ analytics.get('/compare', async (c) => {
     return c.json(comparison);
   } catch (error) {
     console.error('Analytics compare error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Fun facts endpoint - interesting insights about spending
+interface FunFact {
+  id: string;
+  icon: string;
+  title: string;
+  value: string;
+  description: string;
+}
+
+analytics.get('/fun-facts', async (c) => {
+  try {
+    const query = c.req.query();
+    const parsed = analyticsQuerySchema.safeParse(query);
+
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
+    }
+
+    const { date_from, date_to } = parsed.data;
+    const facts: FunFact[] = [];
+
+    // Fact 1: Biggest spending day
+    const biggestDayResult = await c.env.DB
+      .prepare(`
+        SELECT tx_date, SUM(ABS(amount)) as total
+        FROM transactions
+        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND COALESCE(is_excluded, 0) = 0
+        GROUP BY tx_date
+        ORDER BY total DESC
+        LIMIT 1
+      `)
+      .bind(date_from, date_to)
+      .first<{ tx_date: string; total: number }>();
+
+    if (biggestDayResult) {
+      const date = new Date(biggestDayResult.tx_date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      facts.push({
+        id: 'biggest-day',
+        icon: '📅',
+        title: 'Biggest Spending Day',
+        value: `${biggestDayResult.total.toLocaleString('no-NO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kr`,
+        description: `on ${dayName}, ${biggestDayResult.tx_date}`,
+      });
+    }
+
+    // Fact 2: Most frequent merchant
+    const topMerchantResult = await c.env.DB
+      .prepare(`
+        SELECT description, COUNT(*) as count, SUM(ABS(amount)) as total
+        FROM transactions
+        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND COALESCE(is_excluded, 0) = 0
+        GROUP BY description
+        ORDER BY count DESC
+        LIMIT 1
+      `)
+      .bind(date_from, date_to)
+      .first<{ description: string; count: number; total: number }>();
+
+    if (topMerchantResult && topMerchantResult.count > 1) {
+      facts.push({
+        id: 'frequent-merchant',
+        icon: '🏪',
+        title: 'Your Go-To Place',
+        value: topMerchantResult.description.slice(0, 25),
+        description: `${topMerchantResult.count} visits, ${topMerchantResult.total.toLocaleString('no-NO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} kr total`,
+      });
+    }
+
+    // Fact 3: Average transaction size
+    const avgResult = await c.env.DB
+      .prepare(`
+        SELECT AVG(ABS(amount)) as avg_amount, COUNT(*) as count
+        FROM transactions
+        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND COALESCE(is_excluded, 0) = 0
+      `)
+      .bind(date_from, date_to)
+      .first<{ avg_amount: number; count: number }>();
+
+    if (avgResult && avgResult.count > 0) {
+      facts.push({
+        id: 'avg-transaction',
+        icon: '💳',
+        title: 'Average Purchase',
+        value: `${Math.round(avgResult.avg_amount).toLocaleString('no-NO')} kr`,
+        description: `across ${avgResult.count} transactions`,
+      });
+    }
+
+    // Fact 4: Spending velocity (per day)
+    if (avgResult && avgResult.count > 0) {
+      const daysDiff = Math.max(1, (new Date(date_to).getTime() - new Date(date_from).getTime()) / (1000 * 60 * 60 * 24));
+      const perDay = (avgResult.avg_amount * avgResult.count) / daysDiff;
+      facts.push({
+        id: 'daily-average',
+        icon: '📈',
+        title: 'Daily Spending Rate',
+        value: `${Math.round(perDay).toLocaleString('no-NO')} kr/day`,
+        description: `or ${Math.round(perDay * 30).toLocaleString('no-NO')} kr/month at this pace`,
+      });
+    }
+
+    // Fact 5: Weekend vs weekday spending
+    const weekendResult = await c.env.DB
+      .prepare(`
+        SELECT 
+          CASE WHEN strftime('%w', tx_date) IN ('0', '6') THEN 'weekend' ELSE 'weekday' END as day_type,
+          SUM(ABS(amount)) as total,
+          COUNT(*) as count
+        FROM transactions
+        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND COALESCE(is_excluded, 0) = 0
+        GROUP BY day_type
+      `)
+      .bind(date_from, date_to)
+      .all<{ day_type: string; total: number; count: number }>();
+
+    if (weekendResult.results && weekendResult.results.length === 2) {
+      const weekend = weekendResult.results.find(r => r.day_type === 'weekend');
+      const weekday = weekendResult.results.find(r => r.day_type === 'weekday');
+      if (weekend && weekday) {
+        const weekendAvg = weekend.total / 2; // 2 weekend days
+        const weekdayAvg = weekday.total / 5; // 5 weekday days
+        const ratio = weekendAvg / weekdayAvg;
+        facts.push({
+          id: 'weekend-spending',
+          icon: '🎉',
+          title: ratio > 1 ? 'Weekend Spender' : 'Weekday Shopper',
+          value: `${Math.round(ratio * 100)}%`,
+          description: ratio > 1
+            ? `You spend ${Math.round((ratio - 1) * 100)}% more on weekends`
+            : `You spend ${Math.round((1 - ratio) * 100)}% more on weekdays`,
+        });
+      }
+    }
+
+    // Fact 6: Smallest purchase
+    const smallestResult = await c.env.DB
+      .prepare(`
+        SELECT description, ABS(amount) as amount
+        FROM transactions
+        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND COALESCE(is_excluded, 0) = 0
+        ORDER BY ABS(amount) ASC
+        LIMIT 1
+      `)
+      .bind(date_from, date_to)
+      .first<{ description: string; amount: number }>();
+
+    if (smallestResult && smallestResult.amount > 0) {
+      facts.push({
+        id: 'smallest-purchase',
+        icon: '🪙',
+        title: 'Tiniest Purchase',
+        value: `${smallestResult.amount.toFixed(2)} kr`,
+        description: smallestResult.description.slice(0, 30),
+      });
+    }
+
+    return c.json({ facts });
+  } catch (error) {
+    console.error('Analytics fun-facts error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
