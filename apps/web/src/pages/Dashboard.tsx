@@ -42,6 +42,7 @@ import type {
   TimeSeriesPoint,
   AnomalyItem,
 } from '@expense/shared';
+import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 
 export function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,16 @@ export function DashboardPage() {
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
+
+  // Drilldown state
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [drilldownTitle, setDrilldownTitle] = useState('');
+  const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
+  const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
+  const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
+  const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
+  const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
+  const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
 
   useEffect(() => {
     async function loadData() {
@@ -274,6 +285,20 @@ export function DashboardPage() {
                       (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ''
                     }
                     labelLine={false}
+                    className="cursor-pointer outline-none"
+                    onClick={(data: any) => {
+                      // Recharts payload structure
+                      const category = data.payload as CategoryBreakdown;
+
+                      setDrilldownCategory(category.category_id || undefined);
+                      setDrilldownMerchantId(undefined);
+                      setDrilldownMerchantName(undefined);
+                      setDrilldownDateFrom(getMonthRange().start);
+                      setDrilldownDateTo(getMonthRange().end);
+                      setDrilldownTitle(`Category: ${category.category_name}`);
+                      setDrilldownSubtitle(`${formatCurrency(category.total)} spent this month`);
+                      setDrilldownOpen(true);
+                    }}
                   >
                     {categories.slice(0, 8).map((entry, index) => (
                       <Cell
@@ -315,7 +340,25 @@ export function DashboardPage() {
             {merchants.length > 0 ? (
               <div className="space-y-4">
                 {merchants.map((merchant, i) => (
-                  <div key={i} className="flex items-center justify-between">
+                  <div
+                    key={i}
+                    className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
+                    onClick={() => {
+                      setDrilldownMerchantId(merchant.merchant_id || undefined);
+                      setDrilldownCategory(undefined);
+                      // Use merchant_name for drilldown if id is null (logic handled in Dialog/Insights)
+                      // checking Insights.tsx, we usually handle this by passing merchantName if merchantId is null.
+                      // TransactionDrilldownDialog supports merchantName.
+                      // We need to store merchantName in state.
+                      setDrilldownMerchantName(merchant.merchant_id ? undefined : merchant.merchant_name);
+
+                      setDrilldownDateFrom(getMonthRange().start);
+                      setDrilldownDateTo(getMonthRange().end);
+                      setDrilldownTitle(merchant.merchant_name);
+                      setDrilldownSubtitle(`${formatCurrency(merchant.total)} spent this month`);
+                      setDrilldownOpen(true);
+                    }}
+                  >
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-medium dark:bg-gray-800">
                         {i + 1}
@@ -364,7 +407,7 @@ export function DashboardPage() {
                       <Badge
                         variant={
                           anomaly.severity === 'high' ? 'destructive' :
-                          anomaly.severity === 'medium' ? 'warning' : 'secondary'
+                            anomaly.severity === 'medium' ? 'warning' : 'secondary'
                         }
                       >
                         {anomaly.severity}
@@ -379,6 +422,18 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      <TransactionsDrilldownDialog
+        open={drilldownOpen}
+        onOpenChange={setDrilldownOpen}
+        title={drilldownTitle}
+        subtitle={drilldownSubtitle}
+        dateFrom={drilldownDateFrom}
+        dateTo={drilldownDateTo}
+        categoryId={drilldownCategory}
+        merchantId={drilldownMerchantId}
+        merchantName={drilldownMerchantName}
+      />
     </div>
   );
 }
