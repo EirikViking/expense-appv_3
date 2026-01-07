@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { getVersionString, getApiBaseUrl } from '@/lib/version';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -42,7 +43,7 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -114,7 +115,7 @@ export function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 flex-1 flex flex-col">
         {/* Mobile header */}
         <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 lg:hidden">
           <button
@@ -128,12 +129,23 @@ export function Layout({ children }: LayoutProps) {
           </span>
         </header>
 
-        <main className="p-4 lg:p-6">
+        <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>
         </main>
+
+        {/* Version Footer */}
+        <footer className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-3 px-4 text-center">
+          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+            <p>{getVersionString()}</p>
+            <p className="truncate" title={getApiBaseUrl()}>
+              API: <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">{getApiBaseUrl() || '(proxy)'}</code>
+            </p>
+          </div>
+        </footer>
       </div>
     </div>
   );
 }
+

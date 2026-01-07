@@ -45,6 +45,36 @@ test.afterEach(async ({ }, testInfo) => {
     }
 });
 
+// Preflight API health check - must pass before other tests
+test.describe('API Preflight Check', () => {
+    test('API /health endpoint is reachable', async ({ request }) => {
+        // In dev, API is proxied through /api
+        // This test verifies the backend Worker is running and accessible
+        const apiUrl = 'http://localhost:8788';
+        const healthUrl = `${apiUrl}/health`;
+
+        console.log(`[Preflight] Checking API health at: ${healthUrl}`);
+
+        const response = await request.get(healthUrl);
+
+        if (!response.ok()) {
+            const errorText = await response.text();
+            throw new Error(
+                `API HEALTH CHECK FAILED!\n` +
+                `URL: ${healthUrl}\n` +
+                `Status: ${response.status()}\n` +
+                `Response: ${errorText}\n\n` +
+                `The backend Worker API must be running for tests to pass.\n` +
+                `Run: pnpm dev:worker`
+            );
+        }
+
+        const body = await response.json();
+        expect(body.status).toBe('ok');
+        console.log(`[Preflight] API health check passed: ${JSON.stringify(body)}`);
+    });
+});
+
 test.describe('Smoke Tests - Key Pages Load Without Errors', () => {
     test('Login page loads', async ({ page }) => {
         setupErrorCollection(page);
