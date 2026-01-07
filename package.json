@@ -12,6 +12,7 @@
     "build:worker": "pnpm --filter worker build",
     "test": "pnpm --filter worker test",
     "test:watch": "pnpm --filter worker test:watch",
+    "test:e2e": "npx playwright test",
     "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
     "typecheck": "pnpm -r typecheck",
     "setup:local": "pnpm install && pnpm db:migrate:local",
@@ -20,6 +21,7 @@
     "db:seed": "npx tsx scripts/seed-data.ts > seed.sql && echo 'Seed SQL generated to seed.sql'"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "concurrently": "^9.0.0",
     "tsx": "^4.19.1",
     "typescript": "^5.3.3",

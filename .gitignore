@@ -34,3 +34,8 @@ sample_data/
 
 # Generated files
 seed.sql
+
+# Playwright
+playwright-report/
+test-results/
+e2e/screenshots/

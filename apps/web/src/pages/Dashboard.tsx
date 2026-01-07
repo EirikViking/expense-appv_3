@@ -41,6 +41,7 @@ import type {
   MerchantBreakdown,
   TimeSeriesPoint,
   AnomalyItem,
+  TransactionStatus,
 } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 
@@ -62,11 +63,11 @@ export function DashboardPage() {
   const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
   const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
   const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
-  const [drilldownStatus, setDrilldownStatus] = useState<string | undefined>();
+  const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
   const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
   const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
 
-  const openKPIDrilldown = (title: string, opts: { status?: string, min?: number, max?: number }) => {
+  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, min?: number, max?: number }) => {
     setDrilldownTitle(title);
     setDrilldownSubtitle(`${summary?.period.start} - ${summary?.period.end}`);
     setDrilldownStatus(opts.status);
