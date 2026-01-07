@@ -182,6 +182,36 @@ export const api = {
       body: JSON.stringify({ confirm }),
     }),
 
+  // Transaction exclusion
+  excludeTransaction: (id: string) =>
+    request<{ success: boolean; id: string; is_excluded: boolean }>(`/transactions/${id}/exclude`, {
+      method: 'POST',
+    }),
+
+  includeTransaction: (id: string) =>
+    request<{ success: boolean; id: string; is_excluded: boolean }>(`/transactions/${id}/include`, {
+      method: 'POST',
+    }),
+
+  bulkExcludeTransactions: (criteria: {
+    transaction_ids?: string[];
+    amount_threshold?: number;
+    merchant_name?: string;
+  }) =>
+    request<{ success: boolean; updated: number }>('/transactions/bulk/exclude', {
+      method: 'POST',
+      body: JSON.stringify(criteria),
+    }),
+
+  bulkIncludeTransactions: (criteria: {
+    transaction_ids?: string[];
+    all?: boolean;
+  }) =>
+    request<{ success: boolean; updated: number }>('/transactions/bulk/include', {
+      method: 'POST',
+      body: JSON.stringify(criteria),
+    }),
+
   // Transaction Meta
   updateTransactionMeta: (id: string, data: UpdateTransactionMetaRequest) =>
     request<TransactionWithMeta>(`/transaction-meta/${id}`, {
@@ -408,5 +438,18 @@ export const api = {
   getAnalyticsCompare: (query: { current_start: string; current_end: string; previous_start: string; previous_end: string }) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<AnalyticsCompareResponse>(`/analytics/compare${qs}`);
+  },
+
+  getAnalyticsFunFacts: (query: { date_from?: string; date_to?: string }) => {
+    const qs = buildQuery(toQueryRecord(query));
+    return request<{
+      facts: Array<{
+        id: string;
+        icon: string;
+        title: string;
+        value: string;
+        description: string;
+      }>;
+    }>(`/analytics/fun-facts${qs}`);
   },
 };

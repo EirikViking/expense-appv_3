@@ -36,6 +36,7 @@ export interface Transaction {
   source_file_hash: string;
   raw_json: string;
   created_at: string;
+  is_excluded: boolean;
 }
 
 // Enriched transaction with metadata joined
@@ -69,6 +70,7 @@ export interface Category {
   icon: string | null;
   sort_order: number;
   created_at: string;
+  is_transfer: boolean;
 }
 
 export interface CategoryWithChildren extends Category {

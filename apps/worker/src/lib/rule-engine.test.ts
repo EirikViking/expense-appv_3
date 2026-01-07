@@ -18,6 +18,7 @@ function createTransaction(overrides: Partial<Transaction> = {}): Transaction {
     source_file_hash: 'file-hash-1',
     raw_json: '{}',
     created_at: '2024-01-15T12:00:00Z',
+    is_excluded: false,
     ...overrides,
   };
 }
