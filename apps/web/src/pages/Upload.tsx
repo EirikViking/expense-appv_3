@@ -41,15 +41,20 @@ export function UploadPage() {
 
       if (file.name.toLowerCase().endsWith('.xlsx')) {
         // Parse XLSX in browser
-        const { transactions, error } = parseXlsxFile(arrayBuffer);
+        const { transactions, error, debugInfo, detectedFormat } = parseXlsxFile(arrayBuffer);
 
         if (error) {
+          console.error(`[XLSX Parse Error] ${filename}: ${error}`);
+          if (debugInfo) {
+            console.error(`[XLSX Debug] ${debugInfo}`);
+          }
           updateResult(filename, { status: 'error', error });
           return;
         }
 
-        if (DEV_LOGS) {
-          console.log(`[DEV] Parsed ${transactions.length} transactions from XLSX`);
+        if (DEV_LOGS || detectedFormat) {
+          console.log(`[XLSX Parser] ${filename}: Detected format: ${detectedFormat}`);
+          console.log(`[XLSX Parser] Parsed ${transactions.length} transactions from XLSX`);
         }
 
         // Send to API
@@ -142,11 +147,10 @@ export function UploadPage() {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-          isDragging
+        className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${isDragging
             ? 'border-blue-500 bg-blue-50'
             : 'border-gray-300 hover:border-gray-400'
-        }`}
+          }`}
       >
         <div className="space-y-4">
           <div className="text-gray-600">
@@ -178,13 +182,12 @@ export function UploadPage() {
           {results.map((result, index) => (
             <div
               key={`${result.filename}-${index}`}
-              className={`p-4 rounded-lg border ${
-                result.status === 'processing'
+              className={`p-4 rounded-lg border ${result.status === 'processing'
                   ? 'bg-gray-50 border-gray-200'
                   : result.status === 'success'
-                  ? 'bg-green-50 border-green-200'
-                  : 'bg-red-50 border-red-200'
-              }`}
+                    ? 'bg-green-50 border-green-200'
+                    : 'bg-red-50 border-red-200'
+                }`}
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium text-gray-900">{result.filename}</span>
