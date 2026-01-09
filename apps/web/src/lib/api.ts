@@ -43,10 +43,7 @@ import type {
   RecurringItem,
   AnalyticsCompareResponse,
 } from '@expense/shared';
-
-// In dev mode, use /api which gets proxied by Vite to the worker
-// In production, use the configured API URL
-const API_URL = import.meta.env.DEV ? '/api' : (import.meta.env.VITE_API_URL || '');
+import { getApiBaseUrl } from './version';
 
 // Token storage key
 const AUTH_TOKEN_KEY = 'expense_auth_token';
@@ -85,7 +82,8 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const apiUrl = getApiBaseUrl();
+  const response = await fetch(`${apiUrl}${endpoint}`, {
     ...options,
     headers: {
       ...headers,
