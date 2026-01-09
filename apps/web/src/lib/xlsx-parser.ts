@@ -132,8 +132,13 @@ function parseNorwegianDate(dateStr: string): string | null {
     }
 
     if (typeof value === 'string') {
-      // Remove spaces (thousands separators) and replace comma with dot
-      const cleaned = value.trim().replace(/\s/g, '').replace(',', '.');
+      // Remove spaces (thousands separators), currency markers, and replace comma with dot
+      const cleaned = value
+        .trim()
+        .replace(/\s/g, '')
+        .replace(/(nok|kr)$/i, '')
+        .replace(',', '.')
+        .replace(/^\+/, '');
       const num = parseFloat(cleaned);
       return isNaN(num) ? null : num;
     }
@@ -173,9 +178,9 @@ function parseNorwegianDate(dateStr: string): string | null {
   function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | HeadersOnlyResult {
     const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
 
-    // Scan first 20 rows for header
+    // Scan first 50 rows for header
     let lastRowHeaders: string[] = [];
-    for (let row = range.s.r; row <= Math.min(range.e.r, 20); row++) {
+    for (let row = range.s.r; row <= Math.min(range.e.r, 50); row++) {
       const headers: string[] = [];
 
       // Collect all headers in this row
@@ -217,6 +222,8 @@ function parseNorwegianDate(dateStr: string): string | null {
   // Try to detect column types from data (for headerless files)
   function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
     const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+    const dateStringPattern = /^(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}|\d{4}-\d{2}-\d{2})$/;
+    const amountStringPattern = /^[+-]?\d[\d\s]*(?:[.,]\d{1,2})?(?:\s*(?:kr|nok))?$/i;
 
     // Look at first 5 rows to understand data patterns
     const columnTypes: Map<number, { hasDate: boolean; hasAmount: boolean; hasText: boolean }> = new Map();
@@ -237,10 +244,17 @@ function parseNorwegianDate(dateStr: string): string | null {
         // Check if it's a monetary amount (negative number or small positive)
         else if (typeof value === 'number' && (value < 0 || (value > 0 && value < 100000))) {
           types.hasAmount = true;
-        }
-        // Check if it's text
-        else if (typeof value === 'string' && value.length > 2) {
-          types.hasText = true;
+        } else if (typeof value === 'string') {
+          const trimmed = value.trim();
+          const numericValue = parseFloat(trimmed.replace(',', '.'));
+
+          if (dateStringPattern.test(trimmed) || (numericValue > 30000 && numericValue < 100000)) {
+            types.hasDate = true;
+          } else if (amountStringPattern.test(trimmed)) {
+            types.hasAmount = true;
+          } else if (trimmed.length > 2) {
+            types.hasText = true;
+          }
         }
 
         columnTypes.set(col, types);
@@ -312,7 +326,7 @@ function parseNorwegianDate(dateStr: string): string | null {
         const headersFound = (mapping && 'foundHeaders' in mapping) ? mapping.foundHeaders : [];
         const headersList = headersFound.length > 0
           ? `Headers found: [${headersFound.slice(0, 10).join(', ')}${headersFound.length > 10 ? '...' : ''}]`
-          : 'No headers detected in first 20 rows';
+          : 'No headers detected in first 50 rows';
         return {
           transactions: [],
           error: `Could not detect required columns (need Date + Amount). ${headersList}`,
@@ -470,4 +484,3 @@ function parseNorwegianDate(dateStr: string): string | null {
       return { transactions: [], error: `Failed to parse XLSX: ${message}` };
     }
   }
-
