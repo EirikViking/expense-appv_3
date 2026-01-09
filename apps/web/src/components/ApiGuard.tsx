@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
-import { isApiUrlConfigured, getApiBaseUrl, getVersionString } from '@/lib/version';
+import { isApiUrlConfigured, getApiBaseUrl, getStoredApiUrl, getVersionString, setStoredApiUrl } from '@/lib/version';
 
 /**
  * API Configuration Guard Screen
@@ -8,6 +9,27 @@ import { isApiUrlConfigured, getApiBaseUrl, getVersionString } from '@/lib/versi
 export function ApiGuardScreen() {
     const apiUrl = getApiBaseUrl();
     const versionString = getVersionString();
+    const [customUrl, setCustomUrl] = useState(getStoredApiUrl() || '');
+    const [saved, setSaved] = useState(false);
+    const [error, setError] = useState('');
+
+    const handleSave = () => {
+        const nextUrl = customUrl.trim();
+        if (!nextUrl) {
+            setError('Enter the API URL.');
+            setSaved(false);
+            return;
+        }
+        if (!nextUrl.startsWith('http')) {
+            setError('URL must start with http:// or https://');
+            setSaved(false);
+            return;
+        }
+        setStoredApiUrl(nextUrl);
+        setSaved(true);
+        setError('');
+        window.location.reload();
+    };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-8">
@@ -45,6 +67,41 @@ export function ApiGuardScreen() {
                             <li>The value should be the Worker URL (e.g., <code className="bg-gray-900 px-1 py-0.5 rounded text-green-400">https://expense-api.{'{your-subdomain}'}.workers.dev</code>)</li>
                             <li>Redeploy the Pages site to apply the change (env vars are baked at build time)</li>
                         </ol>
+                    </div>
+
+                    <div className="border-t border-gray-700 pt-4 space-y-3">
+                        <h3 className="text-white font-medium">Temporary override:</h3>
+                        <p className="text-gray-400 text-sm">
+                            If you cannot set environment variables yet, you can store the API URL locally in this browser.
+                        </p>
+                        <input
+                            type="url"
+                            value={customUrl}
+                            onChange={(event) => {
+                                setCustomUrl(event.target.value);
+                                setSaved(false);
+                                setError('');
+                            }}
+                            placeholder="https://expense-api.your-subdomain.workers.dev"
+                            className="w-full bg-gray-900 text-gray-100 border border-gray-700 rounded px-3 py-2 text-sm"
+                        />
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handleSave}
+                                className="px-3 py-2 text-sm rounded bg-blue-600 hover:bg-blue-500 text-white"
+                            >
+                                Save API URL
+                            </button>
+                            {saved && (
+                                <span className="text-green-400 text-sm">
+                                    Saved. Reloading now...
+                                </span>
+                            )}
+                        </div>
+                        {error && (
+                            <p className="text-red-400 text-sm">{error}</p>
+                        )}
                     </div>
                 </div>
 
