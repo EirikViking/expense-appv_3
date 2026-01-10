@@ -28,7 +28,7 @@ ENVIRONMENT = "review"
 [[env.review.d1_databases]]
 binding = "DB"
 database_name = "expense-db-review"
-database_id = "REPLACE_WITH_REVIEW_DB_ID"
+database_id = "56454cea-b4b8-4674-a8b0-134340ad7df0"
 
 [dev]
 port = 8788
