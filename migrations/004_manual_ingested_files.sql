@@ -1,8 +1,6 @@
 -- Migration 004: allow manual source type in ingested_files
 PRAGMA foreign_keys=off;
 
-BEGIN TRANSACTION;
-
 CREATE TABLE IF NOT EXISTS ingested_files_new (
   id TEXT PRIMARY KEY,
   file_hash TEXT UNIQUE NOT NULL,
@@ -21,7 +19,5 @@ DROP TABLE ingested_files;
 ALTER TABLE ingested_files_new RENAME TO ingested_files;
 
 CREATE INDEX IF NOT EXISTS idx_ingested_files_hash ON ingested_files(file_hash);
-
-COMMIT;
 
 PRAGMA foreign_keys=on;
