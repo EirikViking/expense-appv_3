@@ -44,7 +44,14 @@ app.use(
 
 // Health check (no auth required)
 app.get('/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const environment = c.env.ENVIRONMENT ?? 'unknown';
+  const versionId = c.env.CF_VERSION_METADATA?.id ?? 'unknown';
+  return c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment,
+    version_id: versionId,
+  });
 });
 
 // Auth routes (no auth required)

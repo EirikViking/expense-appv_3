@@ -405,6 +405,8 @@ export interface TransactionsResponse {
 export interface HealthResponse {
   status: 'ok';
   timestamp: string;
+  environment: string;
+  version_id: string;
 }
 
 export interface ErrorResponse {
