@@ -1,7 +1,8 @@
 name = "expense-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
-version_metadata = true
+[version_metadata]
+binding = "CF_VERSION_METADATA"
 
 [vars]
 ADMIN_PASSWORD = ""
