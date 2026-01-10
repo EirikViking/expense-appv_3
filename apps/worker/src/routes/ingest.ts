@@ -215,7 +215,7 @@ ingest.post('/xlsx', async (c) => {
     }
 
     // Store in R2 if available
-    await storeFileInR2(c.env.BUCKET, 'xlsx', file_hash, filename, JSON.stringify(body));
+    await storeFileInR2(c.env.BUCKET, 'xlsx', file_hash, filename, JSON.stringify(bodyResult.data));
 
     const response: IngestResponse = {
       inserted,
