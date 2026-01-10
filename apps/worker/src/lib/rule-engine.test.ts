@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Rule, Transaction } from '@expense/shared';
-import { getMatchingRules } from './rule-engine';
+import { applyRulesToTransaction, getMatchingRules } from './rule-engine';
 
 // Helper to create a test transaction
 function createTransaction(overrides: Partial<Transaction> = {}): Transaction {
@@ -40,6 +40,48 @@ function createRule(overrides: Partial<Rule> = {}): Rule {
     updated_at: '2024-01-01T00:00:00Z',
     ...overrides,
   };
+}
+
+class MockD1 {
+  private meta = new Map<
+    string,
+    { category_id: string | null; merchant_id: string | null; notes: string | null; is_recurring: number }
+  >();
+  private tags = new Set<string>();
+
+  getMeta(transactionId: string) {
+    return this.meta.get(transactionId);
+  }
+
+  prepare(sql: string) {
+    const normalized = sql.trim().toLowerCase();
+    return {
+      bind: (...params: unknown[]) => ({
+        first: async () => {
+          if (normalized.startsWith('select 1 from transaction_meta')) {
+            return this.meta.has(params[0] as string) ? { exists: 1 } : null;
+          }
+          return null;
+        },
+        run: async () => {
+          if (normalized.startsWith('insert into transaction_meta')) {
+            const [transactionId, categoryId, merchantId, notes, isRecurring] = params;
+            this.meta.set(transactionId as string, {
+              category_id: (categoryId as string) || null,
+              merchant_id: (merchantId as string) || null,
+              notes: (notes as string) || null,
+              is_recurring: Number(isRecurring),
+            });
+          } else if (normalized.startsWith('insert or ignore into transaction_tags')) {
+            const [transactionId, tagId] = params;
+            this.tags.add(`${transactionId as string}:${tagId as string}`);
+          }
+          return { success: true };
+        },
+        all: async () => ({ results: [] }),
+      }),
+    };
+  }
 }
 
 describe('Rule Engine', () => {
@@ -274,6 +316,25 @@ describe('Rule Engine', () => {
       const actions = getMatchingRules(tx, rules);
 
       expect(actions).toHaveLength(1);
+    });
+  });
+
+  describe('applyRulesToTransaction', () => {
+    it('stores category metadata when rule matches', async () => {
+      const db = new MockD1();
+      const tx = createTransaction({ description: 'KIWI 505 BARCODE/OSLO/NO' });
+      const rules = [
+        createRule({
+          match_value: 'KIWI',
+          action_value: 'cat_food_groceries',
+        }),
+      ];
+
+      const result = await applyRulesToTransaction(db as unknown as D1Database, tx, rules);
+
+      expect(result.updated).toBe(true);
+      const meta = db.getMeta(tx.id);
+      expect(meta?.category_id).toBe('cat_food_groceries');
     });
   });
 });

@@ -3,7 +3,6 @@ import {
   analyticsQuerySchema,
   compareQuerySchema,
   type AnalyticsSummary,
-  type CategoryBreakdown,
   type MerchantBreakdown,
   type TimeSeriesPoint,
   type AnomalyItem,
@@ -11,6 +10,7 @@ import {
   type SubscriptionDetection,
 } from '@expense/shared';
 import type { Env } from '../types';
+import { buildCategoryBreakdown } from '../lib/analytics';
 
 const analytics = new Hono<{ Bindings: Env }>();
 
@@ -189,20 +189,9 @@ analytics.get('/by-category', async (c) => {
         count: number;
       }>();
 
-    // Calculate percentages
-    const grandTotal = (result.results || []).reduce((sum, r) => sum + r.total, 0);
+    const { categories, total } = buildCategoryBreakdown(result.results || []);
 
-    const categories: CategoryBreakdown[] = (result.results || []).map(r => ({
-      category_id: r.category_id,
-      category_name: r.category_name,
-      category_color: r.category_color,
-      parent_id: r.parent_id,
-      total: r.total,
-      count: r.count,
-      percentage: grandTotal > 0 ? (r.total / grandTotal) * 100 : 0,
-    }));
-
-    return c.json({ categories, total: grandTotal });
+    return c.json({ categories, total });
   } catch (error) {
     console.error('Analytics by-category error:', error);
     return c.json({ error: 'Internal server error' }, 500);
