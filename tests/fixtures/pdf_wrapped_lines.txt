@@ -1,0 +1,6 @@
+Kontobevegelser
+15.01.2024  KIWI 505 BARCOD/OSLO/NO
+-96,42
+16.01.2024  REMA 1000 OSLO                  -120,00
+Side 1 av 2
+Saldo 12 345,67

@@ -1,0 +1,8 @@
+[
+  ["Storebrand Kreditkort Export"],
+  [""],
+  ["TxDate", "Narrative", "ValueNOK", "Curr"],
+  ["2024-01-15", "KIWI 505 BARCOD/OSLO/NO", "-96.42", "NOK"],
+  ["2024-01-16", "REMA 1000 OSLO", "-120.00", "NOK"],
+  ["2024-01-17", "SALARY COMPANY AS", "45678.90", "NOK"]
+]

@@ -14,6 +14,16 @@ interface FileResult {
   error?: string;
 }
 
+const SKIPPED_SUMMARY_LABELS = [
+  ['header', 'header rows'],
+  ['section_marker', 'section markers'],
+  ['page_number', 'page numbers'],
+  ['no_date', 'missing date'],
+  ['no_amount', 'missing amount'],
+  ['parse_failed', 'parse failed'],
+  ['excluded_pattern', 'excluded patterns'],
+] as const;
+
 export function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [results, setResults] = useState<FileResult[]>([]);
@@ -21,6 +31,25 @@ export function UploadPage() {
   const updateResult = (filename: string, update: Partial<FileResult>) => {
     setResults((prev) =>
       prev.map((r) => (r.filename === filename ? { ...r, ...update } : r))
+    );
+  };
+
+  const renderSkippedSummary = (summary?: IngestResponse['skipped_lines_summary']) => {
+    if (!summary) return null;
+    const summaryItems = SKIPPED_SUMMARY_LABELS.filter(([key]) => summary[key] > 0);
+    if (summaryItems.length === 0) return null;
+
+    return (
+      <div className="mt-2 text-xs text-gray-500">
+        <p className="font-medium text-gray-700">Skipped line reasons:</p>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          {summaryItems.map(([key, label]) => (
+            <span key={key}>
+              {summary[key]} {label}
+            </span>
+          ))}
+        </div>
+      </div>
     );
   };
 
@@ -228,6 +257,7 @@ export function UploadPage() {
                       )}
                     </div>
                   )}
+                  {renderSkippedSummary(result.result.skipped_lines_summary)}
                 </div>
               )}
 

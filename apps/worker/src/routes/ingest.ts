@@ -6,7 +6,7 @@ import {
   generateId,
   type IngestResponse,
 } from '@expense/shared';
-import { parsePdfText } from '../lib/pdf-parser';
+import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
@@ -63,6 +63,28 @@ async function checkTxDuplicate(db: D1Database, txHash: string): Promise<boolean
     .bind(txHash)
     .first();
   return result !== null;
+}
+
+function summarizeSkippedLines(skippedLines?: SkippedLine[]): IngestResponse['skipped_lines_summary'] | undefined {
+  if (!skippedLines || skippedLines.length === 0) return undefined;
+
+  const summary = {
+    header: 0,
+    section_marker: 0,
+    page_number: 0,
+    no_date: 0,
+    no_amount: 0,
+    parse_failed: 0,
+    excluded_pattern: 0,
+  };
+
+  for (const line of skippedLines) {
+    if (line.reason in summary) {
+      summary[line.reason as keyof typeof summary] += 1;
+    }
+  }
+
+  return summary;
 }
 
 // Insert transaction
@@ -183,6 +205,7 @@ ingest.post('/xlsx', async (c) => {
       skipped_duplicates,
       skipped_invalid,
       file_duplicate: false,
+      skipped_lines_summary: summarizeSkippedLines(skipped_lines),
     };
 
     return c.json(response);
