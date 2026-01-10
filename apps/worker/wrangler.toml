@@ -1,6 +1,7 @@
 name = "expense-api"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
+version_metadata = true
 
 [vars]
 ADMIN_PASSWORD = ""
@@ -15,6 +16,19 @@ database_id = "1002bca0-397d-4065-897e-447b1d48cd2e"
 # [[r2_buckets]]
 # binding = "BUCKET"
 # bucket_name = "expense-files"
+
+[env.review]
+name = "expense-api-review"
+
+[env.review.vars]
+ADMIN_PASSWORD = "expense-review-2024"
+JWT_SECRET = "jwt-review-secret-expense-api-2024"
+ENVIRONMENT = "review"
+
+[[env.review.d1_databases]]
+binding = "DB"
+database_name = "expense-db-review"
+database_id = "REPLACE_WITH_REVIEW_DB_ID"
 
 [dev]
 port = 8788

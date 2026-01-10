@@ -3,6 +3,11 @@ export interface Env {
   BUCKET?: R2Bucket;
   ADMIN_PASSWORD: string;
   JWT_SECRET: string;
+  ENVIRONMENT?: string;
+  CF_VERSION_METADATA?: {
+    id: string;
+    tag?: string;
+  };
 }
 
 export interface JwtPayload {
