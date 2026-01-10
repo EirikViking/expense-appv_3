@@ -6,8 +6,10 @@ import {
   computeTxHash,
   generateId,
   type IngestResponse,
+  type Transaction,
 } from '@expense/shared';
 import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
+import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
@@ -98,6 +100,28 @@ function summarizeSkippedLines(skippedLines?: SkippedLine[]): IngestResponse['sk
   }
 
   return summary;
+}
+
+async function applyRulesForFile(
+  db: D1Database,
+  fileHash: string
+): Promise<{ processed: number; updated: number; errors: number }> {
+  const enabledRules = await getEnabledRules(db);
+  if (enabledRules.length === 0) {
+    return { processed: 0, updated: 0, errors: 0 };
+  }
+
+  const txResult = await db
+    .prepare('SELECT * FROM transactions WHERE source_file_hash = ?')
+    .bind(fileHash)
+    .all<Transaction>();
+
+  const transactions = txResult.results || [];
+  if (transactions.length === 0) {
+    return { processed: 0, updated: 0, errors: 0 };
+  }
+
+  return applyRulesToBatch(db, transactions, enabledRules);
 }
 
 // Insert transaction
@@ -214,6 +238,14 @@ ingest.post('/xlsx', async (c) => {
       }
     }
 
+    if (inserted > 0) {
+      try {
+        await applyRulesForFile(c.env.DB, file_hash);
+      } catch (error) {
+        console.error('Apply rules error (xlsx):', error);
+      }
+    }
+
     // Store in R2 if available
     await storeFileInR2(c.env.BUCKET, 'xlsx', file_hash, filename, JSON.stringify(bodyResult.data));
 
@@ -316,6 +348,14 @@ ingest.post('/pdf', async (c) => {
         inserted++;
       } catch {
         skipped_invalid++;
+      }
+    }
+
+    if (inserted > 0) {
+      try {
+        await applyRulesForFile(c.env.DB, file_hash);
+      } catch (error) {
+        console.error('Apply rules error (pdf):', error);
       }
     }
 
