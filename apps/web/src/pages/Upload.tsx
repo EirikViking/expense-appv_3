@@ -27,6 +27,7 @@ const SKIPPED_SUMMARY_LABELS = [
 export function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [results, setResults] = useState<FileResult[]>([]);
+  const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
 
   const updateResult = (filename: string, update: Partial<FileResult>) => {
     setResults((prev) =>
@@ -34,8 +35,11 @@ export function UploadPage() {
     );
   };
 
-  const renderSkippedSummary = (summary?: IngestResponse['skipped_lines_summary']) => {
-    if (!summary) return null;
+  const renderSkippedSummary = (
+    summary: IngestResponse['skipped_lines_summary'] | undefined,
+    showDetails: boolean
+  ) => {
+    if (!summary || !showDetails) return null;
     const summaryItems = SKIPPED_SUMMARY_LABELS.filter(([key]) => summary[key] > 0);
     if (summaryItems.length === 0) return null;
 
@@ -51,6 +55,10 @@ export function UploadPage() {
         </div>
       </div>
     );
+  };
+
+  const toggleDetails = (key: string) => {
+    setDetailsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const processFile = useCallback(async (file: File) => {
@@ -208,67 +216,89 @@ export function UploadPage() {
       {results.length > 0 && (
         <div className="mt-8 space-y-4">
           <h2 className="text-lg font-semibold text-gray-900">Upload Results</h2>
-          {results.map((result, index) => (
-            <div
-              key={`${result.filename}-${index}`}
-              className={`p-4 rounded-lg border ${result.status === 'processing'
-                  ? 'bg-gray-50 border-gray-200'
-                  : result.status === 'success'
-                    ? 'bg-green-50 border-green-200'
-                    : 'bg-red-50 border-red-200'
-                }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-gray-900">{result.filename}</span>
-                {result.status === 'processing' && (
-                  <span className="text-gray-500">Processing...</span>
+          {results.map((result, index) => {
+            const resultKey = `${result.filename}-${index}`;
+            const showDetails = Boolean(detailsOpen[resultKey]);
+            const hasDetails = Boolean(
+              result.status === 'success' &&
+                result.result &&
+                !result.result.file_duplicate &&
+                (result.result.skipped_invalid > 0 || result.result.skipped_lines_summary)
+            );
+
+            return (
+              <div
+                key={resultKey}
+                className={`p-4 rounded-lg border ${result.status === 'processing'
+                    ? 'bg-gray-50 border-gray-200'
+                    : result.status === 'success'
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-red-50 border-red-200'
+                  }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-900">{result.filename}</span>
+                  {result.status === 'processing' && (
+                    <span className="text-gray-500">Processing...</span>
+                  )}
+                </div>
+
+                {result.status === 'success' && result.result && (
+                  <div className="mt-2 text-sm">
+                    {result.result.file_duplicate ? (
+                      <p className="text-amber-600 font-medium">
+                        File already uploaded (duplicate)
+                      </p>
+                    ) : (
+                      <div className="space-y-1 text-gray-600">
+                        <p>
+                          <span className="text-green-600 font-medium">
+                            {result.result.inserted}
+                          </span>{' '}
+                          transactions inserted
+                        </p>
+                        {result.result.skipped_duplicates > 0 && (
+                          <p>
+                            <span className="text-amber-600 font-medium">
+                              {result.result.skipped_duplicates}
+                            </span>{' '}
+                            duplicates skipped
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {hasDetails && (
+                      <button
+                        type="button"
+                        onClick={() => toggleDetails(resultKey)}
+                        className="mt-2 text-xs font-medium text-gray-600 hover:text-gray-800"
+                      >
+                        {showDetails ? 'Skjul detaljer' : 'Vis detaljer'}
+                      </button>
+                    )}
+
+                    {showDetails && result.result.skipped_invalid > 0 && (
+                      <p className="mt-2 text-xs text-gray-600">
+                        {result.result.skipped_invalid} invalid rows skipped
+                      </p>
+                    )}
+                    {renderSkippedSummary(result.result.skipped_lines_summary, showDetails)}
+                  </div>
+                )}
+
+                {result.status === 'error' && (
+                  <p className="mt-2 text-sm text-red-600">{result.error}</p>
                 )}
               </div>
-
-              {result.status === 'success' && result.result && (
-                <div className="mt-2 text-sm">
-                  {result.result.file_duplicate ? (
-                    <p className="text-amber-600 font-medium">
-                      File already uploaded (duplicate)
-                    </p>
-                  ) : (
-                    <div className="space-y-1 text-gray-600">
-                      <p>
-                        <span className="text-green-600 font-medium">
-                          {result.result.inserted}
-                        </span>{' '}
-                        transactions inserted
-                      </p>
-                      {result.result.skipped_duplicates > 0 && (
-                        <p>
-                          <span className="text-amber-600 font-medium">
-                            {result.result.skipped_duplicates}
-                          </span>{' '}
-                          duplicates skipped
-                        </p>
-                      )}
-                      {result.result.skipped_invalid > 0 && (
-                        <p>
-                          <span className="text-amber-600 font-medium">
-                            {result.result.skipped_invalid}
-                          </span>{' '}
-                          invalid rows skipped
-                        </p>
-                      )}
-                    </div>
-                  )}
-                  {renderSkippedSummary(result.result.skipped_lines_summary)}
-                </div>
-              )}
-
-              {result.status === 'error' && (
-                <p className="mt-2 text-sm text-red-600">{result.error}</p>
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           <button
-            onClick={() => setResults([])}
+            onClick={() => {
+              setResults([]);
+              setDetailsOpen({});
+            }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
             Clear results
