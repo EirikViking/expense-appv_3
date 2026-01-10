@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import {
   xlsxIngestRequestSchema,
   pdfIngestRequestSchema,
@@ -10,6 +11,18 @@ import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
+
+async function parseJsonBody<T>(c: Context): Promise<
+  { ok: true; data: T } | { ok: false; error: string; details?: string }
+> {
+  try {
+    const data = await c.req.json<T>();
+    return { ok: true, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid JSON body';
+    return { ok: false, error: 'Invalid JSON', details: message };
+  }
+}
 
 // Helper to store file in R2 if available
 async function storeFileInR2(
@@ -132,12 +145,16 @@ async function insertTransaction(
 // XLSX ingestion endpoint
 ingest.post('/xlsx', async (c) => {
   try {
-    const body = await c.req.json();
-    const parsed = xlsxIngestRequestSchema.safeParse(body);
+    const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
+    if (!bodyResult.ok) {
+      return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
+    }
+
+    const parsed = xlsxIngestRequestSchema.safeParse(bodyResult.data);
 
     if (!parsed.success) {
       const errorMessage = parsed.error.errors[0]?.message || 'Invalid request';
-      return c.json({ error: errorMessage, details: parsed.error.message }, 400);
+      return c.json({ error: errorMessage, code: 'invalid_request', details: parsed.error.message }, 400);
     }
 
     const { file_hash, filename, transactions } = parsed.data;
@@ -205,25 +222,28 @@ ingest.post('/xlsx', async (c) => {
       skipped_duplicates,
       skipped_invalid,
       file_duplicate: false,
-      skipped_lines_summary: summarizeSkippedLines(skipped_lines),
     };
 
     return c.json(response);
   } catch (error) {
     console.error('XLSX ingest error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    return c.json({ error: 'Internal server error', code: 'internal_error' }, 500);
   }
 });
 
 // PDF ingestion endpoint
 ingest.post('/pdf', async (c) => {
   try {
-    const body = await c.req.json();
-    const parsed = pdfIngestRequestSchema.safeParse(body);
+    const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
+    if (!bodyResult.ok) {
+      return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
+    }
+
+    const parsed = pdfIngestRequestSchema.safeParse(bodyResult.data);
 
     if (!parsed.success) {
       const errorMessage = parsed.error.errors[0]?.message || 'Invalid request';
-      return c.json({ error: errorMessage, details: parsed.error.message }, 400);
+      return c.json({ error: errorMessage, code: 'invalid_request', details: parsed.error.message }, 400);
     }
 
     const { file_hash, filename, extracted_text } = parsed.data;
@@ -312,7 +332,7 @@ ingest.post('/pdf', async (c) => {
     return c.json(response);
   } catch (error) {
     console.error('PDF ingest error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    return c.json({ error: 'Internal server error', code: 'internal_error' }, 500);
   }
 });
 
