@@ -16,6 +16,7 @@ export interface SkippedLine {
   line: string;
   reason: 'header' | 'section_marker' | 'page_number' | 'empty' | 'no_date' | 'no_amount' | 'parse_failed' | 'excluded_pattern';
   lineNumber: number;
+  tokens?: string[];
 }
 
 export interface PdfParseResult {
@@ -57,6 +58,7 @@ const TX_PATTERNS = [
 
 // Pattern to find dates in text
 const DATE_PATTERN = /(\d{2})[.\-\/](\d{2})[.\-\/](\d{2,4})/g;
+const INLINE_DATE_PATTERN = /\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}/;
 
 // Pattern to find amounts (Norwegian format: -1 234,56 or -1234.56 or 1234 kr)
 const AMOUNT_PATTERN = /(-?\d[\d\s]*[,.]?\d{0,2})\s*(?:kr)?\s*$/i;
@@ -105,6 +107,10 @@ function parseNorwegianDate(day: string, month: string, year: string): string {
     fullYear = yearNum > 50 ? `19${year}` : `20${year}`;
   }
   return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+}
+
+function tokenizeLine(line: string): string[] {
+  return line.trim().split(/\s+/).filter(Boolean).slice(0, 8);
 }
 
 /**
@@ -212,6 +218,91 @@ function isSectionMarker(lineLower: string): boolean {
     lineLower.includes('bevegelser');
 }
 
+function isNonTransactionLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+
+  const lineLower = trimmed.toLowerCase();
+  if (isSectionMarker(lineLower)) return true;
+
+  for (const pattern of HEADER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  for (const pattern of PAGE_NUMBER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  for (const pattern of EXCLUDED_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function mergeWrappedLines(lines: string[]): string[] {
+  const merged: string[] = [];
+  let buffer: string | null = null;
+
+  const flushBuffer = () => {
+    if (buffer) {
+      merged.push(buffer);
+      buffer = null;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const hasDate = INLINE_DATE_PATTERN.test(line);
+    const hasAmount = AMOUNT_PATTERN.test(line);
+
+    if (buffer) {
+      if (hasDate) {
+        flushBuffer();
+        if (hasDate && !hasAmount) {
+          buffer = line;
+          continue;
+        }
+        merged.push(line);
+        continue;
+      }
+
+      if (isNonTransactionLine(line)) {
+        flushBuffer();
+        merged.push(line);
+        continue;
+      }
+
+      const candidate = `${buffer} ${line}`.replace(/\s+/g, ' ').trim();
+      if (AMOUNT_PATTERN.test(candidate)) {
+        merged.push(candidate);
+        buffer = null;
+      } else {
+        buffer = candidate;
+      }
+      continue;
+    }
+
+    if (hasDate && !hasAmount) {
+      buffer = line;
+      continue;
+    }
+
+    merged.push(line);
+  }
+
+  flushBuffer();
+  return merged;
+}
+
 export function parsePdfText(extractedText: string): PdfParseResult {
   // Check for section markers (case-insensitive)
   const textLower = extractedText.toLowerCase();
@@ -241,6 +332,7 @@ export function parsePdfText(extractedText: string): PdfParseResult {
     // Try splitting on date patterns to find transaction boundaries
     lines = extractedText.split(/(?=\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4})/).map(l => l.trim()).filter(Boolean);
   }
+  lines = mergeWrappedLines(lines);
 
   let currentStatus: TransactionStatus = 'booked'; // Default to booked if no section marker before transactions
   let dateContainingLines = 0;
@@ -260,6 +352,7 @@ export function parsePdfText(extractedText: string): PdfParseResult {
         line: line.substring(0, 100), // Truncate long lines
         reason: 'section_marker',
         lineNumber: lineNum + 1,
+        tokens: tokenizeLine(line),
       });
       continue;
     }
@@ -289,6 +382,7 @@ export function parsePdfText(extractedText: string): PdfParseResult {
           line: line.substring(0, 100), // Truncate long lines
           reason,
           lineNumber: lineNum + 1,
+          tokens: tokenizeLine(line),
         });
       }
     }

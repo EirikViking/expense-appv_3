@@ -261,6 +261,15 @@ export const ingestResponseSchema = z.object({
   skipped_duplicates: z.number(),
   skipped_invalid: z.number(),
   file_duplicate: z.boolean(),
+  skipped_lines_summary: z.object({
+    header: z.number(),
+    section_marker: z.number(),
+    page_number: z.number(),
+    no_date: z.number(),
+    no_amount: z.number(),
+    parse_failed: z.number(),
+    excluded_pattern: z.number(),
+  }).optional(),
 });
 
 export const healthResponseSchema = z.object({

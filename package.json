@@ -12,6 +12,7 @@
     "build:worker": "pnpm --filter worker build",
     "test": "pnpm --filter worker test",
     "test:watch": "pnpm --filter worker test:watch",
+    "test:parsers": "npx tsx scripts/test-parsers.ts",
     "test:e2e": "npx playwright test",
     "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
     "typecheck": "pnpm -r typecheck",

@@ -1,0 +1,26 @@
+[
+  {
+    "date": "2024-01-16",
+    "amount": -96.42,
+    "currency": "NOK",
+    "description": "KIWI 505 BARCOD/OSLO/NO",
+    "merchant": null,
+    "source": "xlsx"
+  },
+  {
+    "date": "2024-01-17",
+    "amount": -120,
+    "currency": "NOK",
+    "description": "REMA 1000 OSLO",
+    "merchant": null,
+    "source": "xlsx"
+  },
+  {
+    "date": "2024-01-18",
+    "amount": 45678.9,
+    "currency": "NOK",
+    "description": "SALARY COMPANY AS",
+    "merchant": null,
+    "source": "xlsx"
+  }
+]

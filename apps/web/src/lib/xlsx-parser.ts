@@ -18,6 +18,9 @@ export interface XlsxParseResult {
   debugInfo?: string;
 }
 
+const MAX_HEADER_SCAN_ROWS = 50;
+const DATE_VALUE_PATTERN = /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/;
+
 // Possible column name variations for different Norwegian banks
 // EXPANDED to cover Storebrand, DNB, Skandiabanken, Nordea, Sparebank1, etc.
 const COLUMN_VARIATIONS = {
@@ -53,6 +56,18 @@ const COLUMN_VARIATIONS = {
     'Butikk', 'Forhandler', 'Betalingsmottaker',
   ],
 };
+
+function normalizeHeaderValue(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+const ALL_NORMALIZED_HEADERS = new Set(
+  Object.values(COLUMN_VARIATIONS).flatMap((values) => values.map(normalizeHeaderValue))
+);
 
 /**
  * Convert Excel serial date to ISO string (YYYY-MM-DD)
@@ -141,8 +156,23 @@ function parseNorwegianAmount(value: unknown): number | null {
   }
 
   if (typeof value === 'string') {
-    // Remove spaces (thousands separators) and replace comma with dot
-    const cleaned = value.trim().replace(/\s/g, '').replace(',', '.');
+    let cleaned = value.trim();
+    if (!cleaned) return null;
+
+    const hasComma = cleaned.includes(',');
+    const hasDot = cleaned.includes('.');
+
+    // Remove spaces (thousands separators)
+    cleaned = cleaned.replace(/\s/g, '');
+
+    // If both comma and dot are present, assume dot is thousands separator
+    if (hasComma && hasDot) {
+      cleaned = cleaned.replace(/\./g, '');
+    }
+
+    // Replace comma with dot for decimals
+    cleaned = cleaned.replace(',', '.');
+
     const num = parseFloat(cleaned);
     return isNaN(num) ? null : num;
   }
@@ -150,15 +180,129 @@ function parseNorwegianAmount(value: unknown): number | null {
   return null;
 }
 
+function isLikelyDateValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return false;
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return false;
+    const rounded = Math.round(value);
+    const isInteger = Math.abs(value - rounded) < 0.000001;
+    return isInteger && value >= 30000 && value <= 60000;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    if (DATE_VALUE_PATTERN.test(trimmed)) return true;
+    return parseNorwegianDate(trimmed) !== null;
+  }
+
+  return false;
+}
+
+function isLikelyAmountValue(value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return false;
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return false;
+    const rounded = Math.round(value);
+    const isInteger = Math.abs(value - rounded) < 0.000001;
+    if (isInteger && value >= 30000 && value <= 60000) return false;
+    return true;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    if (DATE_VALUE_PATTERN.test(trimmed)) return false;
+
+    const stripped = trimmed.replace(/\s?(kr|nok)$/i, '').trim();
+    if (/[A-Za-z]/.test(stripped)) return false;
+
+    const normalized = stripped.replace(/\s/g, '');
+    if (!/^-?\d+([,\.]\d{1,2})?$/.test(normalized)) return false;
+    return parseNorwegianAmount(stripped) !== null;
+  }
+
+  return false;
+}
+
+function isLikelyCurrencyValue(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length !== 3) return false;
+  return /^[A-Z]{3}$/.test(trimmed.toUpperCase());
+}
+
+function isLikelyTextValue(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 2) return false;
+  return /[a-z]/.test(normalizeHeaderValue(trimmed));
+}
+
+function analyzeRowValues(values: unknown[]): {
+  dateCount: number;
+  amountCount: number;
+  currencyCount: number;
+  textCount: number;
+  nonEmptyCount: number;
+} {
+  let dateCount = 0;
+  let amountCount = 0;
+  let currencyCount = 0;
+  let textCount = 0;
+  let nonEmptyCount = 0;
+
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    nonEmptyCount++;
+
+    if (isLikelyDateValue(value)) {
+      dateCount++;
+      continue;
+    }
+    if (isLikelyAmountValue(value)) {
+      amountCount++;
+      continue;
+    }
+    if (isLikelyCurrencyValue(value)) {
+      currencyCount++;
+      continue;
+    }
+    if (isLikelyTextValue(value)) {
+      textCount++;
+    }
+  }
+
+  return {
+    dateCount,
+    amountCount,
+    currencyCount,
+    textCount,
+    nonEmptyCount,
+  };
+}
+
+function getRowValues(sheet: XLSX.WorkSheet, range: XLSX.Range, row: number): unknown[] {
+  const values: unknown[] = [];
+  for (let col = range.s.c; col <= range.e.c; col++) {
+    const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+    const cell = sheet[cellRef];
+    values.push(cell && cell.v !== undefined && cell.v !== null ? cell.v : '');
+  }
+  return values;
+}
+
 /**
  * Find which column name matches any of the variations
  */
 function findColumnName(headers: string[], variations: string[]): string | null {
-  const normalizedVariations = variations.map(v => v.toLowerCase());
+  const normalizedVariations = new Set(variations.map(normalizeHeaderValue));
 
   for (const header of headers) {
-    const normalized = header.toLowerCase().trim();
-    if (normalizedVariations.includes(normalized)) {
+    const normalized = normalizeHeaderValue(header);
+    if (normalizedVariations.has(normalized)) {
       return header;
     }
   }
@@ -187,30 +331,36 @@ interface HeadersOnlyResult {
 function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | HeadersOnlyResult {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
 
-  // Scan first 20 rows for header
-  let lastRowHeaders: string[] = [];
-  for (let row = range.s.r; row <= Math.min(range.e.r, 20); row++) {
-    const headers: string[] = [];
+  const maxRow = Math.min(range.e.r, range.s.r + MAX_HEADER_SCAN_ROWS - 1);
+  let bestHeaderRowHeaders: string[] = [];
+  let bestHeaderScore = -1;
 
-    // Collect all cell values in this row
-    for (let col = range.s.c; col <= range.e.c; col++) {
-      const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
-      const cell = sheet[cellRef];
-      headers.push(cell && cell.v !== undefined && cell.v !== null ? String(cell.v).trim() : '');
-    }
+  for (let row = range.s.r; row <= maxRow; row++) {
+    const rowValues = getRowValues(sheet, range, row);
+    const headers = rowValues.map((value) => (value !== null && value !== undefined ? String(value).trim() : ''));
 
-    // Keep track of non-empty headers for debug
     const nonEmptyHeaders = headers.filter(h => h.length > 0);
-    if (nonEmptyHeaders.length > lastRowHeaders.length) {
-      lastRowHeaders = nonEmptyHeaders;
+    if (nonEmptyHeaders.length === 0) continue;
+
+    const analysis = analyzeRowValues(rowValues);
+    const headerMatchCount = headers.reduce((count, header) => {
+      const normalized = normalizeHeaderValue(header);
+      return normalized && ALL_NORMALIZED_HEADERS.has(normalized) ? count + 1 : count;
+    }, 0);
+
+    const looksLikeDataRow = analysis.dateCount > 0 && analysis.amountCount > 0;
+    const isHeaderCandidate = analysis.nonEmptyCount >= 2 && analysis.textCount >= 1 && !looksLikeDataRow;
+    const headerScore = headerMatchCount * 2 + analysis.textCount;
+
+    if (isHeaderCandidate && headerScore > bestHeaderScore) {
+      bestHeaderScore = headerScore;
+      bestHeaderRowHeaders = nonEmptyHeaders;
     }
 
-    // Try to find required columns
     const dateCol = findColumnName(headers, COLUMN_VARIATIONS.DATE);
     const amountCol = findColumnName(headers, COLUMN_VARIATIONS.AMOUNT);
 
-    // We need at least date and amount columns
-    if (dateCol && amountCol) {
+    if (dateCol && amountCol && !looksLikeDataRow) {
       console.log(`[XLSX Parser] Found header row ${row}: Date="${dateCol}", Amount="${amountCol}"`);
       return {
         dateCol,
@@ -220,26 +370,46 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
         currencyCol: findColumnName(headers, COLUMN_VARIATIONS.CURRENCY),
         merchantCol: findColumnName(headers, COLUMN_VARIATIONS.MERCHANT),
         headerRow: row,
-        foundHeaders: headers.filter(h => h.length > 0),
+        foundHeaders: nonEmptyHeaders,
       };
+    }
+
+    if (isHeaderCandidate && (!dateCol || !amountCol)) {
+      const dataMapping = detectColumnsFromData(sheet, { startRow: row + 1, maxRows: 20 });
+      if (dataMapping) {
+        console.log(`[XLSX Parser] Header row inferred at ${row} using data heuristics`);
+        return {
+          ...dataMapping,
+          headerRow: row,
+          foundHeaders: nonEmptyHeaders,
+        };
+      }
     }
   }
 
-  // Return the best row of headers we found for debugging
-  console.log(`[XLSX Parser] No header row found. Best row headers: [${lastRowHeaders.slice(0, 5).join(', ')}...]`);
-  return { foundHeaders: lastRowHeaders };
+  console.log(`[XLSX Parser] No header row found. Best header-like row: [${bestHeaderRowHeaders.slice(0, 5).join(', ')}...]`);
+  return { foundHeaders: bestHeaderRowHeaders };
 }
 
 /**
  * Analyze first few rows to detect column roles based on data types
  * Used for headerless files like some Storebrand exports
  */
-function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
+function detectColumnsFromData(
+  sheet: XLSX.WorkSheet,
+  options?: { startRow?: number; maxRows?: number }
+): ColumnMapping | null {
   const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  const startRow = options?.startRow ?? range.s.r;
+  const maxRows = options?.maxRows ?? 20;
+  const endRow = Math.min(range.e.r, startRow + maxRows - 1);
 
-  console.log(`[XLSX Parser] Attempting headerless detection...`);
+  if (startRow > endRow) {
+    return null;
+  }
 
-  // Track what types of data appear in each column
+  console.log(`[XLSX Parser] Attempting headerless detection (rows ${startRow}-${endRow})...`);
+
   const columnAnalysis: Map<number, {
     dateCount: number;
     amountCount: number;
@@ -248,9 +418,7 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
     samples: unknown[];
   }> = new Map();
 
-  // Analyze first 10 rows (or all rows if less than 10)
-  const maxRows = Math.min(range.e.r, 9);
-  for (let row = range.s.r; row <= maxRows; row++) {
+  for (let row = startRow; row <= endRow; row++) {
     for (let col = range.s.c; col <= range.e.c; col++) {
       const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
       const cell = sheet[cellRef];
@@ -265,25 +433,17 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
         samples: [],
       };
 
-      // Keep samples for debugging
       if (analysis.samples.length < 3) {
         analysis.samples.push(value);
       }
 
-      // Detect date: Excel serial number in typical range for dates (1990-2050)
-      if (typeof value === 'number' && value > 30000 && value < 60000) {
+      if (isLikelyDateValue(value)) {
         analysis.dateCount++;
-      }
-      // Detect amount: any number that's not a date-like serial
-      else if (typeof value === 'number' && (value < 0 || (value > 0 && value < 30000))) {
+      } else if (isLikelyAmountValue(value)) {
         analysis.amountCount++;
-      }
-      // Detect currency code (3-letter uppercase)
-      else if (typeof value === 'string' && /^[A-Z]{3}$/.test(value.trim())) {
+      } else if (isLikelyCurrencyValue(value)) {
         analysis.currencyCount++;
-      }
-      // Detect text (description)
-      else if (typeof value === 'string' && value.trim().length > 2) {
+      } else if (isLikelyTextValue(value)) {
         analysis.textCount++;
       }
 
@@ -291,36 +451,37 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
     }
   }
 
-  // Find best column for each role
   let dateColIdx = -1;
   let amountColIdx = -1;
   let descColIdx = -1;
   let currencyColIdx = -1;
 
-  // Find the column most likely to be dates (highest dateCount and majority are dates)
+  const rowsAnalyzed = Math.max(1, endRow - startRow + 1);
+  const minCount = Math.min(2, rowsAnalyzed);
+
   let maxDateScore = 0;
   for (const [col, analysis] of columnAnalysis) {
     const total = analysis.dateCount + analysis.amountCount + analysis.textCount + analysis.currencyCount;
-    const dateScore = analysis.dateCount / Math.max(total, 1);
-    if (analysis.dateCount >= 2 && dateScore > maxDateScore) {
+    if (total === 0) continue;
+    const dateScore = analysis.dateCount / total;
+    if (analysis.dateCount >= minCount && dateScore >= 0.5 && dateScore > maxDateScore) {
       maxDateScore = dateScore;
       dateColIdx = col;
     }
   }
 
-  // Find the column most likely to be amounts
   let maxAmountScore = 0;
   for (const [col, analysis] of columnAnalysis) {
-    if (col === dateColIdx) continue; // Skip if already assigned to date
+    if (col === dateColIdx) continue;
     const total = analysis.dateCount + analysis.amountCount + analysis.textCount + analysis.currencyCount;
-    const amountScore = analysis.amountCount / Math.max(total, 1);
-    if (analysis.amountCount >= 2 && amountScore > maxAmountScore) {
+    if (total === 0) continue;
+    const amountScore = analysis.amountCount / total;
+    if (analysis.amountCount >= minCount && amountScore >= 0.4 && amountScore > maxAmountScore) {
       maxAmountScore = amountScore;
       amountColIdx = col;
     }
   }
 
-  // Find description column (most text)
   let maxTextCount = 0;
   for (const [col, analysis] of columnAnalysis) {
     if (col === dateColIdx || col === amountColIdx) continue;
@@ -330,16 +491,15 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
     }
   }
 
-  // Find currency column
   for (const [col, analysis] of columnAnalysis) {
     if (col === dateColIdx || col === amountColIdx || col === descColIdx) continue;
-    if (analysis.currencyCount >= 2) {
+    const total = analysis.currencyCount + analysis.textCount + analysis.amountCount + analysis.dateCount;
+    if (analysis.currencyCount >= minCount && (analysis.currencyCount / Math.max(total, 1)) >= 0.5) {
       currencyColIdx = col;
       break;
     }
   }
 
-  // Log analysis results
   for (const [col, analysis] of columnAnalysis) {
     console.log(`[XLSX Parser] Column ${col}: dates=${analysis.dateCount}, amounts=${analysis.amountCount}, text=${analysis.textCount}, currency=${analysis.currencyCount}, samples=${JSON.stringify(analysis.samples)}`);
   }
@@ -353,7 +513,7 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
       bookedDateCol: null,
       currencyCol: currencyColIdx >= 0 ? `__COL_${currencyColIdx}` : null,
       merchantCol: null,
-      headerRow: -1, // No header row
+      headerRow: -1,
       foundHeaders: [],
     };
   }
@@ -368,7 +528,8 @@ function detectColumnsFromData(sheet: XLSX.WorkSheet): ColumnMapping | null {
 function parseHeaderlessFile(
   sheet: XLSX.WorkSheet,
   mapping: ColumnMapping,
-  range: XLSX.Range
+  range: XLSX.Range,
+  startRow: number = range.s.r
 ): ParsedXlsxTransaction[] {
   const transactions: ParsedXlsxTransaction[] = [];
 
@@ -377,9 +538,9 @@ function parseHeaderlessFile(
   const descColIdx = mapping.descriptionCol ? parseInt(mapping.descriptionCol.replace('__COL_', '')) : -1;
   const currencyColIdx = mapping.currencyCol ? parseInt(mapping.currencyCol.replace('__COL_', '')) : -1;
 
-  console.log(`[XLSX Parser] Parsing headerless file: rows ${range.s.r} to ${range.e.r}`);
+  console.log(`[XLSX Parser] Parsing headerless file: rows ${startRow} to ${range.e.r}`);
 
-  for (let row = range.s.r; row <= range.e.r; row++) {
+  for (let row = startRow; row <= range.e.r; row++) {
     // Get cell values directly
     const dateCellRef = XLSX.utils.encode_cell({ r: row, c: dateColIdx });
     const amountCellRef = XLSX.utils.encode_cell({ r: row, c: amountColIdx });
@@ -567,16 +728,17 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
     }
 
     const fullMapping = mapping as ColumnMapping;
-    const isHeaderless = fullMapping.headerRow === -1;
-    const detectedFormat = isHeaderless
-      ? `Headerless file - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol}`
+    const usesIndexMapping = fullMapping.dateCol.startsWith('__COL_') || fullMapping.amountCol.startsWith('__COL_');
+    const detectedFormat = usesIndexMapping
+      ? `Index mapping - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol}${fullMapping.headerRow >= 0 ? ` (header row ${fullMapping.headerRow + 1})` : ''}`
       : `Date: "${fullMapping.dateCol}", Amount: "${fullMapping.amountCol}"${fullMapping.descriptionCol ? `, Desc: "${fullMapping.descriptionCol}"` : ''}`;
     console.log(`[XLSX Parser] Detected format: ${detectedFormat}`);
 
     // Parse transactions based on file type
     let transactions: ParsedXlsxTransaction[];
-    if (isHeaderless) {
-      transactions = parseHeaderlessFile(sheet, fullMapping, range);
+    if (usesIndexMapping) {
+      const startRow = fullMapping.headerRow >= 0 ? fullMapping.headerRow + 1 : range.s.r;
+      transactions = parseHeaderlessFile(sheet, fullMapping, range, startRow);
     } else {
       transactions = parseFileWithHeaders(sheet, fullMapping);
     }
