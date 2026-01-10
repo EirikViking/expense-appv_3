@@ -15,6 +15,7 @@
     "test:parsers": "npx tsx scripts/test-parsers.ts",
     "test:e2e": "npx playwright test",
     "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
+    "verify": "pnpm test:parsers && pnpm --filter worker test",
     "typecheck": "pnpm -r typecheck",
     "setup:local": "pnpm install && pnpm db:migrate:local",
     "db:migrate:local": "pnpm --filter worker db:migrate:local",

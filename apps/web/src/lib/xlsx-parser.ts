@@ -69,6 +69,8 @@ const ALL_NORMALIZED_HEADERS = new Set(
   Object.values(COLUMN_VARIATIONS).flatMap((values) => values.map(normalizeHeaderValue))
 );
 
+const STOREBRAND_CURRENCY_CODES = new Set(['NOK', 'SEK', 'EUR', 'USD']);
+
 /**
  * Convert Excel serial date to ISO string (YYYY-MM-DD)
  * Excel stores dates as number of days since 1900-01-01 (with a leap year bug)
@@ -294,6 +296,16 @@ function getRowValues(sheet: XLSX.WorkSheet, range: XLSX.Range, row: number): un
   return values;
 }
 
+function findFirstNonEmptyRow(sheet: XLSX.WorkSheet, range: XLSX.Range): { row: number; values: unknown[] } | null {
+  for (let row = range.s.r; row <= range.e.r; row++) {
+    const values = getRowValues(sheet, range, row);
+    if (values.some((value) => value !== null && value !== undefined && String(value).trim() !== '')) {
+      return { row, values };
+    }
+  }
+  return null;
+}
+
 /**
  * Find which column name matches any of the variations
  */
@@ -307,6 +319,37 @@ function findColumnName(headers: string[], variations: string[]): string | null 
     }
   }
   return null;
+}
+
+function detectStorebrandHeaderlessFormat(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range
+): ColumnMapping | null {
+  const firstRow = findFirstNonEmptyRow(sheet, range);
+  if (!firstRow) return null;
+
+  const [dateValue, descriptionValue, amountValue, currencyValue] = firstRow.values;
+  const currency = typeof currencyValue === 'string' ? currencyValue.trim().toUpperCase() : '';
+
+  const matchesPattern = isLikelyDateValue(dateValue)
+    && isLikelyTextValue(descriptionValue)
+    && isLikelyAmountValue(amountValue)
+    && STOREBRAND_CURRENCY_CODES.has(currency);
+
+  if (!matchesPattern) return null;
+
+  console.log(`[XLSX Parser] Storebrand headerless format detected at row ${firstRow.row}`);
+
+  return {
+    dateCol: '__COL_0',
+    amountCol: '__COL_2',
+    descriptionCol: '__COL_1',
+    bookedDateCol: null,
+    currencyCol: '__COL_3',
+    merchantCol: null,
+    headerRow: -1,
+    foundHeaders: [],
+  };
 }
 
 // Detailed header row finder with column mapping
@@ -711,6 +754,11 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
       const dataMapping = detectColumnsFromData(sheet);
       if (dataMapping) {
         mapping = dataMapping;
+      } else {
+        const storebrandMapping = detectStorebrandHeaderlessFormat(sheet, range);
+        if (storebrandMapping) {
+          mapping = storebrandMapping;
+        }
       }
     }
 

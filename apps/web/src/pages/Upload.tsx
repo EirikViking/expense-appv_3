@@ -249,7 +249,7 @@ export function UploadPage() {
                       )}
                       {result.result.skipped_invalid > 0 && (
                         <p>
-                          <span className="text-red-600 font-medium">
+                          <span className="text-amber-600 font-medium">
                             {result.result.skipped_invalid}
                           </span>{' '}
                           invalid rows skipped

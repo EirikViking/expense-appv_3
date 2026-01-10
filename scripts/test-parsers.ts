@@ -70,6 +70,7 @@ function runPdfFixture(textFile: string, expectedFile: string) {
 function main() {
   runXlsxFixture('xlsx_headerless_strings.json', 'expected_xlsx_headerless.json');
   runXlsxFixture('xlsx_preamble_unknown_headers.json', 'expected_xlsx_preamble.json');
+  runXlsxFixture('xlsx_storebrand_numeric.json', 'expected_xlsx_storebrand_numeric.json');
   runPdfFixture('pdf_wrapped_lines.txt', 'expected_pdf_wrapped.json');
   console.log('Parser fixtures: all checks passed.');
 }
