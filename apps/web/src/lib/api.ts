@@ -23,6 +23,7 @@ import type {
   Rule,
   CreateRuleRequest,
   UpdateRuleRequest,
+  CreateTransactionRequest,
   ApplyRulesRequest,
   ApplyRulesResponse,
   BudgetsResponse,
@@ -163,7 +164,7 @@ export const api = {
   getTransaction: (id: string) =>
     request<TransactionWithMeta>(`/transactions/${id}`),
 
-  createTransaction: (data: any) =>
+  createTransaction: (data: CreateTransactionRequest) =>
     request<TransactionWithMeta>('/transactions', {
       method: 'POST',
       body: JSON.stringify(data),

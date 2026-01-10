@@ -1,12 +1,16 @@
 import { Hono } from 'hono';
 import {
   transactionsQuerySchema,
+  createTransactionSchema,
+  computeTxHash,
+  generateId,
   type Transaction,
   type TransactionWithMeta,
   type TransactionsResponse,
   DEFAULT_PAGE_SIZE,
 } from '@expense/shared';
 import type { Env } from '../types';
+import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -282,34 +286,92 @@ transactions.get('/:id', async (c) => {
 transactions.post('/', async (c) => {
   try {
     const body = await c.req.json();
-    // Basic validation
-    // TODO: Use Zod schema
-    const { date, amount, description, category_id, merchant_id, notes } = body;
+    const parsed = createTransactionSchema.safeParse(body);
 
-    if (!date || amount === undefined || !description) {
-      return c.json({ error: 'Missing required fields' }, 400);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const id = crypto.randomUUID();
+    const { date, amount, description, category_id, merchant_id, notes } = parsed.data;
+
+    const id = generateId();
     const now = new Date().toISOString();
+    const txHash = await computeTxHash(date, description, amount, 'manual');
+    const sourceFileHash = await computeTxHash(date, `${description}-manual`, amount, 'manual');
+
+    const duplicate = await c.env.DB
+      .prepare('SELECT 1 FROM transactions WHERE tx_hash = ?')
+      .bind(txHash)
+      .first();
+    if (duplicate) {
+      return c.json({ error: 'Duplicate transaction', code: 'duplicate_transaction' }, 409);
+    }
+
+    await c.env.DB.prepare(`
+      INSERT OR IGNORE INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json)
+      VALUES (?, ?, 'manual', ?, ?, ?)
+    `).bind(
+      generateId(),
+      sourceFileHash,
+      'Manual entry',
+      now,
+      JSON.stringify({ source: 'manual', created_at: now })
+    ).run();
 
     // Insert transaction
     await c.env.DB.prepare(`
-      INSERT INTO transactions (id, created_at, updated_at, tx_date, amount, description, currency, status, source_type)
-      VALUES (?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual')
-    `).bind(id, now, now, date, amount, description).run();
+      INSERT INTO transactions
+        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?)
+    `).bind(
+      id,
+      txHash,
+      date,
+      date,
+      description,
+      null,
+      amount,
+      sourceFileHash,
+      JSON.stringify({ source: 'manual', notes: notes || null }),
+      now
+    ).run();
 
     // Insert meta
     if (category_id || merchant_id || notes) {
       await c.env.DB.prepare(`
-        INSERT INTO transaction_meta (transaction_id, category_id, merchant_id, notes, is_recurring)
-        VALUES (?, ?, ?, ?, 0)
-      `).bind(id, category_id || null, merchant_id || null, notes || null).run();
+        INSERT INTO transaction_meta (transaction_id, category_id, merchant_id, notes, is_recurring, updated_at)
+        VALUES (?, ?, ?, ?, 0, ?)
+      `).bind(id, category_id || null, merchant_id || null, notes || null, now).run();
+    } else {
+      const rules = await getEnabledRules(c.env.DB);
+      if (rules.length > 0) {
+        await applyRulesToTransaction(c.env.DB, {
+          id,
+          tx_hash: txHash,
+          tx_date: date,
+          booked_date: date,
+          description,
+          merchant: null,
+          amount,
+          currency: 'NOK',
+          status: 'booked',
+          source_type: 'manual',
+          source_file_hash: sourceFileHash,
+          raw_json: JSON.stringify({ source: 'manual' }),
+          created_at: now,
+          is_excluded: false,
+        }, rules);
+      }
     }
 
-    // Return the new transaction
+    // Return the enriched transaction
     const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<Transaction>();
-    return c.json(newTx, 201);
+    if (!newTx) {
+      return c.json({ error: 'Failed to create transaction' }, 500);
+    }
+
+    const enriched = await enrichTransactions(c.env.DB, [newTx]);
+    return c.json(enriched[0], 201);
   } catch (error) {
     console.error('Create transaction error:', error);
     return c.json({ error: 'Internal server error' }, 500);

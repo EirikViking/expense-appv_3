@@ -56,6 +56,19 @@ export const pdfIngestRequestSchema = z.object({
 });
 
 // ============================================
+// Manual transaction schema
+// ============================================
+
+export const createTransactionSchema = z.object({
+  date: dateSchema,
+  amount: z.number().finite(),
+  description: z.string().min(1).max(500),
+  category_id: idSchema.nullable().optional(),
+  merchant_id: idSchema.nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+// ============================================
 // Category schemas
 // ============================================
 
