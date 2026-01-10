@@ -10,7 +10,7 @@ import {
   type SubscriptionDetection,
 } from '@expense/shared';
 import type { Env } from '../types';
-import { buildCategoryBreakdown } from '../lib/analytics';
+import { buildCategoryBreakdown, toNumber } from '../lib/analytics';
 
 const analytics = new Hono<{ Bindings: Env }>();
 
@@ -109,15 +109,15 @@ analytics.get('/summary', async (c) => {
       }>();
 
     const summary: AnalyticsSummary = {
-      total_income: result?.total_income || 0,
-      total_expenses: result?.total_expenses || 0,
-      net: result?.net || 0,
-      pending_count: result?.pending_count || 0,
-      pending_amount: result?.pending_amount || 0,
-      booked_count: result?.booked_count || 0,
-      booked_amount: result?.booked_amount || 0,
-      transaction_count: result?.transaction_count || 0,
-      avg_transaction: result?.avg_transaction || 0,
+      total_income: toNumber(result?.total_income),
+      total_expenses: toNumber(result?.total_expenses),
+      net: toNumber(result?.net),
+      pending_count: toNumber(result?.pending_count),
+      pending_amount: toNumber(result?.pending_amount),
+      booked_count: toNumber(result?.booked_count),
+      booked_amount: toNumber(result?.booked_amount),
+      transaction_count: toNumber(result?.transaction_count),
+      avg_transaction: toNumber(result?.avg_transaction),
       period: {
         start: date_from,
         end: date_to,
@@ -274,18 +274,21 @@ analytics.get('/by-merchant', async (c) => {
       .bind(...prevBindings)
       .all<{ merchant_name: string; total: number }>();
 
-    const prevMap = new Map((prevResult.results || []).map(r => [r.merchant_name, r.total]));
+    const prevMap = new Map((prevResult.results || []).map(r => [r.merchant_name, toNumber(r.total)]));
 
     const merchants: MerchantBreakdown[] = (currentResult.results || []).map(r => {
+      const total = toNumber(r.total);
+      const avg = toNumber(r.avg);
+      const count = toNumber(r.count);
       const prevTotal = prevMap.get(r.merchant_name) || 0;
-      const trend = prevTotal > 0 ? ((r.total - prevTotal) / prevTotal) * 100 : 0;
+      const trend = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
 
       return {
         merchant_id: r.merchant_id,
         merchant_name: r.merchant_name,
-        total: r.total,
-        count: r.count,
-        avg: r.avg,
+        total,
+        count,
+        avg,
         trend,
       };
     });
@@ -337,7 +340,15 @@ analytics.get('/timeseries', async (c) => {
       .bind(...bindings)
       .all<TimeSeriesPoint>();
 
-    return c.json({ series: result.results || [] });
+    const series = (result.results || []).map((row) => ({
+      date: row.date,
+      income: toNumber(row.income),
+      expenses: toNumber(row.expenses),
+      net: toNumber(row.net),
+      count: toNumber(row.count),
+    }));
+
+    return c.json({ series });
   } catch (error) {
     console.error('Analytics timeseries error:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -389,8 +400,9 @@ analytics.get('/subscriptions', async (c) => {
     const subscriptions: SubscriptionDetection[] = (result.results || []).map(r => {
       const firstDate = new Date(r.first_date);
       const lastDate = new Date(r.last_date);
+      const occurrenceCount = toNumber(r.occurrence_count);
       const daySpan = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24);
-      const avgDaysBetween = r.occurrence_count > 1 ? daySpan / (r.occurrence_count - 1) : 30;
+      const avgDaysBetween = occurrenceCount > 1 ? daySpan / (occurrenceCount - 1) : 30;
 
       let frequency: SubscriptionDetection['frequency'];
       let confidence: number;
@@ -425,7 +437,7 @@ analytics.get('/subscriptions', async (c) => {
       return {
         merchant_name: r.merchant_name,
         merchant_id: r.merchant_id === 'unknown' ? null : r.merchant_id,
-        amount: r.amount,
+        amount: toNumber(r.amount),
         frequency,
         confidence,
         last_date: r.last_date,
@@ -466,8 +478,9 @@ analytics.get('/anomalies', async (c) => {
       .bind(date_from, date_to)
       .first<{ mean: number; variance: number }>();
 
-    const mean = statsResult?.mean || 0;
-    const stdDev = Math.sqrt(Math.max(0, statsResult?.variance || 0));
+    const mean = toNumber(statsResult?.mean);
+    const variance = toNumber(statsResult?.variance);
+    const stdDev = Math.sqrt(Math.max(0, variance));
 
     if (stdDev === 0) {
       return c.json({ anomalies: [] });
@@ -498,7 +511,8 @@ analytics.get('/anomalies', async (c) => {
       }>();
 
     const anomalies: AnomalyItem[] = (result.results || []).map(r => {
-      const absAmount = Math.abs(r.amount);
+      const amount = toNumber(r.amount);
+      const absAmount = Math.abs(amount);
       const zScore = (absAmount - mean) / stdDev;
 
       let severity: AnomalyItem['severity'];
@@ -509,7 +523,7 @@ analytics.get('/anomalies', async (c) => {
       return {
         transaction_id: r.transaction_id,
         description: r.description,
-        amount: r.amount,
+        amount,
         date: r.date,
         reason: `Amount ${Math.round(zScore * 10) / 10}x standard deviations from average`,
         severity,
@@ -638,28 +652,28 @@ analytics.get('/compare', async (c) => {
       .first();
 
     const current: AnalyticsSummary = {
-      total_income: (currentResult?.total_income as number) || 0,
-      total_expenses: (currentResult?.total_expenses as number) || 0,
-      net: (currentResult?.net as number) || 0,
-      pending_count: (currentResult?.pending_count as number) || 0,
-      pending_amount: (currentResult?.pending_amount as number) || 0,
-      booked_count: (currentResult?.booked_count as number) || 0,
-      booked_amount: (currentResult?.booked_amount as number) || 0,
-      transaction_count: (currentResult?.transaction_count as number) || 0,
-      avg_transaction: (currentResult?.avg_transaction as number) || 0,
+      total_income: toNumber(currentResult?.total_income),
+      total_expenses: toNumber(currentResult?.total_expenses),
+      net: toNumber(currentResult?.net),
+      pending_count: toNumber(currentResult?.pending_count),
+      pending_amount: toNumber(currentResult?.pending_amount),
+      booked_count: toNumber(currentResult?.booked_count),
+      booked_amount: toNumber(currentResult?.booked_amount),
+      transaction_count: toNumber(currentResult?.transaction_count),
+      avg_transaction: toNumber(currentResult?.avg_transaction),
       period: { start: current_start, end: current_end },
     };
 
     const previous: AnalyticsSummary = {
-      total_income: (previousResult?.total_income as number) || 0,
-      total_expenses: (previousResult?.total_expenses as number) || 0,
-      net: (previousResult?.net as number) || 0,
-      pending_count: (previousResult?.pending_count as number) || 0,
-      pending_amount: (previousResult?.pending_amount as number) || 0,
-      booked_count: (previousResult?.booked_count as number) || 0,
-      booked_amount: (previousResult?.booked_amount as number) || 0,
-      transaction_count: (previousResult?.transaction_count as number) || 0,
-      avg_transaction: (previousResult?.avg_transaction as number) || 0,
+      total_income: toNumber(previousResult?.total_income),
+      total_expenses: toNumber(previousResult?.total_expenses),
+      net: toNumber(previousResult?.net),
+      pending_count: toNumber(previousResult?.pending_count),
+      pending_amount: toNumber(previousResult?.pending_amount),
+      booked_count: toNumber(previousResult?.booked_count),
+      booked_amount: toNumber(previousResult?.booked_amount),
+      transaction_count: toNumber(previousResult?.transaction_count),
+      avg_transaction: toNumber(previousResult?.avg_transaction),
       period: { start: previous_start, end: previous_end },
     };
 

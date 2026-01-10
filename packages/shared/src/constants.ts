@@ -1,5 +1,5 @@
 // Source types
-export const SOURCE_TYPES = ['xlsx', 'pdf'] as const;
+export const SOURCE_TYPES = ['xlsx', 'pdf', 'manual'] as const;
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
 // Transaction status

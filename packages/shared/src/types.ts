@@ -221,6 +221,16 @@ export interface PdfIngestRequest {
   extracted_text: string;
 }
 
+// Manual transaction create
+export interface CreateTransactionRequest {
+  date: string;
+  amount: number;
+  description: string;
+  category_id?: string | null;
+  merchant_id?: string | null;
+  notes?: string | null;
+}
+
 // Category CRUD
 export interface CreateCategoryRequest {
   name: string;
