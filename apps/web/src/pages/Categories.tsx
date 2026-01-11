@@ -28,6 +28,8 @@ export function CategoriesPage() {
   const [formColor, setFormColor] = useState('#3b82f6');
   const [formIcon, setFormIcon] = useState('');
   const [formParentId, setFormParentId] = useState('');
+  const [formErrors, setFormErrors] = useState<{ name?: string }>({});
+  const [formSubmitError, setFormSubmitError] = useState<string | null>(null);
 
   // Expanded state for tree
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -68,6 +70,8 @@ export function CategoriesPage() {
     setFormColor('#3b82f6');
     setFormIcon('');
     setFormParentId(parentId);
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const startEdit = (cat: Category) => {
@@ -77,6 +81,8 @@ export function CategoriesPage() {
     setFormColor(cat.color || '#3b82f6');
     setFormIcon(cat.icon || '');
     setFormParentId(cat.parent_id || '');
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const cancelEdit = () => {
@@ -86,20 +92,30 @@ export function CategoriesPage() {
     setFormColor('#3b82f6');
     setFormIcon('');
     setFormParentId('');
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const handleSave = async () => {
+    setFormSubmitError(null);
+    const trimmedName = formName.trim();
+    if (!trimmedName) {
+      setFormErrors({ name: 'Name is required' });
+      return;
+    }
+    setFormErrors({});
+
     try {
       if (isCreating) {
         await api.createCategory({
-          name: formName,
+          name: trimmedName,
           color: formColor,
           icon: formIcon || undefined,
           parent_id: formParentId || undefined,
         });
       } else if (editingId) {
         await api.updateCategory(editingId, {
-          name: formName,
+          name: trimmedName,
           color: formColor,
           icon: formIcon || undefined,
           parent_id: formParentId || undefined,
@@ -108,7 +124,7 @@ export function CategoriesPage() {
       cancelEdit();
       fetchCategories();
     } catch (err) {
-      console.error('Failed to save category:', err);
+      setFormSubmitError(err instanceof Error ? err.message : 'Failed to save category');
     }
   };
 
@@ -158,26 +174,34 @@ export function CategoriesPage() {
           </div>
 
           {isEditing ? (
-            <div className="flex-1 flex items-center gap-2">
-              <Input
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                className="h-8"
-                placeholder="Category name"
-              />
-              <input
-                type="color"
-                value={formColor}
-                onChange={(e) => setFormColor(e.target.value)}
-                className="h-8 w-8 rounded cursor-pointer"
-              />
-              <Button size="sm" onClick={handleSave}>
-                Save
-              </Button>
-              <Button size="sm" variant="outline" onClick={cancelEdit}>
-                Cancel
-              </Button>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  className="h-8"
+                  placeholder="Category name"
+                />
+                <input
+                  type="color"
+                  value={formColor}
+                  onChange={(e) => setFormColor(e.target.value)}
+                  className="h-8 w-8 rounded cursor-pointer"
+                />
+                <Button size="sm" onClick={handleSave}>
+                  Save
+                </Button>
+                <Button size="sm" variant="outline" onClick={cancelEdit}>
+                  Cancel
+                </Button>
+              </div>
+              {formErrors.name && (
+                <p className="text-xs text-red-600">{formErrors.name}</p>
+              )}
+              {formSubmitError && (
+                <p className="text-xs text-red-600">{formSubmitError}</p>
+              )}
             </div>
           ) : (
             <>
@@ -275,6 +299,9 @@ export function CategoriesPage() {
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="Category name"
                 />
+                {formErrors.name && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -307,8 +334,13 @@ export function CategoriesPage() {
                 </select>
               </div>
             </div>
+            {formSubmitError && (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {formSubmitError}
+              </div>
+            )}
             <div className="flex gap-2 mt-4">
-              <Button onClick={handleSave} disabled={!formName.trim()}>
+              <Button onClick={handleSave}>
                 Create
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
