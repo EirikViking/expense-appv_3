@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '@/lib/api';
 import type { Rule, Category, Tag } from '@expense/shared';
 import { RULE_MATCH_FIELDS, RULE_MATCH_TYPES, RULE_ACTION_TYPES } from '@expense/shared';
@@ -36,6 +37,13 @@ export function RulesPage() {
   const [formActionValue, setFormActionValue] = useState('');
   const [formPriority, setFormPriority] = useState(0);
   const [formEnabled, setFormEnabled] = useState(true);
+  const [formErrors, setFormErrors] = useState<{
+    name?: string;
+    priority?: string;
+    pattern?: string;
+    actionValue?: string;
+  }>({});
+  const [formSubmitError, setFormSubmitError] = useState<string | null>(null);
 
   // Test state
   const [testText, setTestText] = useState('');
@@ -45,6 +53,8 @@ export function RulesPage() {
   // Apply state
   const [applyingRules, setApplyingRules] = useState(false);
   const [applyResult, setApplyResult] = useState<{ affected: number } | null>(null);
+  const [applyStatus, setApplyStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const location = useLocation();
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -68,6 +78,12 @@ export function RulesPage() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    setApplyResult(null);
+    setApplyStatus(null);
+    setApplyingRules(false);
+  }, [location.pathname]);
+
   const startCreate = () => {
     setIsCreating(true);
     setEditingId(null);
@@ -77,8 +93,10 @@ export function RulesPage() {
     setFormPattern('');
     setFormActionType('set_category');
     setFormActionValue('');
-    setFormPriority(rules.length);
+    setFormPriority(Math.max(1, rules.length + 1));
     setFormEnabled(true);
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const startEdit = (rule: Rule) => {
@@ -92,6 +110,8 @@ export function RulesPage() {
     setFormActionValue(rule.action_value);
     setFormPriority(rule.priority);
     setFormEnabled(rule.enabled);
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const cancelEdit = () => {
@@ -100,17 +120,47 @@ export function RulesPage() {
     setFormName('');
     setFormPattern('');
     setFormActionValue('');
+    setFormErrors({});
+    setFormSubmitError(null);
   };
 
   const handleSave = async () => {
+    setFormSubmitError(null);
+    const nextErrors: {
+      name?: string;
+      priority?: string;
+      pattern?: string;
+      actionValue?: string;
+    } = {};
+
+    const trimmedName = formName.trim();
+    const trimmedPattern = formPattern.trim();
+    const trimmedActionValue = formActionValue.trim();
+
+    if (!trimmedName) nextErrors.name = 'Name is required';
+    if (!Number.isFinite(formPriority) || formPriority < 1) {
+      nextErrors.priority = 'Priority must be 1 or higher';
+    }
+    if (!trimmedPattern) nextErrors.pattern = 'Pattern is required';
+    if (!trimmedActionValue) {
+      nextErrors.actionValue = formActionType === 'set_category'
+        ? 'Select a category'
+        : formActionType === 'add_tag'
+          ? 'Select a tag'
+          : 'Value is required';
+    }
+
+    setFormErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     try {
       const data = {
-        name: formName,
+        name: trimmedName,
         match_field: formField as Rule['match_field'],
         match_type: formMatchType as Rule['match_type'],
-        match_value: formPattern,
+        match_value: trimmedPattern,
         action_type: formActionType as Rule['action_type'],
-        action_value: formActionValue,
+        action_value: trimmedActionValue,
         priority: formPriority,
         enabled: formEnabled,
       };
@@ -123,7 +173,7 @@ export function RulesPage() {
       cancelEdit();
       fetchData();
     } catch (err) {
-      console.error('Failed to save rule:', err);
+      setFormSubmitError(err instanceof Error ? err.message : 'Failed to save rule');
     }
   };
 
@@ -150,11 +200,20 @@ export function RulesPage() {
   const handleApplyAll = async () => {
     setApplyingRules(true);
     setApplyResult(null);
+    setApplyStatus(null);
     try {
       const result = await api.applyRules({ all: true });
       setApplyResult({ affected: result.updated });
+      const timestamp = new Date().toLocaleTimeString('nb-NO', { hour: '2-digit', minute: '2-digit' });
+      setApplyStatus({
+        type: 'success',
+        message: `Rules applied at ${timestamp}`,
+      });
     } catch (err) {
-      console.error('Failed to apply rules:', err);
+      setApplyStatus({
+        type: 'error',
+        message: err instanceof Error ? err.message : 'Failed to apply rules',
+      });
     } finally {
       setApplyingRules(false);
     }
@@ -224,9 +283,22 @@ export function RulesPage() {
         </div>
       )}
 
-      {applyResult && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-          Applied rules to {applyResult.affected} transactions
+      {applyStatus && (
+        <div
+          className={
+            applyStatus.type === 'success'
+              ? 'bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg'
+              : 'bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg'
+          }
+        >
+          <div className="flex items-center justify-between">
+            <span>{applyStatus.message}</span>
+            {applyResult && applyStatus.type === 'success' && (
+              <span className="text-sm text-green-700">
+                {applyResult.affected} updated
+              </span>
+            )}
+          </div>
         </div>
       )}
 
@@ -250,6 +322,9 @@ export function RulesPage() {
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="e.g., Netflix Subscription"
                 />
+                {formErrors.name && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -259,8 +334,11 @@ export function RulesPage() {
                   type="number"
                   value={formPriority}
                   onChange={(e) => setFormPriority(parseInt(e.target.value) || 0)}
-                  min={0}
+                  min={1}
                 />
+                {formErrors.priority && (
+                  <p className="mt-1 text-xs text-red-600">{formErrors.priority}</p>
+                )}
               </div>
             </div>
 
@@ -303,6 +381,9 @@ export function RulesPage() {
                     onChange={(e) => setFormPattern(e.target.value)}
                     placeholder="e.g., NETFLIX"
                   />
+                  {formErrors.pattern && (
+                    <p className="mt-1 text-xs text-red-600">{formErrors.pattern}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -363,6 +444,9 @@ export function RulesPage() {
                       placeholder="Value"
                     />
                   )}
+                  {formErrors.actionValue && (
+                    <p className="mt-1 text-xs text-red-600">{formErrors.actionValue}</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -380,11 +464,13 @@ export function RulesPage() {
               </label>
             </div>
 
+            {formSubmitError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {formSubmitError}
+              </div>
+            )}
             <div className="flex gap-2">
-              <Button
-                onClick={handleSave}
-                disabled={!formName.trim() || !formPattern.trim() || !formActionValue}
-              >
+              <Button onClick={handleSave}>
                 {isCreating ? 'Create' : 'Save'}
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
@@ -475,7 +561,7 @@ export function RulesPage() {
                       When <span className="font-mono text-xs bg-gray-100 px-1 rounded">{rule.match_field}</span>
                       {' '}{rule.match_type.replace('_', ' ')}{' '}
                       <span className="font-mono text-xs bg-gray-100 px-1 rounded">"{rule.match_value}"</span>
-                      {' → '}
+                      {' then '}
                       <span className="text-blue-600">{rule.action_type.replace('_', ' ')}</span>
                       {': '}
                       <span className="font-medium">{getActionValueLabel(rule)}</span>
