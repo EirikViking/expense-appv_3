@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { formatCurrency, formatDate, formatDateLocal, cn } from '@/lib/utils';
 import {
   ChevronLeft,
   ChevronRight,
@@ -51,11 +51,13 @@ export function TransactionsPage() {
   const [selectedTransaction, setSelectedTransaction] = useState<TransactionWithMeta | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [newTx, setNewTx] = useState({
-    date: new Date().toISOString().split('T')[0],
+    date: formatDateLocal(new Date()),
     amount: '',
     description: '',
     category_id: ''
   });
+  const [createErrors, setCreateErrors] = useState<{ date?: string; amount?: string; description?: string }>({});
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
@@ -74,22 +76,30 @@ export function TransactionsPage() {
   };
 
   const handleCreate = async () => {
-    if (!newTx.amount || !newTx.description || !newTx.date) {
-      alert('Please fill in required fields');
-      return;
+    setCreateError(null);
+    const nextErrors: { date?: string; amount?: string; description?: string } = {};
+    const parsedAmount = parseFloat(newTx.amount);
+    if (!newTx.date) nextErrors.date = 'Date is required';
+    if (!newTx.description.trim()) nextErrors.description = 'Description is required';
+    if (!newTx.amount || Number.isNaN(parsedAmount) || !Number.isFinite(parsedAmount)) {
+      nextErrors.amount = 'Amount must be a valid number';
     }
+    setCreateErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
     try {
       await api.createTransaction({
         date: newTx.date,
-        amount: parseFloat(newTx.amount), // Ensure number
-        description: newTx.description,
+        amount: parsedAmount, // Ensure number
+        description: newTx.description.trim(),
         category_id: newTx.category_id || undefined
       });
       setIsAddOpen(false);
-      setNewTx({ date: new Date().toISOString().split('T')[0], amount: '', description: '', category_id: '' });
+      setNewTx({ date: formatDateLocal(new Date()), amount: '', description: '', category_id: '' });
+      setCreateErrors({});
       fetchData();
     } catch (err) {
-      alert('Failed to create transaction');
+      setCreateError(err instanceof Error ? err.message : 'Failed to create transaction');
     }
   };
 
@@ -127,6 +137,13 @@ export function TransactionsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!isAddOpen) {
+      setCreateErrors({});
+      setCreateError(null);
+    }
+  }, [isAddOpen]);
 
   const totalPages = Math.ceil(total / limit);
 
@@ -432,13 +449,13 @@ export function TransactionsPage() {
                             <span>{formatDate(tx.tx_date)}</span>
                             {tx.merchant_name && (
                               <>
-                                <span>•</span>
+                                <span className="text-gray-400">|</span>
                                 <span>{tx.merchant_name}</span>
                               </>
                             )}
                             {tx.category_name && (
                               <>
-                                <span>•</span>
+                                <span className="text-gray-400">|</span>
                                 <span
                                   className="px-1.5 py-0.5 rounded text-xs"
                                   style={tx.category_color ? {
@@ -550,15 +567,30 @@ export function TransactionsPage() {
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Date</Label>
-              <Input className="col-span-3" type="date" value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })} />
+              <div className="col-span-3">
+                <Input type="date" value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })} />
+                {createErrors.date && (
+                  <p className="mt-1 text-xs text-red-600">{createErrors.date}</p>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Amount</Label>
-              <Input className="col-span-3" type="number" step="0.01" value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })} />
+              <div className="col-span-3">
+                <Input type="number" step="0.01" value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })} />
+                {createErrors.amount && (
+                  <p className="mt-1 text-xs text-red-600">{createErrors.amount}</p>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Description</Label>
-              <Input className="col-span-3" value={newTx.description} onChange={e => setNewTx({ ...newTx, description: e.target.value })} />
+              <div className="col-span-3">
+                <Input value={newTx.description} onChange={e => setNewTx({ ...newTx, description: e.target.value })} />
+                {createErrors.description && (
+                  <p className="mt-1 text-xs text-red-600">{createErrors.description}</p>
+                )}
+              </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">Category</Label>
@@ -575,6 +607,11 @@ export function TransactionsPage() {
                 ))}
               </select>
             </div>
+            {createError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {createError}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button onClick={handleCreate}>Save Transaction</Button>

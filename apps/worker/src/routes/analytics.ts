@@ -144,7 +144,7 @@ analytics.get('/by-category', async (c) => {
     const { date_from, date_to, status, source_type, tag_id } = parsed.data;
 
     // Build base conditions
-    const conditions: string[] = ['t.tx_date >= ?', 't.tx_date <= ?', 't.amount < 0'];
+    const conditions: string[] = ['t.tx_date >= ?', 't.tx_date <= ?', 't.amount < 0', 'COALESCE(t.is_excluded, 0) = 0'];
     const bindings: (string | number)[] = [date_from, date_to];
 
     if (status) {
@@ -162,24 +162,44 @@ analytics.get('/by-category', async (c) => {
 
     const whereClause = 'WHERE ' + conditions.join(' AND ');
 
-    // Get category totals
+    const bindingsForUnion = [...bindings, ...bindings];
+
+    // Get category totals (use splits when present, otherwise base transaction category)
     const result = await c.env.DB
       .prepare(`
+        WITH categorized AS (
+          SELECT
+            t.id as transaction_id,
+            ABS(t.amount) as amount,
+            tm.category_id as category_id
+          FROM transactions t
+          LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+          ${whereClause}
+          AND NOT EXISTS (
+            SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+          )
+          UNION ALL
+          SELECT
+            t.id as transaction_id,
+            ABS(ts.amount) as amount,
+            ts.category_id as category_id
+          FROM transactions t
+          JOIN transaction_splits ts ON ts.parent_transaction_id = t.id
+          ${whereClause}
+        )
         SELECT
           c.id as category_id,
           COALESCE(c.name, 'Uncategorized') as category_name,
           c.color as category_color,
           c.parent_id,
-          COALESCE(SUM(ABS(t.amount)), 0) as total,
-          COUNT(*) as count
-        FROM transactions t
-        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
-        LEFT JOIN categories c ON tm.category_id = c.id
-        ${whereClause}
+          COALESCE(SUM(categorized.amount), 0) as total,
+          COUNT(DISTINCT categorized.transaction_id) as count
+        FROM categorized
+        LEFT JOIN categories c ON categorized.category_id = c.id
         GROUP BY c.id, c.name, c.color, c.parent_id
         ORDER BY total DESC
       `)
-      .bind(...bindings)
+      .bind(...bindingsForUnion)
       .all<{
         category_id: string | null;
         category_name: string;
@@ -617,17 +637,22 @@ analytics.get('/compare', async (c) => {
     const currentResult = await c.env.DB
       .prepare(`
         SELECT
-          COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as total_income,
-          COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) as total_expenses,
-          COALESCE(SUM(amount), 0) as net,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN ABS(amount) ELSE 0 END), 0) as pending_amount,
-          COALESCE(SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END), 0) as booked_count,
-          COALESCE(SUM(CASE WHEN status = 'booked' THEN ABS(amount) ELSE 0 END), 0) as booked_amount,
+          COALESCE(SUM(CASE
+            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+          END), 0) as total_income,
+          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(t.amount), 0) as net,
+          COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
+          COALESCE(SUM(CASE WHEN t.status = 'pending' THEN ABS(t.amount) ELSE 0 END), 0) as pending_amount,
+          COALESCE(SUM(CASE WHEN t.status = 'booked' THEN 1 ELSE 0 END), 0) as booked_count,
+          COALESCE(SUM(CASE WHEN t.status = 'booked' THEN ABS(t.amount) ELSE 0 END), 0) as booked_amount,
           COUNT(*) as transaction_count,
-          COALESCE(AVG(ABS(amount)), 0) as avg_transaction
-        FROM transactions
-        WHERE tx_date >= ? AND tx_date <= ?
+          COALESCE(AVG(ABS(t.amount)), 0) as avg_transaction
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        LEFT JOIN categories c ON tm.category_id = c.id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
       `)
       .bind(current_start, current_end)
       .first();
@@ -636,17 +661,22 @@ analytics.get('/compare', async (c) => {
     const previousResult = await c.env.DB
       .prepare(`
         SELECT
-          COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) as total_income,
-          COALESCE(SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE 0 END), 0) as total_expenses,
-          COALESCE(SUM(amount), 0) as net,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
-          COALESCE(SUM(CASE WHEN status = 'pending' THEN ABS(amount) ELSE 0 END), 0) as pending_amount,
-          COALESCE(SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END), 0) as booked_count,
-          COALESCE(SUM(CASE WHEN status = 'booked' THEN ABS(amount) ELSE 0 END), 0) as booked_amount,
+          COALESCE(SUM(CASE
+            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+          END), 0) as total_income,
+          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(t.amount), 0) as net,
+          COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
+          COALESCE(SUM(CASE WHEN t.status = 'pending' THEN ABS(t.amount) ELSE 0 END), 0) as pending_amount,
+          COALESCE(SUM(CASE WHEN t.status = 'booked' THEN 1 ELSE 0 END), 0) as booked_count,
+          COALESCE(SUM(CASE WHEN t.status = 'booked' THEN ABS(t.amount) ELSE 0 END), 0) as booked_amount,
           COUNT(*) as transaction_count,
-          COALESCE(AVG(ABS(amount)), 0) as avg_transaction
-        FROM transactions
-        WHERE tx_date >= ? AND tx_date <= ?
+          COALESCE(AVG(ABS(t.amount)), 0) as avg_transaction
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        LEFT JOIN categories c ON tm.category_id = c.id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
       `)
       .bind(previous_start, previous_end)
       .first();

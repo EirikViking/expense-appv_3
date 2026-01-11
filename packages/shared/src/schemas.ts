@@ -61,7 +61,7 @@ export const pdfIngestRequestSchema = z.object({
 
 export const createTransactionSchema = z.object({
   date: dateSchema,
-  amount: z.number().finite(),
+  amount: z.coerce.number().finite(),
   description: z.string().min(1).max(500),
   category_id: idSchema.nullable().optional(),
   merchant_id: idSchema.nullable().optional(),
