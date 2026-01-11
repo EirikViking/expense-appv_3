@@ -60,6 +60,7 @@ export function InsightsPage() {
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [subscriptions, setSubscriptions] = useState<RecurringItem[]>([]);
   const [comparison, setComparison] = useState<AnalyticsCompareResponse | null>(null);
+  const [showCategoryDetails, setShowCategoryDetails] = useState(false);
 
   // Date range selection
   const [dateFrom, setDateFrom] = useState(getMonthRange().start);
@@ -113,6 +114,11 @@ export function InsightsPage() {
       ]);
 
       const [summaryRes, categoriesRes, merchantsRes, timeseriesRes, subsRes, compareRes] = results;
+
+      if (import.meta.env.DEV) {
+        console.debug('[Insights] summary status:', summaryRes.status);
+        console.debug('[Insights] compare status:', compareRes.status);
+      }
 
       // Set state only for fulfilled results, normalizing response shapes
       if (summaryRes.status === 'fulfilled') {
@@ -289,6 +295,8 @@ export function InsightsPage() {
   const safeCategories = Array.isArray(categories) ? categories : [];
   const safeMerchants = Array.isArray(merchants) ? merchants : [];
   const safeTimeseries = Array.isArray(timeseries) ? timeseries : [];
+  const categorizedCount = safeCategories.filter((cat) => cat.category_id).length;
+  const hasCategorization = categorizedCount > 0;
 
   return (
     <div className="space-y-6">
@@ -550,15 +558,27 @@ export function InsightsPage() {
         {/* Category Breakdown */}
         <Card>
           <CardHeader>
-            <CardTitle>Spending by Category</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>Spending by Category</CardTitle>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowCategoryDetails((prev) => !prev)}
+              >
+                {showCategoryDetails ? 'Skjul detaljer' : 'Vis detaljer'}
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Vises nar kategorisering er tilgjengelig.
+            </p>
           </CardHeader>
           <CardContent>
-            {safeCategories.length > 0 ? (
+            {showCategoryDetails && hasCategorization ? (
               <div className="flex flex-col lg:flex-row items-center gap-4">
                 <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie
-                      data={safeCategories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                      data={safeCategories.filter(c => c.category_id).slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
                       cx="50%"
                       cy="50%"
                       innerRadius={50}
@@ -567,7 +587,7 @@ export function InsightsPage() {
                       dataKey="total"
                       nameKey="name"
                     >
-                      {safeCategories.slice(0, 8).map((entry, index) => (
+                      {safeCategories.filter(c => c.category_id).slice(0, 8).map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={entry.category_color || COLORS[index % COLORS.length]}
@@ -585,7 +605,7 @@ export function InsightsPage() {
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2 w-full lg:w-auto">
-                  {safeCategories.slice(0, 6).map((cat, i) => (
+                  {safeCategories.filter(c => c.category_id).slice(0, 6).map((cat, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors -mx-2"
@@ -605,7 +625,7 @@ export function InsightsPage() {
               </div>
             ) : (
               <div className="flex h-[250px] items-center justify-center text-gray-500">
-                No categorized transactions
+                {hasCategorization ? 'Bruk "Vis detaljer" for a se oversikt' : 'Ingen kategoriserte transaksjoner enda'}
               </div>
             )}
           </CardContent>
@@ -691,7 +711,7 @@ export function InsightsPage() {
                     <p className="font-medium truncate">{sub.merchant_name}</p>
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <span>{formatCurrency(sub.amount)}</span>
-                      <span>•</span>
+                      <span className="text-gray-400">|</span>
                       <span>{sub.frequency}</span>
                     </div>
                   </div>

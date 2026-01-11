@@ -53,6 +53,7 @@ export function DashboardPage() {
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
+  const [showCategoryDetails, setShowCategoryDetails] = useState(false);
 
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -119,6 +120,8 @@ export function DashboardPage() {
     : 0;
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
+  const categorizedCount = categories.filter((cat) => cat.category_id).length;
+  const hasCategorization = categorizedCount > 0;
 
   if (loading) {
     return (
@@ -312,14 +315,26 @@ export function DashboardPage() {
         {/* Category Breakdown */}
         <Card>
           <CardHeader>
-            <CardTitle>By Category</CardTitle>
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle>By Category</CardTitle>
+              <button
+                type="button"
+                onClick={() => setShowCategoryDetails((prev) => !prev)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+              >
+                {showCategoryDetails ? 'Skjul detaljer' : 'Vis detaljer'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">
+              Vises nar kategorisering er tilgjengelig.
+            </p>
           </CardHeader>
           <CardContent>
-            {categories.length > 0 ? (
+            {showCategoryDetails && hasCategorization ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                    data={categories.filter(c => c.category_id).slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -333,7 +348,7 @@ export function DashboardPage() {
                     labelLine={false}
                     className="cursor-pointer outline-none"
                   >
-                    {categories.slice(0, 8).map((entry, index) => (
+                    {categories.filter(c => c.category_id).slice(0, 8).map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={entry.category_color || COLORS[index % COLORS.length]}
@@ -363,7 +378,7 @@ export function DashboardPage() {
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-gray-500">
-                No categorized transactions
+                {hasCategorization ? 'Bruk "Vis detaljer" for a se oversikt' : 'Ingen kategoriserte transaksjoner enda'}
               </div>
             )}
           </CardContent>

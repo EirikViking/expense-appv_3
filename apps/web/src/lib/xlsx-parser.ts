@@ -83,15 +83,15 @@ function excelSerialToDate(serial: number): string | null {
   // Dates after Feb 28, 1900 need adjustment
   const adjustedSerial = serial > 60 ? serial - 1 : serial;
 
-  // Excel epoch is January 1, 1900
-  const excelEpoch = new Date(1900, 0, 1);
-  const date = new Date(excelEpoch.getTime() + (adjustedSerial - 1) * 24 * 60 * 60 * 1000);
+  // Excel epoch is January 1, 1900 (use UTC to avoid timezone shifts)
+  const excelEpoch = Date.UTC(1900, 0, 1);
+  const date = new Date(excelEpoch + (adjustedSerial - 1) * 24 * 60 * 60 * 1000);
 
   if (isNaN(date.getTime())) return null;
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
 
   // Validate reasonable date range (1990-2050)
   if (year < 1990 || year > 2050) return null;
@@ -106,6 +106,14 @@ function parseNorwegianDate(dateValue: unknown): string | null {
   // Handle Excel serial dates (numbers)
   if (typeof dateValue === 'number') {
     return excelSerialToDate(dateValue);
+  }
+
+  if (dateValue instanceof Date) {
+    if (isNaN(dateValue.getTime())) return null;
+    const year = dateValue.getUTCFullYear();
+    const month = String(dateValue.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(dateValue.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   if (!dateValue) return null;

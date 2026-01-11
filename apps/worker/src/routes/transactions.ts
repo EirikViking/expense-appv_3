@@ -294,6 +294,26 @@ transactions.post('/', async (c) => {
 
     const { date, amount, description, category_id, merchant_id, notes } = parsed.data;
 
+    if (category_id) {
+      const categoryExists = await c.env.DB
+        .prepare('SELECT 1 FROM categories WHERE id = ?')
+        .bind(category_id)
+        .first();
+      if (!categoryExists) {
+        return c.json({ error: 'Category not found' }, 400);
+      }
+    }
+
+    if (merchant_id) {
+      const merchantExists = await c.env.DB
+        .prepare('SELECT 1 FROM merchants WHERE id = ?')
+        .bind(merchant_id)
+        .first();
+      if (!merchantExists) {
+        return c.json({ error: 'Merchant not found' }, 400);
+      }
+    }
+
     const id = generateId();
     const now = new Date().toISOString();
     const txHash = await computeTxHash(date, description, amount, 'manual');
