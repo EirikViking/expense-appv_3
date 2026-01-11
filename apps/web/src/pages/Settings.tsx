@@ -1,25 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Settings as SettingsIcon } from 'lucide-react';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 export function SettingsPage() {
-    const [showBudgets, setShowBudgets] = useState(true);
+    const { showBudgets, setShowBudgets } = useFeatureFlags();
     const [resetConfirm, setResetConfirm] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    useEffect(() => {
-        const stored = localStorage.getItem('show_budgets');
-        setShowBudgets(stored !== 'false');
-    }, []);
-
     const toggleBudgets = () => {
-        const newValue = !showBudgets;
-        setShowBudgets(newValue);
-        localStorage.setItem('show_budgets', String(newValue));
-        // Provide visual feedback, but let the user reload or navigate to see changes in sidebar
-        window.location.reload();
+        setShowBudgets(!showBudgets);
     };
 
     const handleReset = async () => {
