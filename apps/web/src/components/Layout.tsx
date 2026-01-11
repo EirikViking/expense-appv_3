@@ -16,6 +16,7 @@ import {
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getVersionString, getApiBaseUrl } from '@/lib/version';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -34,6 +35,7 @@ const navItems = [
 
 export function Layout({ children }: LayoutProps) {
   const { isAuthenticated, logout } = useAuth();
+  const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -79,7 +81,7 @@ export function Layout({ children }: LayoutProps) {
         {isAuthenticated && (
           <nav className="flex flex-col h-[calc(100vh-4rem)]">
             <div className="flex-1 px-3 py-4 space-y-1">
-              {navItems.filter(item => item.path !== '/budgets' || localStorage.getItem('show_budgets') !== 'false').map((item) => {
+              {navItems.filter(item => item.path !== '/budgets' || showBudgets).map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
                 return (
@@ -148,4 +150,3 @@ export function Layout({ children }: LayoutProps) {
     </div>
   );
 }
-
