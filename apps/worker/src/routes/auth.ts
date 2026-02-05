@@ -17,13 +17,26 @@ auth.post('/login', async (c) => {
 
     const { password } = parsed.data;
 
-    if (password !== c.env.ADMIN_PASSWORD) {
+    const adminPassword = c.env.ADMIN_PASSWORD;
+    const jwtSecret = c.env.JWT_SECRET;
+
+    // Fail loudly (and log) if secrets/vars are missing in production.
+    if (!adminPassword || typeof adminPassword !== 'string') {
+      console.error('Missing/invalid ADMIN_PASSWORD binding');
+      return c.json({ error: 'Server misconfigured' }, 500);
+    }
+    if (!jwtSecret || typeof jwtSecret !== 'string') {
+      console.error('Missing/invalid JWT_SECRET binding');
+      return c.json({ error: 'Server misconfigured' }, 500);
+    }
+
+    if (password !== adminPassword) {
       return c.json({ error: 'Invalid password' }, 401);
     }
 
     // Create JWT that expires in 24 hours
     const exp = Date.now() + 24 * 60 * 60 * 1000;
-    const token = await signJwt({ authenticated: true, exp }, c.env.JWT_SECRET);
+    const token = await signJwt({ authenticated: true, exp }, jwtSecret);
 
     // Set cookie for same-origin requests (with cross-origin compatible settings)
     setCookie(c, 'auth_token', token, {
@@ -37,6 +50,7 @@ auth.post('/login', async (c) => {
     // Also return token in response body for cross-origin clients to store and send via Authorization header
     return c.json({ success: true, token });
   } catch (error) {
+    console.error('Login error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
