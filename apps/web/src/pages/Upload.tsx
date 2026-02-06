@@ -4,6 +4,7 @@ import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
 import { extractPdfText } from '../lib/pdf-extractor';
 import type { IngestResponse } from '@expense/shared';
+import { useTranslation } from 'react-i18next';
 
 const DEV_LOGS = import.meta.env.VITE_DEV_LOGS === 'true';
 
@@ -15,16 +16,17 @@ interface FileResult {
 }
 
 const SKIPPED_SUMMARY_LABELS = [
-  ['header', 'header rows'],
-  ['section_marker', 'section markers'],
-  ['page_number', 'page numbers'],
-  ['no_date', 'missing date'],
-  ['no_amount', 'missing amount'],
-  ['parse_failed', 'parse failed'],
-  ['excluded_pattern', 'excluded patterns'],
+  ['header', 'upload.skipped.header'],
+  ['section_marker', 'upload.skipped.sectionMarker'],
+  ['page_number', 'upload.skipped.pageNumber'],
+  ['no_date', 'upload.skipped.noDate'],
+  ['no_amount', 'upload.skipped.noAmount'],
+  ['parse_failed', 'upload.skipped.parseFailed'],
+  ['excluded_pattern', 'upload.skipped.excludedPattern'],
 ] as const;
 
 export function UploadPage() {
+  const { t } = useTranslation();
   const [isDragging, setIsDragging] = useState(false);
   const [results, setResults] = useState<FileResult[]>([]);
   const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
@@ -45,11 +47,11 @@ export function UploadPage() {
 
     return (
       <div className="mt-2 text-xs text-gray-500">
-        <p className="font-medium text-gray-700">Skipped line reasons:</p>
+        <p className="font-medium text-gray-700">{t('upload.skippedReasons')}</p>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-          {summaryItems.map(([key, label]) => (
+          {summaryItems.map(([key, labelKey]) => (
             <span key={key}>
-              {summary[key]} {label}
+              {summary[key]} {t(labelKey)}
             </span>
           ))}
         </div>
@@ -177,7 +179,7 @@ export function UploadPage() {
 
   return (
     <div className="px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Upload Files</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('upload.title')}</h1>
 
       {/* Drop zone */}
       <div
@@ -191,8 +193,8 @@ export function UploadPage() {
       >
         <div className="space-y-4">
           <div className="text-gray-600">
-            <p className="text-lg">Drag and drop files here</p>
-            <p className="text-sm">or</p>
+            <p className="text-lg">{t('upload.dragDrop')}</p>
+            <p className="text-sm">{t('upload.or')}</p>
           </div>
           <label className="inline-block">
             <input
@@ -203,11 +205,11 @@ export function UploadPage() {
               className="hidden"
             />
             <span className="cursor-pointer px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-              Browse Files
+              {t('upload.browse')}
             </span>
           </label>
           <p className="text-sm text-gray-500">
-            Supported formats: .xlsx (credit card exports), .pdf (bank statements)
+            {t('upload.supportedFormats')}
           </p>
         </div>
       </div>
@@ -215,7 +217,7 @@ export function UploadPage() {
       {/* Results */}
       {results.length > 0 && (
         <div className="mt-8 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">Upload Results</h2>
+          <h2 className="text-lg font-semibold text-gray-900">{t('upload.results')}</h2>
           {results.map((result, index) => {
             const resultKey = `${result.filename}-${index}`;
             const showDetails = Boolean(detailsOpen[resultKey]);
@@ -239,7 +241,7 @@ export function UploadPage() {
                 <div className="flex items-center justify-between">
                   <span className="font-medium text-gray-900">{result.filename}</span>
                   {result.status === 'processing' && (
-                    <span className="text-gray-500">Processing...</span>
+                    <span className="text-gray-500">{t('upload.processing')}</span>
                   )}
                 </div>
 
@@ -247,7 +249,7 @@ export function UploadPage() {
                   <div className="mt-2 text-sm">
                     {result.result.file_duplicate ? (
                       <p className="text-amber-600 font-medium">
-                        File already uploaded (duplicate)
+                        {t('upload.duplicate')}
                       </p>
                     ) : (
                       <div className="space-y-1 text-gray-600">
@@ -255,14 +257,14 @@ export function UploadPage() {
                           <span className="text-green-600 font-medium">
                             {result.result.inserted}
                           </span>{' '}
-                          transactions inserted
+                          {t('upload.transactionsInserted')}
                         </p>
                         {result.result.skipped_duplicates > 0 && (
                           <p>
                             <span className="text-amber-600 font-medium">
                               {result.result.skipped_duplicates}
                             </span>{' '}
-                            duplicates skipped
+                            {t('upload.duplicatesSkipped')}
                           </p>
                         )}
                       </div>
@@ -274,13 +276,13 @@ export function UploadPage() {
                         onClick={() => toggleDetails(resultKey)}
                         className="mt-2 text-xs font-medium text-gray-600 hover:text-gray-800"
                       >
-                        {showDetails ? 'Skjul detaljer' : 'Vis detaljer'}
+                        {showDetails ? t('dashboard.hideDetails') : t('dashboard.showDetails')}
                       </button>
                     )}
 
                     {showDetails && result.result.skipped_invalid > 0 && (
                       <p className="mt-2 text-xs text-gray-600">
-                        {result.result.skipped_invalid} invalid rows skipped
+                        {t('upload.invalidRowsSkipped', { count: result.result.skipped_invalid })}
                       </p>
                     )}
                     {renderSkippedSummary(result.result.skipped_lines_summary, showDetails)}
@@ -301,7 +303,7 @@ export function UploadPage() {
             }}
             className="text-sm text-gray-500 hover:text-gray-700"
           >
-            Clear results
+            {t('upload.clearResults')}
           </button>
         </div>
       )}

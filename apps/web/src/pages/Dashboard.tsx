@@ -46,8 +46,10 @@ import type {
   AnalyticsOverview,
 } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
+import { useTranslation } from 'react-i18next';
 
 export function DashboardPage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
@@ -175,7 +177,7 @@ export function DashboardPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map(i => (
             <Card key={i}>
@@ -208,7 +210,7 @@ export function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
           <div className="text-sm text-gray-500">
             {overview?.period.start} - {overview?.period.end}
           </div>
@@ -221,7 +223,7 @@ export function DashboardPage() {
                   updateSearch((next) => next.delete('category_id'));
                 }}
               >
-                All categories
+                {t('dashboard.allCategories')}
               </button>
               <span className="text-gray-400 mx-2">/</span>
               <span className="font-medium">{selectedCategory.category_name}</span>
@@ -242,7 +244,7 @@ export function DashboardPage() {
                 });
               }}
             >
-              This month
+              {t('common.thisMonth')}
             </button>
             <button
               type="button"
@@ -255,7 +257,7 @@ export function DashboardPage() {
                 });
               }}
             >
-              Last month
+              {t('common.lastMonth')}
             </button>
             <button
               type="button"
@@ -268,13 +270,13 @@ export function DashboardPage() {
                 });
               }}
             >
-              Year to date
+              {t('common.yearToDate')}
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
             <div className="flex items-center gap-2 text-sm text-gray-700">
-              <span className="text-gray-500">From</span>
+              <span className="text-gray-500">{t('common.fromDate')}</span>
               <input
                 type="date"
                 value={dateFrom}
@@ -286,7 +288,7 @@ export function DashboardPage() {
                 }}
                 className="h-9 px-2 rounded border border-gray-300"
               />
-              <span className="text-gray-500">To</span>
+              <span className="text-gray-500">{t('common.toDate')}</span>
               <input
                 type="date"
                 value={dateTo}
@@ -301,7 +303,7 @@ export function DashboardPage() {
             </div>
 
             <div className="flex items-center gap-2 text-sm text-gray-700">
-              <span className="text-gray-500">Status</span>
+              <span className="text-gray-500">{t('common.status')}</span>
               <select
                 value={statusFilter}
                 onChange={(e) => {
@@ -313,9 +315,9 @@ export function DashboardPage() {
                 }}
                 className="h-9 px-2 rounded border border-gray-300"
               >
-                <option value="">All</option>
-                <option value="booked">Booked</option>
-                <option value="pending">Pending</option>
+                <option value="">{t('common.all')}</option>
+                <option value="booked">{t('common.booked')}</option>
+                <option value="pending">{t('common.pending')}</option>
               </select>
             </div>
 
@@ -332,7 +334,7 @@ export function DashboardPage() {
                 }}
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              Exclude transfers
+              {t('common.excludeTransfers')}
             </label>
           </div>
         </div>
@@ -342,10 +344,10 @@ export function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown(excludeTransfers ? 'Net Spend' : 'Net Cashflow', {})}
+          onClick={() => openKPIDrilldown(excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow'), {})}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{excludeTransfers ? 'Net Spend' : 'Net Cashflow'}</CardTitle>
+            <CardTitle className="text-sm font-medium">{excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow')}</CardTitle>
             <CreditCard className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
@@ -355,36 +357,36 @@ export function DashboardPage() {
                 : formatCurrency(overview?.net_cashflow || 0, true)}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              {excludeTransfers ? 'Transfers excluded' : 'Cashflow view (transfers included)'}
+              {excludeTransfers ? t('dashboard.transfersExcluded') : t('dashboard.cashflowView')}
             </p>
           </CardContent>
         </Card>
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Expenses', { max: 0 })}
+          onClick={() => openKPIDrilldown(t('dashboard.expenses'), { max: 0 })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Expenses</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.expenses')}</CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(overview?.expenses || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">Absolute sum of spending</p>
+            <p className="text-xs text-gray-500 mt-1">{t('dashboard.absoluteSumOfSpending')}</p>
           </CardContent>
         </Card>
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Income', { min: 0 })}
+          onClick={() => openKPIDrilldown(t('dashboard.income'), { min: 0 })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Income</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.income')}</CardTitle>
             <TrendingUp className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">Transfers do not count as income</p>
+            <p className="text-xs text-gray-500 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
           </CardContent>
         </Card>
 
@@ -400,13 +402,13 @@ export function DashboardPage() {
           }}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Transfers</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.transfers')}</CardTitle>
             <ArrowRight className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(overview?.transfers.total || 0)}</div>
             <p className="text-xs text-gray-500 mt-1">
-              In {formatCurrency(overview?.transfers.in || 0)} / Out {formatCurrency(overview?.transfers.out || 0)}
+              {t('dashboard.transfersIn')} {formatCurrency(overview?.transfers.in || 0)} / {t('dashboard.transfersOut')} {formatCurrency(overview?.transfers.out || 0)}
             </p>
           </CardContent>
         </Card>
@@ -427,13 +429,13 @@ export function DashboardPage() {
           }}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Groceries spend</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.groceriesSpend')}</CardTitle>
             <Tag className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(groceriesSpend)}</div>
             <p className="text-xs text-gray-500 mt-1">
-              One click drilldown to transactions
+              {t('dashboard.groceriesDrilldownHint')}
             </p>
           </CardContent>
         </Card>
@@ -444,7 +446,7 @@ export function DashboardPage() {
         {/* Spending Trend */}
         <Card>
           <CardHeader>
-            <CardTitle>Spending Trend</CardTitle>
+            <CardTitle>{t('dashboard.spendingTrend')}</CardTitle>
           </CardHeader>
           <CardContent>
             {timeseries.length > 0 ? (
@@ -456,7 +458,7 @@ export function DashboardPage() {
                       const point = state.activePayload[0].payload as TimeSeriesPoint;
                       setDrilldownDateFrom(point.date);
                       setDrilldownDateTo(point.date);
-                      setDrilldownTitle(`Transactions: ${formatDateShort(point.date)}`);
+                      setDrilldownTitle(t('dashboard.transactionsOnDate', { date: formatDateShort(point.date) }));
                       setDrilldownSubtitle('');
                       setDrilldownCategory(undefined);
                       setDrilldownMerchantId(undefined);
@@ -488,7 +490,7 @@ export function DashboardPage() {
                     stroke="#ef4444"
                     strokeWidth={2}
                     dot={false}
-                    name="Expenses"
+                    name={t('dashboard.expenses')}
                   />
                   <Line
                     type="monotone"
@@ -496,13 +498,13 @@ export function DashboardPage() {
                     stroke="#22c55e"
                     strokeWidth={2}
                     dot={false}
-                    name="Income"
+                    name={t('dashboard.income')}
                   />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-gray-500">
-                No data for this period
+                {t('dashboard.noDataForPeriod')}
               </div>
             )}
           </CardContent>
@@ -512,17 +514,17 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>Spending by Category</CardTitle>
+              <CardTitle>{t('dashboard.spendingByCategory')}</CardTitle>
               <button
                 type="button"
                 onClick={() => setShowCategoryDetails((prev) => !prev)}
                 className="text-xs font-medium text-blue-600 hover:text-blue-700"
               >
-                {showCategoryDetails ? 'Skjul detaljer' : 'Vis detaljer'}
+                {showCategoryDetails ? t('dashboard.hideDetails') : t('dashboard.showDetails')}
               </button>
             </div>
             <p className="text-xs text-gray-500">
-              Click a category to drill down into merchants.
+              {t('dashboard.categoryDrilldownHint')}
             </p>
           </CardHeader>
           <CardContent>
@@ -573,7 +575,7 @@ export function DashboardPage() {
               </ResponsiveContainer>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-gray-500">
-                {hasCategorization ? 'Bruk "Vis detaljer" for a se oversikt' : 'Ingen kategoriserte transaksjoner enda'}
+                {hasCategorization ? t('dashboard.useShowDetailsHint') : t('dashboard.noCategorizedTransactions')}
               </div>
             )}
           </CardContent>
@@ -585,9 +587,9 @@ export function DashboardPage() {
         {/* Top Merchants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{selectedCategory ? 'Merchants in Category' : 'Top Merchants'}</CardTitle>
+            <CardTitle>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</CardTitle>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
-              View all <ArrowRight className="h-3 w-3" />
+              {t('dashboard.viewAll')} <ArrowRight className="h-3 w-3" />
             </Link>
           </CardHeader>
           <CardContent>
@@ -630,7 +632,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">No merchant data</p>
+              <p className="text-gray-500 text-center py-8">{t('dashboard.noMerchantData')}</p>
             )}
           </CardContent>
         </Card>
@@ -640,7 +642,7 @@ export function DashboardPage() {
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              Unusual Spending
+              {t('dashboard.unusualSpending')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -667,7 +669,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">No unusual spending detected</p>
+              <p className="text-gray-500 text-center py-8">{t('dashboard.noUnusualSpending')}</p>
             )}
           </CardContent>
         </Card>

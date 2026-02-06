@@ -30,8 +30,10 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
+import { useTranslation } from 'react-i18next';
 
 export function TransactionsPage() {
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -78,14 +80,14 @@ export function TransactionsPage() {
 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} transactions? This cannot be undone.`)) return;
+    if (!window.confirm(t('transactions.confirmBulkDelete', { count: selectedIds.length }))) return;
 
     try {
       await Promise.all(selectedIds.map(id => api.deleteTransaction(id)));
       setSelectedIds([]);
       fetchData();
     } catch (err) {
-      alert('Failed to delete transactions');
+      alert(t('transactions.failedBulkDelete'));
       fetchData();
     }
   };
@@ -94,10 +96,10 @@ export function TransactionsPage() {
     setCreateError(null);
     const nextErrors: { date?: string; amount?: string; description?: string } = {};
     const parsedAmount = parseFloat(newTx.amount);
-    if (!newTx.date) nextErrors.date = 'Date is required';
-    if (!newTx.description.trim()) nextErrors.description = 'Description is required';
+    if (!newTx.date) nextErrors.date = t('transactions.validation.dateRequired');
+    if (!newTx.description.trim()) nextErrors.description = t('transactions.validation.descriptionRequired');
     if (!newTx.amount || Number.isNaN(parsedAmount) || !Number.isFinite(parsedAmount)) {
-      nextErrors.amount = 'Amount must be a valid number';
+      nextErrors.amount = t('transactions.validation.amountInvalid');
     }
     setCreateErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -114,7 +116,7 @@ export function TransactionsPage() {
       setCreateErrors({});
       fetchData();
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create transaction');
+      setCreateError(err instanceof Error ? err.message : t('transactions.failedCreate'));
     }
   };
 
@@ -156,7 +158,7 @@ export function TransactionsPage() {
         setCategories(catResult.categories);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
+      setError(err instanceof Error ? err.message : t('transactions.failedFetch'));
     } finally {
       setIsLoading(false);
     }
@@ -242,17 +244,17 @@ export function TransactionsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Transactions</h1>
+        <h1 className="text-2xl font-bold">{t('transactions.title')}</h1>
         <div className="flex items-center gap-2">
           {selectedIds.length > 0 && (
             <Button variant="destructive" onClick={handleBulkDelete}>
               <Trash2 className="h-4 w-4 mr-2" />
-              Delete ({selectedIds.length})
+              {t('transactions.delete')} ({selectedIds.length})
             </Button>
           )}
           <Button onClick={() => setIsAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
-            Add Transaction
+            {t('transactions.addTransaction')}
           </Button>
           <Button
             variant="outline"
@@ -260,10 +262,10 @@ export function TransactionsPage() {
             onClick={() => setShowFilters(!showFilters)}
           >
             <Filter className="h-4 w-4 mr-2" />
-            Filters
+            {t('common.filters')}
             {hasFilters && (
               <Badge variant="secondary" className="ml-2">
-                Active
+                {t('common.active')}
               </Badge>
             )}
           </Button>
@@ -275,7 +277,7 @@ export function TransactionsPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <Input
           type="text"
-          placeholder="Search transactions..."
+          placeholder={t('common.searchTransactionsPlaceholder')}
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
@@ -291,7 +293,7 @@ export function TransactionsPage() {
           <CardContent className="pt-6">
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Quick date presets
+                {t('transactions.quickDatePresets')}
               </label>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -305,7 +307,7 @@ export function TransactionsPage() {
                     setPage(0);
                   }}
                 >
-                  This month
+                  {t('common.thisMonth')}
                 </Button>
                 <Button
                   type="button"
@@ -318,7 +320,7 @@ export function TransactionsPage() {
                     setPage(0);
                   }}
                 >
-                  Last month
+                  {t('common.lastMonth')}
                 </Button>
                 <Button
                   type="button"
@@ -331,7 +333,7 @@ export function TransactionsPage() {
                     setPage(0);
                   }}
                 >
-                  Year to date
+                  {t('common.yearToDate')}
                 </Button>
                 <Button
                   type="button"
@@ -343,14 +345,14 @@ export function TransactionsPage() {
                     setPage(0);
                   }}
                 >
-                  Clear dates
+                  {t('common.clearDates')}
                 </Button>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  From Date
+                  {t('common.fromDate')}
                 </label>
                 <Input
                   type="date"
@@ -363,7 +365,7 @@ export function TransactionsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  To Date
+                  {t('common.toDate')}
                 </label>
                 <Input
                   type="date"
@@ -376,7 +378,7 @@ export function TransactionsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
+                  {t('common.status')}
                 </label>
                 <select
                   value={status}
@@ -386,14 +388,14 @@ export function TransactionsPage() {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">All</option>
-                  <option value="booked">Booked</option>
-                  <option value="pending">Pending</option>
+                  <option value="">{t('common.all')}</option>
+                  <option value="booked">{t('common.booked')}</option>
+                  <option value="pending">{t('common.pending')}</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Source
+                  {t('common.source')}
                 </label>
                 <select
                   value={sourceType}
@@ -403,14 +405,14 @@ export function TransactionsPage() {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">All</option>
-                  <option value="xlsx">Credit Card (XLSX)</option>
-                  <option value="pdf">Bank Statement (PDF)</option>
+                  <option value="">{t('common.all')}</option>
+                  <option value="xlsx">{t('common.creditCardXlsx')}</option>
+                  <option value="pdf">{t('common.bankStatementPdf')}</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Category
+                  {t('common.category')}
                 </label>
                 <select
                   value={categoryId}
@@ -420,7 +422,7 @@ export function TransactionsPage() {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">All Categories</option>
+                  <option value="">{t('common.allCategories')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name}
@@ -433,7 +435,7 @@ export function TransactionsPage() {
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Min amount
+                  {t('common.minAmount')}
                 </label>
                 <Input
                   type="number"
@@ -448,7 +450,7 @@ export function TransactionsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Max amount
+                  {t('common.maxAmount')}
                 </label>
                 <Input
                   type="number"
@@ -466,7 +468,7 @@ export function TransactionsPage() {
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Merchant (exact)
+                  {t('transactions.merchantExact')}
                 </label>
                 <Input
                   type="text"
@@ -481,7 +483,7 @@ export function TransactionsPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Merchant ID
+                  {t('transactions.merchantId')}
                 </label>
                 <Input
                   type="text"
@@ -508,7 +510,7 @@ export function TransactionsPage() {
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <label htmlFor="exclude-transfers" className="text-sm text-gray-700">
-                Exclude transfers (default)
+                {t('transactions.excludeTransfersDefault')}
               </label>
             </div>
             {hasFilters && (
@@ -519,7 +521,7 @@ export function TransactionsPage() {
                 className="mt-4"
               >
                 <X className="h-4 w-4 mr-2" />
-                Clear filters
+                {t('common.clearFilters')}
               </Button>
             )}
           </CardContent>
@@ -555,7 +557,7 @@ export function TransactionsPage() {
         <>
           {/* Results count */}
           <p className="text-sm text-gray-600">
-            Showing {transactions.length} of {total} transactions
+            {t('transactions.showingCount', { shown: transactions.length, total })}
           </p>
 
           {/* Transactions List */}
@@ -578,24 +580,24 @@ export function TransactionsPage() {
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleSaveEdit(tx.id)}>
-                              Save
+                              {t('common.save')}
                             </Button>
                             <Button size="sm" variant="outline" onClick={() => setEditingId(null)}>
-                              Cancel
+                              {t('common.cancel')}
                             </Button>
                           </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Category
+                              {t('common.category')}
                             </label>
                             <select
                               value={editCategory}
                               onChange={(e) => setEditCategory(e.target.value)}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
-                              <option value="">Uncategorized</option>
+                              <option value="">{t('common.uncategorized')}</option>
                               {categories.map((cat) => (
                                 <option key={cat.id} value={cat.id}>
                                   {cat.name}
@@ -605,13 +607,13 @@ export function TransactionsPage() {
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Notes
+                              {t('transactions.notes')}
                             </label>
                             <Input
                               type="text"
                               value={editNotes}
                               onChange={(e) => setEditNotes(e.target.value)}
-                              placeholder="Add notes..."
+                              placeholder={t('transactions.notesPlaceholder')}
                             />
                           </div>
                         </div>
@@ -730,7 +732,7 @@ export function TransactionsPage() {
                 ))}
                 {transactions.length === 0 && (
                   <div className="p-12 text-center text-gray-500">
-                    No transactions found
+                    {t('transactions.noTransactionsFound')}
                   </div>
                 )}
               </div>
@@ -747,10 +749,10 @@ export function TransactionsPage() {
                 disabled={page === 0}
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
+                {t('common.previous')}
               </Button>
               <span className="text-sm text-gray-600">
-                Page {page + 1} of {totalPages}
+                {t('transactions.pageOf', { page: page + 1, total: totalPages })}
               </span>
               <Button
                 variant="outline"
@@ -758,7 +760,7 @@ export function TransactionsPage() {
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
               >
-                Next
+                {t('common.next')}
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
@@ -768,11 +770,11 @@ export function TransactionsPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add Transaction</DialogTitle>
+            <DialogTitle>{t('transactions.addTransaction')}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Date</Label>
+              <Label className="text-right">{t('common.date')}</Label>
               <div className="col-span-3">
                 <Input type="date" value={newTx.date} onChange={e => setNewTx({ ...newTx, date: e.target.value })} />
                 {createErrors.date && (
@@ -781,7 +783,7 @@ export function TransactionsPage() {
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Amount</Label>
+              <Label className="text-right">{t('common.amount')}</Label>
               <div className="col-span-3">
                 <Input type="number" step="0.01" value={newTx.amount} onChange={e => setNewTx({ ...newTx, amount: e.target.value })} />
                 {createErrors.amount && (
@@ -790,7 +792,7 @@ export function TransactionsPage() {
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Description</Label>
+              <Label className="text-right">{t('common.description')}</Label>
               <div className="col-span-3">
                 <Input value={newTx.description} onChange={e => setNewTx({ ...newTx, description: e.target.value })} />
                 {createErrors.description && (
@@ -799,13 +801,13 @@ export function TransactionsPage() {
               </div>
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label className="text-right">Category</Label>
+              <Label className="text-right">{t('common.category')}</Label>
               <select
                 className="col-span-3 flex h-10 w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                 value={newTx.category_id}
                 onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
               >
-                <option value="">Uncategorized</option>
+                <option value="">{t('common.uncategorized')}</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.name}
@@ -820,7 +822,7 @@ export function TransactionsPage() {
             )}
           </div>
           <DialogFooter>
-            <Button onClick={handleCreate}>Save Transaction</Button>
+            <Button onClick={handleCreate}>{t('transactions.saveTransaction')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
