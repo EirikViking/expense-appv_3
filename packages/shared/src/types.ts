@@ -306,6 +306,14 @@ export interface UpdateTransactionMetaRequest {
   tag_ids?: string[];
 }
 
+// Transaction patch (core fields/flags)
+export interface UpdateTransactionRequest {
+  is_transfer?: boolean;
+  is_excluded?: boolean;
+  merchant?: string | null;
+  category_id?: string | null;
+}
+
 // Transaction split
 export interface CreateSplitRequest {
   splits: Array<{
@@ -570,6 +578,21 @@ export interface TransactionsQuery {
   offset?: number;
   sort_by?: 'date' | 'amount' | 'description';
   sort_order?: 'asc' | 'desc';
+}
+
+export interface AnalyticsOverview {
+  period: { start: string; end: string };
+  include_transfers: boolean;
+  income: number;
+  expenses: number;
+  net_cashflow: number;
+  net_spend: number;
+  transfers: {
+    in: number;
+    out: number;
+    total: number;
+    count: number;
+  };
 }
 
 export interface AnalyticsQuery {
