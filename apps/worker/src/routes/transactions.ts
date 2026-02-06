@@ -182,11 +182,6 @@ transactions.get('/', async (c) => {
       params.push(max_amount);
     }
 
-    if (search) {
-      conditions.push('t.description LIKE ?');
-      params.push(`%${search}%`);
-    }
-
     if (!include_transfers) {
       conditions.push('COALESCE(t.is_transfer, 0) = 0');
     }
@@ -233,6 +228,19 @@ transactions.get('/', async (c) => {
 
       conditions.push('COALESCE(m.canonical_name, TRIM(t.description)) = ?');
       params.push(merchant_name.trim());
+    }
+
+    if (search && search.trim()) {
+      // Make "search" useful by matching both raw description and canonical merchant name (if available).
+      if (!joinClause.includes('transaction_meta')) {
+        joinClause += ' LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id';
+      }
+      const merchantsJoin = ' LEFT JOIN merchants m ON tm.merchant_id = m.id';
+      if (!joinClause.includes('merchants m')) {
+        joinClause += merchantsJoin;
+      }
+      conditions.push('(t.description LIKE ? OR COALESCE(m.canonical_name, \'\') LIKE ?)');
+      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
