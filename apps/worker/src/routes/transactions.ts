@@ -724,8 +724,8 @@ transactions.post('/admin/repair-year-amounts', async (c) => {
         WHERE source_type = 'pdf'
           AND amount >= 1900 AND amount <= 2100
           AND CAST(amount AS INTEGER) = amount
-          AND CAST(substr(tx_date, 1, 4) AS INTEGER) = CAST(amount AS INTEGER)
           AND (description IS NULL OR description NOT GLOB '*[A-Za-z]*')
+          AND description GLOB '*[0-9][0-9].[0-9][0-9].[0-9][0-9][0-9][0-9]*'
         LIMIT ?
       `
     ).bind(limit).all<{
