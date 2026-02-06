@@ -1248,6 +1248,195 @@ transactions.get('/admin/diagnostics/suspicious-positive-purchases', async (c) =
   }
 });
 
+// Validate the integrity of ingested data for a date range (read-only; admin-protected by auth middleware).
+// This is designed to be fast and summary-only so scripts/UI can fail fast after imports.
+transactions.get('/admin/validate-ingest', async (c) => {
+  try {
+    const q = c.req.query();
+    const dateFrom = q.date_from;
+    const dateTo = q.date_to;
+
+    const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
+      return c.json({ error: 'date_from and date_to are required (YYYY-MM-DD)' }, 400);
+    }
+
+    // Counts by flow_type
+    const flowCountsRes = await c.env.DB.prepare(
+      `
+        SELECT t.flow_type as flow_type, COUNT(*) as count
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+        GROUP BY t.flow_type
+      `
+    ).bind(dateFrom, dateTo).all<{ flow_type: string; count: number }>();
+
+    const flow_counts: Record<string, number> = {};
+    for (const r of flowCountsRes.results || []) {
+      flow_counts[String(r.flow_type || 'unknown')] = r.count;
+    }
+
+    // Excluded + zero-amount stats
+    const statsRes = await c.env.DB.prepare(
+      `
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN COALESCE(t.is_excluded, 0) = 1 THEN 1 ELSE 0 END) as excluded,
+          SUM(CASE WHEN t.amount = 0 AND COALESCE(t.is_excluded, 0) = 1 THEN 1 ELSE 0 END) as zero_amount_excluded,
+          SUM(CASE WHEN t.amount = 0 AND COALESCE(t.is_excluded, 0) = 0 THEN 1 ELSE 0 END) as zero_amount_active
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+      `
+    ).bind(dateFrom, dateTo).first<{
+      total: number;
+      excluded: number;
+      zero_amount_excluded: number;
+      zero_amount_active: number;
+    }>();
+
+    const sourceCountsRes = await c.env.DB.prepare(
+      `
+        SELECT t.source_type as source_type, COUNT(*) as count
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+        GROUP BY t.source_type
+      `
+    ).bind(dateFrom, dateTo).all<{ source_type: string; count: number }>();
+
+    const source_counts: Record<string, number> = {};
+    for (const r of sourceCountsRes.results || []) {
+      source_counts[String(r.source_type || 'unknown')] = r.count;
+    }
+
+    // Groceries sums: strict (flow_type=expense) vs fallback (expense OR unknown-negative) to catch misclassified flow/sign.
+    const groceriesStrict = await c.env.DB.prepare(
+      `
+        SELECT
+          COUNT(*) as tx_count,
+          COALESCE(SUM(ABS(t.amount)), 0) as sum_abs
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND tm.category_id = 'cat_food_groceries'
+          AND t.flow_type = 'expense'
+      `
+    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+
+    const groceriesFallback = await c.env.DB.prepare(
+      `
+        SELECT
+          COUNT(*) as tx_count,
+          COALESCE(SUM(ABS(t.amount)), 0) as sum_abs
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND tm.category_id = 'cat_food_groceries'
+          AND (
+            t.flow_type = 'expense' OR
+            (t.flow_type = 'unknown' AND t.amount < 0)
+          )
+      `
+    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+
+    const groceriesIncomeLeak = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND tm.category_id = 'cat_food_groceries'
+          AND t.flow_type = 'income'
+      `
+    ).bind(dateFrom, dateTo).first<{ count: number }>();
+
+    const groceries_strict_sum = Number(groceriesStrict?.sum_abs || 0);
+    const groceries_fallback_sum = Number(groceriesFallback?.sum_abs || 0);
+    const groceries_flow_delta = Math.abs(groceries_fallback_sum - groceries_strict_sum);
+
+    // Suspicious income (purchase keywords)
+    const keywords = [
+      'REMA', 'KIWI', 'MENY', 'COOP', 'EXTRA', 'OBS', 'SPAR', 'JOKER',
+      'XXL', 'SATS', 'GOOGLE ONE', 'NARVESEN', 'VIPPS', 'PING',
+    ];
+
+    const keywordClause = keywords.map(() => '(t.description LIKE ? COLLATE NOCASE OR COALESCE(t.merchant, \'\') LIKE ? COLLATE NOCASE OR COALESCE(m.canonical_name, \'\') LIKE ? COLLATE NOCASE)').join(' OR ');
+    const keywordParams: string[] = [];
+    for (const k of keywords) {
+      const needle = `%${k}%`;
+      keywordParams.push(needle, needle, needle);
+    }
+
+    const suspiciousIncomeRes = await c.env.DB.prepare(
+      `
+        SELECT
+          TRIM(t.description) as description,
+          COUNT(*) as count,
+          COALESCE(SUM(ABS(t.amount)), 0) as total_abs
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        LEFT JOIN merchants m ON tm.merchant_id = m.id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND t.flow_type = 'income'
+          AND (${keywordClause})
+        GROUP BY TRIM(t.description)
+        ORDER BY count DESC, total_abs DESC
+        LIMIT 20
+      `
+    ).bind(dateFrom, dateTo, ...keywordParams).all<{ description: string; count: number; total_abs: number }>();
+
+    const suspicious_income = (suspiciousIncomeRes.results || []).map((r) => ({
+      description: r.description,
+      count: r.count,
+      total_abs: r.total_abs,
+    }));
+
+    const zero_active = Number(statsRes?.zero_amount_active || 0);
+    const suspicious_count = suspicious_income.reduce((acc, r) => acc + (r.count || 0), 0);
+
+    const failures: string[] = [];
+    if (zero_active > 0) failures.push('zero_amount_rows_active');
+    if (suspicious_count > 0) failures.push('suspicious_income_purchases');
+    if (groceries_flow_delta > 1) failures.push('groceries_flow_type_mismatch');
+    if (Number(groceriesIncomeLeak?.count || 0) > 0) failures.push('groceries_income_leak');
+
+    return c.json({
+      ok: failures.length === 0,
+      failures,
+      period: { date_from: dateFrom, date_to: dateTo },
+      counts: {
+        total: Number(statsRes?.total || 0),
+        excluded: Number(statsRes?.excluded || 0),
+        flow_type: flow_counts,
+        zero_amount: {
+          active: zero_active,
+          excluded: Number(statsRes?.zero_amount_excluded || 0),
+        },
+        source_type: source_counts,
+      },
+      groceries: {
+        strict: {
+          tx_count: Number(groceriesStrict?.tx_count || 0),
+          sum_abs: groceries_strict_sum,
+        },
+        fallback: {
+          tx_count: Number(groceriesFallback?.tx_count || 0),
+          sum_abs: groceries_fallback_sum,
+        },
+        flow_delta: groceries_flow_delta,
+        income_leak_count: Number(groceriesIncomeLeak?.count || 0),
+      },
+      suspicious_income,
+    });
+  } catch (error) {
+    console.error('Validate ingest error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Rebuild flow_type and normalize amount signs for existing rows (idempotent; supports dry_run).
 transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
   try {

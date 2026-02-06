@@ -246,8 +246,14 @@ ingest.post('/xlsx', async (c) => {
           try {
             const obj = JSON.parse(tx.raw_json);
             if (obj && typeof obj === 'object') {
+              (obj as any).source_type = 'xlsx';
+              (obj as any).source_filename = filename;
+              (obj as any).source_file_hash = file_hash;
+              (obj as any).source_fingerprint = file_hash;
               (obj as any).original_amount = tx.amount;
+              (obj as any).pre_normalized_amount = xlsxNormalized.amount;
               (obj as any).normalized_amount = amount;
+              (obj as any).original_flow_type = flow.flow_type;
               (obj as any).normalized_flow_type = flowType;
               (obj as any).normalized_is_transfer = Boolean(flags?.is_transfer);
               (obj as any).normalized_is_excluded = Boolean(flags?.is_excluded);
@@ -257,7 +263,21 @@ ingest.post('/xlsx', async (c) => {
           } catch {
             // fall through
           }
-          return tx.raw_json;
+          return JSON.stringify({
+            source_type: 'xlsx',
+            source_filename: filename,
+            source_file_hash: file_hash,
+            source_fingerprint: file_hash,
+            raw_json_original: tx.raw_json,
+            original_amount: tx.amount,
+            pre_normalized_amount: xlsxNormalized.amount,
+            normalized_amount: amount,
+            original_flow_type: flow.flow_type,
+            normalized_flow_type: flowType,
+            normalized_is_transfer: Boolean(flags?.is_transfer),
+            normalized_is_excluded: Boolean(flags?.is_excluded),
+            normalized_reason: flow.reason,
+          });
         })();
 
         const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
@@ -382,8 +402,13 @@ ingest.post('/pdf', async (c) => {
         const merchantHint = tx.merchant_hint || extractMerchantFromPdfLine(tx.raw_line);
 
         const rawJson = JSON.stringify({
+          source_type: 'pdf',
+          source_filename: filename,
+          source_file_hash: file_hash,
+          source_fingerprint: file_hash,
           raw_line: tx.raw_line,
           ...(tx.raw_block ? { raw_block: tx.raw_block } : {}),
+          ...(tx.detaljer ? { detaljer: tx.detaljer } : {}),
           parsed_description: description,
           parsed_amount: parsedAmount,
           merchant_hint: merchantHint,
@@ -402,6 +427,25 @@ ingest.post('/pdf', async (c) => {
         const isTransfer = normalized.flags?.is_transfer === 1 || detectIsTransfer(description);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
+
+        const enrichedRawJson = (() => {
+          try {
+            const obj = JSON.parse(rawJson);
+            if (obj && typeof obj === 'object') {
+              (obj as any).original_amount = parsedAmount;
+              (obj as any).normalized_amount = amount;
+              (obj as any).original_flow_type = flow.flow_type;
+              (obj as any).normalized_flow_type = flowType;
+              (obj as any).normalized_is_transfer = Boolean(flags?.is_transfer);
+              (obj as any).normalized_is_excluded = Boolean(flags?.is_excluded);
+              (obj as any).normalized_reason = flow.reason;
+              return JSON.stringify(obj);
+            }
+          } catch {
+            // fall through
+          }
+          return rawJson;
+        })();
 
         const txHash = await computeTxHash(tx.tx_date, description, amount, 'pdf');
 
@@ -425,7 +469,7 @@ ingest.post('/pdf', async (c) => {
           tx.status,
           'pdf',
           file_hash,
-          rawJson,
+          enrichedRawJson,
           flowType,
           flags
         );

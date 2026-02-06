@@ -12,6 +12,11 @@ export interface ParsedPdfTransaction {
   raw_line: string;
   raw_block?: string;
   merchant_hint?: string;
+  detaljer?: {
+    butikk?: string;
+    transaksjonstekst?: string;
+    fra_konto?: string;
+  };
 }
 
 export interface SkippedLine {
@@ -542,6 +547,11 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
       raw_line: `${b.date} ${desc} ${b.amount}`,
       raw_block,
       merchant_hint: b.butikk?.trim() || undefined,
+      detaljer: {
+        butikk: b.butikk?.trim() || undefined,
+        transaksjonstekst: b.transaksjonstekst?.trim() || undefined,
+        fra_konto: b.fra_konto?.trim() || undefined,
+      },
     });
   };
 

@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+import { access } from 'node:fs/promises';
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
 const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
@@ -55,12 +57,44 @@ async function login() {
 }
 
 async function extractTextFromPdfBytes(bytes) {
-  // Resolve pdfjs-dist from the web workspace dependency so root scripts don't need hoisting.
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const pdfjsPath = path.join(repoRoot, 'apps', 'web', 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs');
-  const pdfjs = await import(pathToFileURL(pdfjsPath).href);
+  const require = createRequire(import.meta.url);
 
-  const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes) });
+  // Resolve pdfjs-dist relative to the web workspace (works with pnpm non-hoisted installs).
+  let pdfjsDistRoot;
+  try {
+    const pkgJsonPath = require.resolve('pdfjs-dist/package.json', {
+      paths: [path.join(repoRoot, 'apps', 'web')],
+    });
+    pdfjsDistRoot = path.dirname(pkgJsonPath);
+  } catch {
+    throw new Error('Failed to locate pdfjs-dist. Ensure `pnpm --filter web install` has been run.');
+  }
+
+  const standardFontsDir = path.join(pdfjsDistRoot, 'standard_fonts');
+  try {
+    await access(standardFontsDir);
+  } catch {
+    throw new Error(`pdfjs standard fonts not found at ${standardFontsDir}`);
+  }
+
+  const pdfjsModulePath = path.join(pdfjsDistRoot, 'legacy', 'build', 'pdf.mjs');
+  try {
+    await access(pdfjsModulePath);
+  } catch {
+    throw new Error(`pdfjs module not found at ${pdfjsModulePath}`);
+  }
+
+  // Self-test, one line, no noisy logs.
+  console.log('pdfjs fonts ok');
+
+  const pdfjs = await import(pathToFileURL(pdfjsModulePath).href);
+  const standardFontDataUrl = pathToFileURL(standardFontsDir + path.sep).href;
+
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(bytes),
+    standardFontDataUrl,
+  });
   const doc = await loadingTask.promise;
   let out = '';
 
