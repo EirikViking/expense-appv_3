@@ -24,6 +24,7 @@ import type {
   TimeSeriesPoint,
   RecurringItem,
   AnalyticsCompareResponse,
+  FlowType,
   TransactionStatus,
 } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -77,15 +78,17 @@ export function InsightsPage() {
   const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
   const [drilldownCategoryId, setDrilldownCategoryId] = useState<string | undefined>();
   const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
+  const [drilldownFlowType, setDrilldownFlowType] = useState<FlowType | undefined>();
   const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
   const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
 
-  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, min?: number, max?: number } = {}) => {
+  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, flowType?: FlowType } = {}) => {
     setDrilldownTitle(title);
     setDrilldownSubtitle(`${dateFrom} - ${dateTo}`);
     setDrilldownStatus(opts.status);
-    setDrilldownMinAmount(opts.min);
-    setDrilldownMaxAmount(opts.max);
+    setDrilldownFlowType(opts.flowType);
+    setDrilldownMinAmount(undefined);
+    setDrilldownMaxAmount(undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
     setDrilldownCategoryId(undefined);
@@ -239,6 +242,10 @@ export function InsightsPage() {
       setDrilldownMerchantName(undefined);
     }
 
+    // Insights merchant breakdown is spend-oriented (expenses).
+    setDrilldownFlowType('expense');
+    setDrilldownMinAmount(undefined);
+    setDrilldownMaxAmount(undefined);
     setDrilldownCategoryId(undefined);
     setDrilldownOpen(true);
   };
@@ -249,6 +256,10 @@ export function InsightsPage() {
     setDrilldownCategoryId(category.category_id ?? undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
+    // Insights category breakdown is spend-oriented (expenses).
+    setDrilldownFlowType('expense');
+    setDrilldownMinAmount(undefined);
+    setDrilldownMaxAmount(undefined);
     setDrilldownOpen(true);
   };
 
@@ -393,7 +404,7 @@ export function InsightsPage() {
         <div className="grid gap-4 md:grid-cols-3">
           <Card
             className="cursor-pointer hover:bg-gray-50 transition-colors"
-            onClick={() => openKPIDrilldown('Total Expenses', { max: 0 })}
+            onClick={() => openKPIDrilldown('Total Expenses', { flowType: 'expense' })}
           >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -425,7 +436,7 @@ export function InsightsPage() {
 
           <Card
             className="cursor-pointer hover:bg-gray-50 transition-colors"
-            onClick={() => openKPIDrilldown('Total Income', { min: 0 })}
+            onClick={() => openKPIDrilldown('Total Income', { flowType: 'income' })}
           >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
@@ -741,6 +752,7 @@ export function InsightsPage() {
         merchantName={drilldownMerchantName}
         categoryId={drilldownCategoryId}
         status={drilldownStatus}
+        flowType={drilldownFlowType}
         minAmount={drilldownMinAmount}
         maxAmount={drilldownMaxAmount}
       />

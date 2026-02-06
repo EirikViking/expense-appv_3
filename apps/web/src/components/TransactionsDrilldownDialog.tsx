@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import type { TransactionWithMeta, TransactionStatus } from '@expense/shared';
+import type { FlowType, TransactionWithMeta, TransactionStatus } from '@expense/shared';
 import {
     Dialog,
     DialogContent,
@@ -27,6 +27,8 @@ interface TransactionsDrilldownDialogProps {
     merchantName?: string;
     categoryId?: string;
     status?: TransactionStatus;
+    flowType?: FlowType;
+    includeTransfers?: boolean;
     minAmount?: number;
     maxAmount?: number;
 }
@@ -42,6 +44,8 @@ export function TransactionsDrilldownDialog({
     merchantName,
     categoryId,
     status,
+    flowType,
+    includeTransfers,
     minAmount,
     maxAmount,
 }: TransactionsDrilldownDialogProps) {
@@ -56,7 +60,7 @@ export function TransactionsDrilldownDialog({
         if (open) {
             loadTransactions();
         }
-    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId, status, minAmount, maxAmount]);
+    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId, status, flowType, includeTransfers, minAmount, maxAmount]);
 
     const loadTransactions = async () => {
         setLoading(true);
@@ -68,6 +72,8 @@ export function TransactionsDrilldownDialog({
                 merchant_name: merchantName,
                 category_id: categoryId,
                 status: status,
+                flow_type: flowType,
+                include_transfers: includeTransfers,
                 min_amount: minAmount,
                 max_amount: maxAmount,
                 limit,

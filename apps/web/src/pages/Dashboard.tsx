@@ -42,6 +42,7 @@ import type {
   MerchantBreakdown,
   TimeSeriesPoint,
   AnomalyItem,
+  FlowType,
   TransactionStatus,
   AnalyticsOverview,
 } from '@expense/shared';
@@ -91,15 +92,19 @@ export function DashboardPage() {
   const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
   const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
   const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
+  const [drilldownFlowType, setDrilldownFlowType] = useState<FlowType | undefined>();
+  const [drilldownIncludeTransfers, setDrilldownIncludeTransfers] = useState<boolean | undefined>();
   const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
   const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
 
-  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, min?: number, max?: number }) => {
+  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, flowType?: FlowType } = {}) => {
     setDrilldownTitle(title);
     setDrilldownSubtitle(`${overview?.period.start} - ${overview?.period.end}`);
     setDrilldownStatus(opts.status);
-    setDrilldownMinAmount(opts.min);
-    setDrilldownMaxAmount(opts.max);
+    setDrilldownFlowType(opts.flowType);
+    setDrilldownIncludeTransfers(!excludeTransfers);
+    setDrilldownMinAmount(undefined);
+    setDrilldownMaxAmount(undefined);
     setDrilldownCategory(undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
@@ -365,7 +370,7 @@ export function DashboardPage() {
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown(t('dashboard.expenses'), { max: 0 })}
+          onClick={() => openKPIDrilldown(t('dashboard.expenses'), { flowType: 'expense' })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.expenses')}</CardTitle>
@@ -379,7 +384,7 @@ export function DashboardPage() {
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown(t('dashboard.income'), { min: 0 })}
+          onClick={() => openKPIDrilldown(t('dashboard.income'), { flowType: 'income' })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.income')}</CardTitle>
@@ -464,6 +469,10 @@ export function DashboardPage() {
                       setDrilldownCategory(undefined);
                       setDrilldownMerchantId(undefined);
                       setDrilldownMerchantName(undefined);
+                      setDrilldownFlowType(undefined);
+                      setDrilldownIncludeTransfers(!excludeTransfers);
+                      setDrilldownMinAmount(undefined);
+                      setDrilldownMaxAmount(undefined);
                       setDrilldownOpen(true);
                     }
                   }}
@@ -687,6 +696,8 @@ export function DashboardPage() {
         merchantId={drilldownMerchantId}
         merchantName={drilldownMerchantName}
         status={drilldownStatus}
+        flowType={drilldownFlowType}
+        includeTransfers={drilldownIncludeTransfers}
         minAmount={drilldownMinAmount}
         maxAmount={drilldownMaxAmount}
       />
