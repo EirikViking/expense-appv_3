@@ -45,6 +45,7 @@ import type {
   TransactionStatus,
   AnalyticsOverview,
 } from '@expense/shared';
+import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 import { useTranslation } from 'react-i18next';
 
@@ -171,7 +172,7 @@ export function DashboardPage() {
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
 
-  const groceries = categories.find((c) => c.category_id === 'cat_food_groceries') || null;
+  const groceries = categories.find((c) => c.category_id === CATEGORY_IDS.groceries) || null;
   const groceriesSpend = groceries ? Math.abs(groceries.total) : 0;
 
   if (loading) {
@@ -424,7 +425,7 @@ export function DashboardPage() {
             qs.set('date_to', dateTo);
             qs.set('include_transfers', excludeTransfers ? '0' : '1');
             if (statusFilter) qs.set('status', statusFilter);
-            qs.set('category_id', 'cat_food_groceries');
+            qs.set('category_id', CATEGORY_IDS.groceries);
             navigate(`/transactions?${qs.toString()}`);
           }}
         >

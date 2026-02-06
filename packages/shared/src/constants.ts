@@ -63,3 +63,10 @@ export const XLSX_COLUMNS = {
 // Default pagination
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500;
+
+// Canonical IDs for seeded categories (keeps frontend/backend from hardcoding magic strings)
+export const CATEGORY_IDS = {
+  groceries: 'cat_food_groceries',
+  transfers: 'cat_transfer',
+  income: 'cat_income',
+} as const;
