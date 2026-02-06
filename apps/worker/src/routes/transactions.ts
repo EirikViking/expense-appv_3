@@ -13,6 +13,7 @@ import {
 import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
+import { parsePdfTransactionLine } from '../lib/pdf-parser';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -705,6 +706,167 @@ transactions.post('/admin/detect-transfers', async (c) => {
     });
   } catch (error) {
     console.error('Detect transfers error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Repair corrupted PDF transactions where the amount was accidentally parsed from the year token (e.g. 2026.00).
+transactions.post('/admin/repair-year-amounts', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; dry_run?: boolean };
+    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+    const dryRun = body.dry_run !== false; // default true
+
+    const rows = await c.env.DB.prepare(
+      `
+        SELECT id, tx_date, amount, description, tx_hash, raw_json, is_excluded
+        FROM transactions
+        WHERE source_type = 'pdf'
+          AND amount >= 1900 AND amount <= 2100
+          AND CAST(amount AS INTEGER) = amount
+          AND CAST(substr(tx_date, 1, 4) AS INTEGER) = CAST(amount AS INTEGER)
+          AND (description IS NULL OR description NOT GLOB '*[A-Za-z]*')
+        LIMIT ?
+      `
+    ).bind(limit).all<{
+      id: string;
+      tx_date: string;
+      amount: number;
+      description: string;
+      tx_hash: string;
+      raw_json: string;
+      is_excluded: 0 | 1;
+    }>();
+
+    const scanned = (rows.results || []).length;
+
+    let reparsed = 0;
+    let updated = 0;
+    let excluded = 0;
+    let missingRawLine = 0;
+    let parseFailed = 0;
+    let hashConflicts = 0;
+
+    const statements: D1PreparedStatement[] = [];
+
+    const addMetaNote = (txId: string, note: string) => {
+      statements.push(
+        c.env.DB.prepare(
+          `
+            INSERT INTO transaction_meta (transaction_id, notes, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              notes = CASE
+                WHEN notes IS NULL OR notes = '' THEN excluded.notes
+                ELSE notes || char(10) || excluded.notes
+              END,
+              updated_at = datetime('now')
+          `
+        ).bind(txId, note)
+      );
+    };
+
+    for (const r of rows.results || []) {
+      let rawLine: string | null = null;
+      try {
+        const parsed = JSON.parse(r.raw_json || '{}');
+        if (typeof parsed?.raw_line === 'string' && parsed.raw_line.trim()) {
+          rawLine = parsed.raw_line.trim();
+        }
+      } catch {
+        // ignore
+      }
+
+      if (!rawLine) {
+        missingRawLine++;
+        excluded++;
+        if (!dryRun) {
+          // Set amount to 0 to remove the poisoned year value from aggregates; keep is_excluded=1.
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, '[auto] year-amount repair: excluded (missing raw_line)');
+        }
+        continue;
+      }
+
+      const parsedTx = parsePdfTransactionLine(rawLine);
+      if (!parsedTx) {
+        parseFailed++;
+        excluded++;
+        if (!dryRun) {
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, '[auto] year-amount repair: excluded (unable to reparse)');
+        }
+        continue;
+      }
+
+      // If the re-parse still yields the year as amount, treat as unrecoverable.
+      const year = Number(String(r.tx_date).slice(0, 4));
+      if (Number.isFinite(year) && parsedTx.amount >= 1900 && parsedTx.amount <= 2100 && parsedTx.amount === year) {
+        parseFailed++;
+        excluded++;
+        if (!dryRun) {
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, '[auto] year-amount repair: excluded (amount still looks like year)');
+        }
+        continue;
+      }
+
+      reparsed++;
+
+      // Update amount + description + tx_hash (to keep dedupe sane).
+      const nextHash = await computeTxHash(r.tx_date, parsedTx.description, parsedTx.amount, 'pdf');
+
+      // If another row already has the corrected hash, exclude this one as a duplicate.
+      const conflict = await c.env.DB.prepare(
+        'SELECT id FROM transactions WHERE tx_hash = ? AND id != ? LIMIT 1'
+      ).bind(nextHash, r.id).first<{ id: string }>();
+
+      if (conflict?.id) {
+        hashConflicts++;
+        excluded++;
+        if (!dryRun) {
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, `[auto] year-amount repair: excluded (hash conflict with ${conflict.id})`);
+        }
+        continue;
+      }
+
+      updated++;
+      if (!dryRun) {
+        statements.push(
+          c.env.DB.prepare(
+            'UPDATE transactions SET amount = ?, description = ?, tx_hash = ?, is_excluded = 0 WHERE id = ?'
+          ).bind(parsedTx.amount, parsedTx.description, nextHash, r.id)
+        );
+        addMetaNote(r.id, '[auto] year-amount repair: repaired amount/description');
+      }
+    }
+
+    if (!dryRun && statements.length > 0) {
+      await c.env.DB.batch(statements);
+    }
+
+    return c.json({
+      success: true,
+      dry_run: dryRun,
+      scanned,
+      reparsed,
+      updated: dryRun ? 0 : updated,
+      excluded: dryRun ? 0 : excluded,
+      missing_raw_line: missingRawLine,
+      parse_failed: parseFailed,
+      hash_conflicts: hashConflicts,
+    });
+  } catch (error) {
+    console.error('Repair year amounts error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
