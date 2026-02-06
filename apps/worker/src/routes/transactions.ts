@@ -13,8 +13,9 @@ import {
 import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
-import { parsePdfTransactionLine } from '../lib/pdf-parser';
+import { extractMerchantFromPdfLine, parsePdfTransactionLine } from '../lib/pdf-parser';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
+import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 
 const transactions = new Hono<{ Bindings: Env }>();
@@ -1240,10 +1241,48 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       date_from?: string;
       date_to?: string;
       source_type?: 'xlsx' | 'pdf' | 'manual';
+      cursor?: string;
     };
 
     const dryRun = body.dry_run !== false; // default true
-    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+    const limit = Math.min(Math.max(1, body.limit ?? 500), 1000);
+
+    const b64Decode = (value: string): string => {
+      // Workers runtime: atob/btoa. Node test/runtime: Buffer.
+      if (typeof (globalThis as any).atob === 'function') return (globalThis as any).atob(value);
+      const B = (globalThis as any).Buffer;
+      if (B) return B.from(value, 'base64').toString('utf8');
+      throw new Error('No base64 decoder available');
+    };
+
+    const b64Encode = (value: string): string => {
+      if (typeof (globalThis as any).btoa === 'function') return (globalThis as any).btoa(value);
+      const B = (globalThis as any).Buffer;
+      if (B) return B.from(value, 'utf8').toString('base64');
+      throw new Error('No base64 encoder available');
+    };
+
+    const decodeCursor = (cursor: string | undefined): { tx_date: string; created_at: string; id: string } | null => {
+      if (!cursor) return null;
+      try {
+        const json = b64Decode(cursor);
+        const parsed = JSON.parse(json);
+        if (!parsed || typeof parsed !== 'object') return null;
+        const { tx_date, created_at, id } = parsed as any;
+        if (typeof tx_date !== 'string' || typeof created_at !== 'string' || typeof id !== 'string') return null;
+        return { tx_date, created_at, id };
+      } catch {
+        return null;
+      }
+    };
+
+    const encodeCursor = (row: { tx_date: string; created_at: string; id: string } | null): string | null => {
+      if (!row) return null;
+      const json = JSON.stringify({ tx_date: row.tx_date, created_at: row.created_at, id: row.id });
+      return b64Encode(json);
+    };
+
+    const cursor = decodeCursor(body.cursor);
 
     const conditions: string[] = [];
     const params: (string | number)[] = [];
@@ -1261,6 +1300,16 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       params.push(body.source_type);
     }
 
+    // Cursor pagination (stable ordering): ORDER BY tx_date DESC, created_at DESC, id DESC
+    if (cursor) {
+      conditions.push(`(
+        t.tx_date < ? OR
+        (t.tx_date = ? AND t.created_at < ?) OR
+        (t.tx_date = ? AND t.created_at = ? AND t.id < ?)
+      )`);
+      params.push(cursor.tx_date, cursor.tx_date, cursor.created_at, cursor.tx_date, cursor.created_at, cursor.id);
+    }
+
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = await c.env.DB.prepare(
@@ -1268,8 +1317,10 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         SELECT
           t.id,
           t.tx_date,
+          t.created_at,
           t.amount,
           t.description,
+          t.merchant,
           t.source_type,
           t.tx_hash,
           t.raw_json,
@@ -1278,14 +1329,16 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
           COALESCE(t.is_excluded, 0) as is_excluded
         FROM transactions t
         ${whereClause}
-        ORDER BY t.tx_date DESC, t.created_at DESC
+        ORDER BY t.tx_date DESC, t.created_at DESC, t.id DESC
         LIMIT ?
       `
     ).bind(...params, limit).all<{
       id: string;
       tx_date: string;
+      created_at: string;
       amount: number;
       description: string;
+      merchant: string | null;
       source_type: 'xlsx' | 'pdf' | 'manual';
       tx_hash: string;
       raw_json: string;
@@ -1295,6 +1348,9 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
     }>();
 
     const scanned = (rows.results || []).length;
+    const lastRow = scanned > 0 ? (rows.results as any)[scanned - 1] as { tx_date: string; created_at: string; id: string } : null;
+    const nextCursor = encodeCursor(lastRow);
+    const done = scanned < limit;
 
     let flowChanged = 0;
     let signFixed = 0;
@@ -1302,6 +1358,8 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
     let excludedMarked = 0;
     let skippedNoRaw = 0;
     let excludedDuplicates = 0;
+    let descriptionUpdated = 0;
+    let merchantUpdated = 0;
 
     const enabledRules = await getEnabledRules(c.env.DB);
     const statements: D1PreparedStatement[] = [];
@@ -1330,18 +1388,91 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         continue;
       }
 
+      let rawLine: string | null = null;
+      let rawObj: any = null;
+      try {
+        rawObj = JSON.parse(r.raw_json);
+        if (rawObj && typeof rawObj === 'object') {
+          if (typeof rawObj.raw_line === 'string') rawLine = rawObj.raw_line;
+          else if (typeof rawObj.rawLine === 'string') rawLine = rawObj.rawLine;
+        }
+      } catch {
+        rawObj = null;
+      }
+
+      // Optionally repair poisoned PDF rows by re-parsing amount/description from raw_line.
+      // This addresses historical cases where a year token (e.g. 2026) became the amount.
+      let nextDescription = r.description;
+      let nextMerchant = r.merchant;
+      let amountForClassify = r.amount;
+
+      if (r.source_type === 'pdf' && rawLine) {
+        const reparsed = parsePdfTransactionLine(rawLine);
+        const sameDate = reparsed?.date === r.tx_date;
+
+        const looksLikeYearAmount = r.amount >= 1900 && r.amount <= 2100 && Math.abs(r.amount - Math.round(r.amount)) < 0.00001;
+        const shouldTryRepair = looksLikeYearAmount || r.amount === 0;
+
+        if (sameDate && reparsed) {
+          if (shouldTryRepair) {
+            amountForClassify = reparsed.amount;
+          }
+          // Always prefer a cleaner parsed description if we have it.
+          if (reparsed.description && reparsed.description.length >= 3) {
+            nextDescription = reparsed.description;
+          }
+        }
+
+        const merchantHint = extractMerchantFromPdfLine(rawLine);
+        if (merchantHint) nextMerchant = merchantHint;
+
+        if (rawObj && typeof rawObj === 'object') {
+          rawObj.parsed_description = nextDescription;
+          rawObj.parsed_amount = amountForClassify;
+          rawObj.merchant_hint = nextMerchant;
+        }
+      }
+
+      // XLSX: use raw_json.original_amount when present so rebuild is deterministic across repeated runs.
+      if (r.source_type === 'xlsx' && rawObj && typeof rawObj === 'object') {
+        if (typeof rawObj.original_amount === 'number' && Number.isFinite(rawObj.original_amount)) {
+          amountForClassify = rawObj.original_amount;
+        }
+        // Prefer raw_row Spesifikasjon for description when present.
+        const rr = rawObj.raw_row;
+        if (rr && typeof rr === 'object') {
+          const spec = (rr as any).Spesifikasjon ?? (rr as any).spesifikasjon;
+          if (typeof spec === 'string' && spec.trim()) nextDescription = spec.trim();
+        }
+      }
+
       const forcedTransfer = r.is_transfer === 1;
       const classification = forcedTransfer
         ? { flow_type: 'transfer' as const, reason: 'forced-is_transfer' }
         : classifyFlowType({
           source_type: r.source_type,
-          description: r.description,
-          amount: r.amount,
-          raw_json: r.raw_json,
+          description: nextDescription,
+          amount: amountForClassify,
+          raw_json: rawObj ? JSON.stringify(rawObj) : r.raw_json,
         });
 
       const nextFlow = classification.flow_type;
-      const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: r.amount });
+
+      const preNormalizedAmount = (() => {
+        if (r.source_type !== 'xlsx') return amountForClassify;
+        try {
+          const xlsxNorm = normalizeXlsxAmountForIngest({
+            amount: amountForClassify,
+            description: nextDescription,
+            raw_json: rawObj ? JSON.stringify(rawObj) : r.raw_json,
+          });
+          return xlsxNorm.amount;
+        } catch {
+          return amountForClassify;
+        }
+      })();
+
+      const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: preNormalizedAmount });
 
       const nextAmount = normalized.amount;
       const nextIsTransfer = nextFlow === 'transfer' ? 1 : 0;
@@ -1351,20 +1482,24 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       const signDiff = nextAmount !== r.amount;
       const transferDiff = nextIsTransfer !== r.is_transfer;
       const excludedDiff = nextIsExcluded !== r.is_excluded;
+      const descriptionDiff = nextDescription !== r.description;
+      const merchantDiff = (nextMerchant || null) !== (r.merchant || null);
 
       if (flowDiff) flowChanged++;
       if (signDiff) signFixed++;
       if (transferDiff && nextIsTransfer === 1) transferMarked++;
       if (excludedDiff && nextIsExcluded === 1) excludedMarked++;
+      if (descriptionDiff) descriptionUpdated++;
+      if (merchantDiff) merchantUpdated++;
 
       if (dryRun) continue;
 
-      if (!flowDiff && !signDiff && !transferDiff && !excludedDiff) continue;
+      if (!flowDiff && !signDiff && !transferDiff && !excludedDiff && !descriptionDiff && !merchantDiff) continue;
 
-      // If amount changes we must update tx_hash to keep dedupe sane.
+      // If description or amount changes we must update tx_hash to keep dedupe sane.
       let nextHash = r.tx_hash;
-      if (signDiff) {
-        nextHash = await computeTxHash(r.tx_date, r.description, nextAmount, r.source_type);
+      if (signDiff || descriptionDiff) {
+        nextHash = await computeTxHash(r.tx_date, nextDescription, nextAmount, r.source_type);
 
         const conflict = await c.env.DB.prepare(
           'SELECT id FROM transactions WHERE tx_hash = ? AND id != ? LIMIT 1'
@@ -1385,15 +1520,25 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         c.env.DB.prepare(
           `
             UPDATE transactions
-            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?
+            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?, description = ?, merchant = ?, raw_json = ?
             WHERE id = ?
           `
-        ).bind(nextFlow, nextAmount, nextHash, nextIsTransfer, nextIsExcluded, r.id)
+        ).bind(
+          nextFlow,
+          nextAmount,
+          nextHash,
+          nextIsTransfer,
+          nextIsExcluded,
+          nextDescription,
+          nextMerchant || null,
+          rawObj ? JSON.stringify(rawObj) : r.raw_json,
+          r.id
+        )
       );
 
       addMetaNote(
         r.id,
-        `[auto] rebuild-flow: old_flow=${String(r.flow_type || 'unknown')} new_flow=${nextFlow} old_amount=${r.amount} new_amount=${nextAmount}`
+        `[auto] rebuild: old_flow=${String(r.flow_type || 'unknown')} new_flow=${nextFlow} old_amount=${r.amount} new_amount=${nextAmount}`
       );
       touchedIds.push(r.id);
     }
@@ -1425,8 +1570,12 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       success: true,
       dry_run: dryRun,
       scanned,
+      done,
+      next_cursor: done ? null : nextCursor,
       flow_changed: flowChanged,
       sign_fixed: signFixed,
+      description_updated: descriptionUpdated,
+      merchant_updated: merchantUpdated,
       transfer_marked: transferMarked,
       excluded_marked: excludedMarked,
       skipped_no_raw: skippedNoRaw,
