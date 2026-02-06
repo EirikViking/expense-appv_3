@@ -12,6 +12,7 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
+import { detectIsTransfer } from '../lib/transfer-detect';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -657,6 +658,45 @@ transactions.delete('/admin/reset', async (c) => {
     return c.json({ success: true, message: 'All transaction data deleted' });
   } catch (error) {
     console.error('Reset error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Detect transfers in existing data (heuristic backfill)
+transactions.post('/admin/detect-transfers', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; dry_run?: boolean };
+    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+    const dryRun = body.dry_run === true;
+
+    const rows = await c.env.DB.prepare(
+      'SELECT id, description FROM transactions WHERE COALESCE(is_transfer, 0) = 0 LIMIT ?'
+    ).bind(limit).all<{ id: string; description: string }>();
+
+    const matchedIds: string[] = [];
+    for (const r of rows.results || []) {
+      if (detectIsTransfer(r.description)) {
+        matchedIds.push(r.id);
+      }
+    }
+
+    if (!dryRun && matchedIds.length > 0) {
+      await c.env.DB.batch(
+        matchedIds.map((id) =>
+          c.env.DB.prepare('UPDATE transactions SET is_transfer = 1, is_excluded = 1 WHERE id = ?').bind(id)
+        )
+      );
+    }
+
+    return c.json({
+      success: true,
+      scanned: (rows.results || []).length,
+      matched: matchedIds.length,
+      updated: dryRun ? 0 : matchedIds.length,
+      dry_run: dryRun,
+    });
+  } catch (error) {
+    console.error('Detect transfers error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
