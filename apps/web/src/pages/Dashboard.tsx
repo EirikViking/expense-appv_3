@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState, useEffect } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -36,24 +36,28 @@ import {
   getPreviousMonthRange,
 } from '@/lib/utils';
 import type {
-  AnalyticsSummary,
   CategoryBreakdown,
   MerchantBreakdown,
   TimeSeriesPoint,
   AnomalyItem,
   TransactionStatus,
+  AnalyticsOverview,
 } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 
 export function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
-  const [prevSummary, setPrevSummary] = useState<AnalyticsSummary | null>(null);
+  const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [showCategoryDetails, setShowCategoryDetails] = useState(false);
+  const [excludeTransfers, setExcludeTransfers] = useState(true);
+
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedCategoryId = searchParams.get('category_id') || '';
 
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -70,37 +74,42 @@ export function DashboardPage() {
 
   const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, min?: number, max?: number }) => {
     setDrilldownTitle(title);
-    setDrilldownSubtitle(`${summary?.period.start} - ${summary?.period.end}`);
+    setDrilldownSubtitle(`${overview?.period.start} - ${overview?.period.end}`);
     setDrilldownStatus(opts.status);
     setDrilldownMinAmount(opts.min);
     setDrilldownMaxAmount(opts.max);
     setDrilldownCategory(undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
-    setDrilldownDateFrom(summary?.period.start);
-    setDrilldownDateTo(summary?.period.end);
+    setDrilldownDateFrom(overview?.period.start);
+    setDrilldownDateTo(overview?.period.end);
     setDrilldownOpen(true);
   };
+
+  const currentRange = useMemo(() => getMonthRange(), []);
 
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
-        const currentRange = getMonthRange();
         const prevRange = getPreviousMonthRange();
 
-        const [summaryRes, prevSummaryRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes] =
+        const [overviewRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes] =
           await Promise.all([
-            api.getAnalyticsSummary({ date_from: currentRange.start, date_to: currentRange.end }),
-            api.getAnalyticsSummary({ date_from: prevRange.start, date_to: prevRange.end }),
-            api.getAnalyticsByCategory({ date_from: currentRange.start, date_to: currentRange.end }),
-            api.getAnalyticsByMerchant({ date_from: currentRange.start, date_to: currentRange.end, limit: 5 }),
-            api.getAnalyticsTimeseries({ date_from: currentRange.start, date_to: currentRange.end, granularity: 'day' }),
-            api.getAnalyticsAnomalies({ date_from: currentRange.start, date_to: currentRange.end }),
+            api.getAnalyticsOverview({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
+            api.getAnalyticsByCategory({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
+            api.getAnalyticsByMerchant({
+              date_from: currentRange.start,
+              date_to: currentRange.end,
+              limit: 8,
+              include_transfers: !excludeTransfers,
+              category_id: selectedCategoryId || undefined,
+            }),
+            api.getAnalyticsTimeseries({ date_from: currentRange.start, date_to: currentRange.end, granularity: 'day', include_transfers: !excludeTransfers }),
+            api.getAnalyticsAnomalies({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
           ]);
 
-        setSummary(summaryRes);
-        setPrevSummary(prevSummaryRes);
+        setOverview(overviewRes);
         setCategories(categoriesRes.categories);
         setMerchants(merchantsRes.merchants);
         setTimeseries(timeseriesRes.series);
@@ -113,15 +122,15 @@ export function DashboardPage() {
     }
 
     loadData();
-  }, []);
-
-  const expenseChange = summary && prevSummary && prevSummary.total_expenses > 0
-    ? ((summary.total_expenses - prevSummary.total_expenses) / prevSummary.total_expenses) * 100
-    : 0;
+  }, [excludeTransfers, selectedCategoryId]);
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;
+
+  const selectedCategory = selectedCategoryId
+    ? categories.find((c) => c.category_id === selectedCategoryId) || null
+    : null;
 
   if (loading) {
     return (
@@ -158,9 +167,39 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="text-sm text-gray-500">
-          {summary?.period.start} - {summary?.period.end}
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="text-sm text-gray-500">
+            {overview?.period.start} - {overview?.period.end}
+          </div>
+          {selectedCategory && (
+            <div className="mt-1 text-sm">
+              <button
+                type="button"
+                className="text-blue-600 hover:underline"
+                onClick={() => {
+                  searchParams.delete('category_id');
+                  setSearchParams(searchParams, { replace: true });
+                }}
+              >
+                All categories
+              </button>
+              <span className="text-gray-400 mx-2">/</span>
+              <span className="font-medium">{selectedCategory.category_name}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={excludeTransfers}
+              onChange={(e) => setExcludeTransfers(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            Exclude transfers
+          </label>
         </div>
       </div>
 
@@ -168,76 +207,64 @@ export function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Total Expenses', { max: 0 })}
+          onClick={() => openKPIDrilldown(excludeTransfers ? 'Net Spend' : 'Net Cashflow', {})}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Expenses</CardTitle>
+            <CardTitle className="text-sm font-medium">{excludeTransfers ? 'Net Spend' : 'Net Cashflow'}</CardTitle>
+            <CreditCard className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {excludeTransfers
+                ? formatCurrency(overview?.net_spend || 0, true)
+                : formatCurrency(overview?.net_cashflow || 0, true)}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              {excludeTransfers ? 'Transfers excluded' : 'Cashflow view (transfers included)'}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => openKPIDrilldown('Expenses', { max: 0 })}
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Expenses</CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summary?.total_expenses || 0)}</div>
-            <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-              {expenseChange !== 0 && (
-                <>
-                  {expenseChange > 0 ? (
-                    <TrendingUp className="h-3 w-3 text-red-500" />
-                  ) : (
-                    <TrendingDown className="h-3 w-3 text-green-500" />
-                  )}
-                  <span className={expenseChange > 0 ? 'text-red-500' : 'text-green-500'}>
-                    {formatPercentage(expenseChange)}
-                  </span>
-                </>
-              )}
-              <span>vs last month</span>
-            </p>
+            <div className="text-2xl font-bold">{formatCurrency(overview?.expenses || 0)}</div>
+            <p className="text-xs text-gray-500 mt-1">Absolute sum of spending</p>
           </CardContent>
         </Card>
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Total Income', { min: 0 })}
+          onClick={() => openKPIDrilldown('Income', { min: 0 })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Income</CardTitle>
+            <CardTitle className="text-sm font-medium">Income</CardTitle>
             <TrendingUp className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(summary?.total_income || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">
-              Net: {formatCurrency(summary?.net || 0, true)}
-            </p>
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
+            <p className="text-xs text-gray-500 mt-1">Transfers do not count as income</p>
           </CardContent>
         </Card>
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Pending Transactions', { status: 'pending' })}
+          onClick={() => navigate(`/transactions?include_transfers=${excludeTransfers ? '0' : '1'}`)}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
+            <CardTitle className="text-sm font-medium">Transfers</CardTitle>
+            <ArrowRight className="h-4 w-4 text-gray-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summary?.pending_amount || 0)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(overview?.transfers.total || 0)}</div>
             <p className="text-xs text-gray-500 mt-1">
-              {summary?.pending_count || 0} transactions
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => openKPIDrilldown('Booked Transactions', { status: 'booked' })}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Booked</CardTitle>
-            <CheckCircle className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(summary?.booked_amount || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">
-              {summary?.booked_count || 0} transactions
+              In {formatCurrency(overview?.transfers.in || 0)} / Out {formatCurrency(overview?.transfers.out || 0)}
             </p>
           </CardContent>
         </Card>
@@ -316,7 +343,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>By Category</CardTitle>
+              <CardTitle>Spending by Category</CardTitle>
               <button
                 type="button"
                 onClick={() => setShowCategoryDetails((prev) => !prev)}
@@ -326,7 +353,7 @@ export function DashboardPage() {
               </button>
             </div>
             <p className="text-xs text-gray-500">
-              Vises nar kategorisering er tilgjengelig.
+              Click a category to drill down into merchants.
             </p>
           </CardHeader>
           <CardContent>
@@ -334,7 +361,7 @@ export function DashboardPage() {
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={categories.filter(c => c.category_id).slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                    data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -348,20 +375,18 @@ export function DashboardPage() {
                     labelLine={false}
                     className="cursor-pointer outline-none"
                   >
-                    {categories.filter(c => c.category_id).slice(0, 8).map((entry, index) => (
+                    {categories.slice(0, 8).map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={entry.category_color || COLORS[index % COLORS.length]}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => {
-                          setDrilldownCategory(entry.category_id || undefined);
-                          setDrilldownMerchantId(undefined);
-                          setDrilldownMerchantName(undefined);
-                          setDrilldownDateFrom(getMonthRange().start);
-                          setDrilldownDateTo(getMonthRange().end);
-                          setDrilldownTitle(`Category: ${entry.category_name}`);
-                          setDrilldownSubtitle(`${formatCurrency(entry.total)} spent this month`);
-                          setDrilldownOpen(true);
+                          if (entry.category_id) {
+                            searchParams.set('category_id', entry.category_id);
+                          } else {
+                            searchParams.delete('category_id');
+                          }
+                          setSearchParams(searchParams, { replace: false });
                         }}
                       />
                     ))}
@@ -390,7 +415,7 @@ export function DashboardPage() {
         {/* Top Merchants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Top Merchants</CardTitle>
+            <CardTitle>{selectedCategory ? 'Merchants in Category' : 'Top Merchants'}</CardTitle>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
               View all <ArrowRight className="h-3 w-3" />
             </Link>
@@ -403,19 +428,14 @@ export function DashboardPage() {
                     key={i}
                     className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
                     onClick={() => {
-                      setDrilldownMerchantId(merchant.merchant_id || undefined);
-                      setDrilldownCategory(undefined);
-                      // Use merchant_name for drilldown if id is null (logic handled in Dialog/Insights)
-                      // checking Insights.tsx, we usually handle this by passing merchantName if merchantId is null.
-                      // TransactionDrilldownDialog supports merchantName.
-                      // We need to store merchantName in state.
-                      setDrilldownMerchantName(merchant.merchant_id ? undefined : merchant.merchant_name);
-
-                      setDrilldownDateFrom(getMonthRange().start);
-                      setDrilldownDateTo(getMonthRange().end);
-                      setDrilldownTitle(merchant.merchant_name);
-                      setDrilldownSubtitle(`${formatCurrency(merchant.total)} spent this month`);
-                      setDrilldownOpen(true);
+                      const qs = new URLSearchParams();
+                      qs.set('date_from', currentRange.start);
+                      qs.set('date_to', currentRange.end);
+                      qs.set('include_transfers', excludeTransfers ? '0' : '1');
+                      if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
+                      if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
+                      else qs.set('merchant_name', merchant.merchant_name);
+                      navigate(`/transactions?${qs.toString()}`);
                     }}
                   >
                     <div className="flex items-center gap-3">

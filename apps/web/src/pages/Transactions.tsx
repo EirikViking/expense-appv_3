@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -23,6 +24,7 @@ import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 
 export function TransactionsPage() {
+  const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
@@ -38,6 +40,8 @@ export function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [excludeTransfers, setExcludeTransfers] = useState(true);
+  const [merchantId, setMerchantId] = useState('');
+  const [merchantName, setMerchantName] = useState('');
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -116,6 +120,8 @@ export function TransactionsPage() {
           status: status || undefined,
           source_type: sourceType || undefined,
           category_id: categoryId || undefined,
+          merchant_id: merchantId || undefined,
+          merchant_name: merchantName || undefined,
           search: searchQuery || undefined,
           include_transfers: !excludeTransfers,
           limit,
@@ -134,11 +140,35 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, searchQuery, page, categories.length, excludeTransfers]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, searchQuery, page, categories.length, excludeTransfers]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Initialize from URL query params (drilldown support)
+  useEffect(() => {
+    const qDateFrom = searchParams.get('date_from') || '';
+    const qDateTo = searchParams.get('date_to') || '';
+    const qStatus = (searchParams.get('status') || '') as TransactionStatus | '';
+    const qSource = (searchParams.get('source_type') || '') as SourceType | '';
+    const qCategory = searchParams.get('category_id') || '';
+    const qMerchantId = searchParams.get('merchant_id') || '';
+    const qMerchantName = searchParams.get('merchant_name') || '';
+    const qSearch = searchParams.get('search') || '';
+    const qIncludeTransfers = searchParams.get('include_transfers');
+
+    if (qDateFrom) setDateFrom(qDateFrom);
+    if (qDateTo) setDateTo(qDateTo);
+    if (qStatus) setStatus(qStatus);
+    if (qSource) setSourceType(qSource);
+    if (qCategory) setCategoryId(qCategory);
+    if (qMerchantId) setMerchantId(qMerchantId);
+    if (qMerchantName) setMerchantName(qMerchantName);
+    if (qSearch) setSearchQuery(qSearch);
+    if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!isAddOpen) {
@@ -174,12 +204,14 @@ export function TransactionsPage() {
     setStatus('');
     setSourceType('');
     setCategoryId('');
+    setMerchantId('');
+    setMerchantName('');
     setSearchQuery('');
     setExcludeTransfers(true);
     setPage(0);
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || searchQuery || !excludeTransfers;
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || searchQuery || !excludeTransfers;
 
   return (
     <div className="space-y-6">
@@ -311,6 +343,39 @@ export function TransactionsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Merchant (exact)
+                </label>
+                <Input
+                  type="text"
+                  placeholder="e.g. KIWI"
+                  value={merchantName}
+                  onChange={(e) => {
+                    setMerchantName(e.target.value);
+                    setMerchantId(''); // avoid AND-ing both
+                    setPage(0);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Merchant ID
+                </label>
+                <Input
+                  type="text"
+                  placeholder="(optional)"
+                  value={merchantId}
+                  onChange={(e) => {
+                    setMerchantId(e.target.value);
+                    if (e.target.value) setMerchantName('');
+                    setPage(0);
+                  }}
+                />
               </div>
             </div>
 
