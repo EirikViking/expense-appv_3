@@ -37,6 +37,7 @@ export function TransactionsPage() {
   const [categoryId, setCategoryId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [excludeTransfers, setExcludeTransfers] = useState(true);
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -116,6 +117,7 @@ export function TransactionsPage() {
           source_type: sourceType || undefined,
           category_id: categoryId || undefined,
           search: searchQuery || undefined,
+          include_transfers: !excludeTransfers,
           limit,
           offset: page * limit,
         }),
@@ -132,7 +134,7 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, searchQuery, page, categories.length]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, searchQuery, page, categories.length, excludeTransfers]);
 
   useEffect(() => {
     fetchData();
@@ -173,10 +175,11 @@ export function TransactionsPage() {
     setSourceType('');
     setCategoryId('');
     setSearchQuery('');
+    setExcludeTransfers(true);
     setPage(0);
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || searchQuery;
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || searchQuery || !excludeTransfers;
 
   return (
     <div className="space-y-6">
@@ -310,6 +313,22 @@ export function TransactionsPage() {
                 </select>
               </div>
             </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                id="exclude-transfers"
+                type="checkbox"
+                checked={excludeTransfers}
+                onChange={(e) => {
+                  setExcludeTransfers(e.target.checked);
+                  setPage(0);
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="exclude-transfers" className="text-sm text-gray-700">
+                Exclude transfers (default)
+              </label>
+            </div>
             {hasFilters && (
               <Button
                 variant="ghost"
@@ -439,6 +458,11 @@ export function TransactionsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="font-medium truncate">{tx.description}</p>
+                            {tx.is_transfer && (
+                              <Badge variant="secondary" className="text-xs">
+                                Transfer
+                              </Badge>
+                            )}
                             {tx.is_recurring && (
                               <Badge variant="outline" className="text-xs">
                                 Recurring
@@ -624,6 +648,7 @@ export function TransactionsPage() {
         open={!!selectedTransaction}
         onOpenChange={(open) => !open && setSelectedTransaction(null)}
         onDeleteSuccess={() => { fetchData(); setSelectedTransaction(null); }}
+        onUpdateSuccess={() => { fetchData(); }}
       />
     </div>
   );

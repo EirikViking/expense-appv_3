@@ -218,6 +218,7 @@ export function TransactionsDrilldownDialog({
                 open={!!selectedTx}
                 onOpenChange={(open) => !open && setSelectedTx(null)}
                 onDeleteSuccess={() => { setSelectedTx(null); loadTransactions(); }}
+                onUpdateSuccess={() => { loadTransactions(); }}
             />
         </>
     );

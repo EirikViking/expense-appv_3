@@ -12,10 +12,12 @@ interface TransactionDetailsDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onDeleteSuccess?: () => void;
+    onUpdateSuccess?: () => void;
 }
 
-export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDeleteSuccess }: TransactionDetailsDialogProps) {
+export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDeleteSuccess, onUpdateSuccess }: TransactionDetailsDialogProps) {
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
 
     if (!transaction) return null;
 
@@ -30,6 +32,18 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
             alert('Failed to delete transaction');
         } finally {
             setIsDeleting(false);
+        }
+    };
+
+    const handleToggleTransfer = async (next: boolean) => {
+        setIsUpdating(true);
+        try {
+            await api.patchTransaction(transaction.id, { is_transfer: next });
+            onUpdateSuccess?.();
+        } catch (err) {
+            alert('Failed to update transaction');
+        } finally {
+            setIsUpdating(false);
         }
     };
 
@@ -80,6 +94,21 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
                             <Badge variant={transaction.status === 'booked' ? 'default' : 'secondary'}>{transaction.status}</Badge>
+                        </div>
+                        <div className="space-y-1">
+                            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Transfer</p>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={transaction.is_transfer}
+                                    disabled={isUpdating}
+                                    onChange={(e) => handleToggleTransfer(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm">
+                                    Mark as transfer (excluded from analytics by default)
+                                </span>
+                            </div>
                         </div>
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Recurring</p>
