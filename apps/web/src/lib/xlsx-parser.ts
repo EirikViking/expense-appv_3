@@ -393,6 +393,7 @@ type SectionColumnIndexMapping = {
   foreignAmountColIdx?: number;
   currencyColIdx?: number;
   merchantColIdx?: number;
+  section_label?: string;
 };
 
 function buildNormalizedSet(variations: string[]): Set<string> {
@@ -481,11 +482,33 @@ function parseSheetByHeaderSections(
   };
 
   let current: SectionColumnIndexMapping | null = null;
+  let activeSectionLabel: string | undefined;
+
+  const looksLikeSectionLabel = (text: string): boolean => {
+    const t = text.trim();
+    if (!t) return false;
+    // Common credit card/bank export section names.
+    // We only use this to annotate context, not to decide what to insert.
+    return /kj(o|ø)p\s*\/\s*uttak/i.test(t)
+      || /\binnbetaling\b/i.test(t)
+      || /\bbankgiro\b/i.test(t)
+      || /\bbetaling\b/i.test(t)
+      || /\bgiro\b/i.test(t);
+  };
 
   for (let r = range.s.r; r <= range.e.r; r++) {
+    // Track section labels that appear as standalone rows above each header block.
+    // (Typical export: "Kjøp/uttak", then a header row, then transactions.)
+    const rowValuesForSection = getRowValues(sheet, range, r);
+    const rowTextsForSection = rowValuesForSection.map((v) => normalizeCellText(v)).filter(Boolean);
+    if (rowTextsForSection.length === 1 && looksLikeSectionLabel(rowTextsForSection[0])) {
+      activeSectionLabel = rowTextsForSection[0];
+      continue;
+    }
+
     const header = detectHeaderSectionAtRow(sheet, range, r);
     if (header) {
-      current = header;
+      current = { ...header, section_label: activeSectionLabel };
       debug.sections_found++;
       debug.rows_skipped_header++;
       continue;
@@ -586,6 +609,7 @@ function parseSheetByHeaderSections(
         sheet: sheetName,
         row: r + 1, // 1-based for humans
         header_row: current.headerRow + 1,
+        section_label: current.section_label,
         raw_row: rawRow,
       }),
     });
