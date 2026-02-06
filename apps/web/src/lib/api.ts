@@ -70,6 +70,18 @@ export interface ValidateIngestResponse {
   suspicious_income?: Array<{ description: string; count: number; total_abs: number }>;
 }
 
+export class ApiError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 // Token storage key
 const AUTH_TOKEN_KEY = 'expense_auth_token';
 
@@ -116,11 +128,17 @@ async function request<T>(
     },
   });
 
-  const data = await response.json();
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
 
   if (!response.ok) {
-    const error = data as ErrorResponse;
-    throw new Error(error.error || 'Request failed');
+    const errObj = data as Partial<ErrorResponse> & { message?: string };
+    const msg = errObj?.error || errObj?.message || `HTTP ${response.status}`;
+    throw new ApiError(String(msg), response.status, data);
   }
 
   return data as T;

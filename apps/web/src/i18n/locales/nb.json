@@ -173,6 +173,8 @@
         "groceries_analytics_mismatch": "Dagligvarer i innsikt matcher ikke sum av transaksjoner",
         "groceries_income_leak": "Dagligvarer inneholder inntektsrader (skal være utgifter)"
       }
-    }
+    },
+    "pdfNoTransactionsHelp": "Hvis PDF-en tydelig inneholder transaksjoner, kan det v\u00e6re Storebrand \"Detaljer\"-formatet. Pr\u00f8v igjen etter at backend-parseren er oppdatert.",
+    "showErrorDetails": "Vis feildetaljer"
   }
 }

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type ValidateIngestResponse } from '../lib/api';
+import { api, ApiError, type ValidateIngestResponse } from '../lib/api';
 import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
 import { extractPdfText } from '../lib/pdf-extractor';
@@ -14,6 +14,7 @@ interface FileResult {
   status: 'processing' | 'success' | 'error';
   result?: IngestResponse;
   error?: string;
+  api_error?: { code?: string; message?: string; debug?: unknown };
   validation?: ValidateIngestResponse;
   validation_range?: { date_from: string; date_to: string };
   validation_error?: string;
@@ -218,7 +219,22 @@ export function UploadPage() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      updateResult(filename, { status: 'error', error: message });
+      const apiError =
+        err instanceof ApiError && err.data && typeof err.data === 'object'
+          ? (err.data as any)
+          : null;
+
+      updateResult(filename, {
+        status: 'error',
+        error: apiError?.message || apiError?.error || message,
+        api_error: apiError
+          ? {
+              code: typeof apiError.code === 'string' ? apiError.code : undefined,
+              message: typeof apiError.message === 'string' ? apiError.message : undefined,
+              debug: apiError.debug,
+            }
+          : undefined,
+      });
     }
   }, []);
 
@@ -413,7 +429,26 @@ export function UploadPage() {
                 )}
 
                 {result.status === 'error' && (
-                  <p className="mt-2 text-sm text-red-600">{result.error}</p>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p className="font-medium">{result.error}</p>
+
+                    {result.api_error?.code === 'PDF_NO_TRANSACTIONS' && (
+                      <p className="mt-1 text-xs text-red-700/80">
+                        {t('upload.pdfNoTransactionsHelp')}
+                      </p>
+                    )}
+
+                    {result.api_error?.debug != null && (
+                      <details className="mt-2 rounded-md border border-red-200 bg-red-50 p-2">
+                        <summary className="cursor-pointer select-none text-xs font-medium text-red-800">
+                          {t('upload.showErrorDetails')}
+                        </summary>
+                        <pre className="mt-2 overflow-auto text-[11px] leading-snug text-red-900/90">
+                          {JSON.stringify(result.api_error.debug, null, 2)}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
                 )}
               </div>
             );
