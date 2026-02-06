@@ -127,6 +127,33 @@ async function applyRulesForFile(
   return applyRulesToBatch(db, transactions, enabledRules);
 }
 
+async function getCategorizationCountsForFile(
+  db: D1Database,
+  fileHash: string
+): Promise<{ total: number; categorized: number; uncategorized: number }> {
+  const row = await db
+    .prepare(
+      `
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE
+            WHEN COALESCE(tm.category_id, '') != '' THEN 1
+            WHEN EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id AND COALESCE(ts.category_id, '') != '') THEN 1
+            ELSE 0
+          END) as categorized
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE t.source_file_hash = ?
+      `
+    )
+    .bind(fileHash)
+    .first<{ total: number; categorized: number }>();
+
+  const total = Number(row?.total || 0);
+  const categorized = Number(row?.categorized || 0);
+  return { total, categorized, uncategorized: Math.max(0, total - categorized) };
+}
+
 // Insert transaction
 async function insertTransaction(
   db: D1Database,
@@ -314,9 +341,15 @@ ingest.post('/xlsx', async (c) => {
       }
     }
 
+    let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
     if (inserted > 0) {
       try {
         await applyRulesForFile(c.env.DB, file_hash);
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        console.log(
+          `[XLSX Ingest] Categorization counts for ${filename}: ` +
+            JSON.stringify(categorization_counts)
+        );
       } catch (error) {
         console.error('Apply rules error (xlsx):', error);
       }
@@ -332,7 +365,10 @@ ingest.post('/xlsx', async (c) => {
       file_duplicate: false,
     };
 
-    return c.json(response);
+    return c.json({
+      ...response,
+      ...(categorization_counts ? { categorization_counts } : {}),
+    });
   } catch (error) {
     console.error('XLSX ingest error:', error);
     return c.json({ error: 'Internal server error', code: 'internal_error' }, 500);
@@ -495,9 +531,15 @@ ingest.post('/pdf', async (c) => {
       }
     }
 
+    let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
     if (inserted > 0) {
       try {
         await applyRulesForFile(c.env.DB, file_hash);
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        console.log(
+          `[PDF Ingest] Categorization counts for ${filename}: ` +
+            JSON.stringify(categorization_counts)
+        );
       } catch (error) {
         console.error('Apply rules error (pdf):', error);
       }
@@ -513,7 +555,10 @@ ingest.post('/pdf', async (c) => {
       file_duplicate: false,
     };
 
-    return c.json(response);
+    return c.json({
+      ...response,
+      ...(categorization_counts ? { categorization_counts } : {}),
+    });
   } catch (error) {
     console.error('PDF ingest error:', error);
     return c.json({ error: 'Internal server error', code: 'internal_error' }, 500);

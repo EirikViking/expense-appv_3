@@ -43,6 +43,24 @@ function getFieldValue(tx: Transaction, field: RuleMatchField): string | number 
   }
 }
 
+function getCombinedText(tx: Transaction): string {
+  // Canonical match text for categorization: always include both merchant + description.
+  // This makes PDF (merchant from "Butikk") and XLSX (merchant from Spesifikasjon) behave consistently.
+  return `${tx.merchant || ''} ${tx.description || ''}`.replace(/\s+/g, ' ').trim();
+}
+
+function getStringMatchCandidates(tx: Transaction, field: RuleMatchField): string[] {
+  // Always include the combined text so rule matching doesn't depend on which field got populated by ingest.
+  // Also include the original field value to preserve semantics for match types like exact/starts_with.
+  const combined = getCombinedText(tx);
+  const fieldValue = String(getFieldValue(tx, field) ?? '').trim();
+
+  const out: string[] = [];
+  if (combined) out.push(combined);
+  if (fieldValue && fieldValue !== combined) out.push(fieldValue);
+  return out;
+}
+
 // Check if a rule matches a transaction
 function matchesRule(tx: Transaction, rule: Rule): boolean {
   const fieldValue = getFieldValue(tx, rule.match_field);
@@ -50,19 +68,32 @@ function matchesRule(tx: Transaction, rule: Rule): boolean {
 
   switch (rule.match_type as RuleMatchType) {
     case 'contains':
-      return String(fieldValue).toLowerCase().includes(matchValue.toLowerCase());
+      if (typeof fieldValue === 'number') return false;
+      return getStringMatchCandidates(tx, rule.match_field).some((v) =>
+        v.toLowerCase().includes(matchValue.toLowerCase())
+      );
 
     case 'starts_with':
-      return String(fieldValue).toLowerCase().startsWith(matchValue.toLowerCase());
+      if (typeof fieldValue === 'number') return false;
+      return getStringMatchCandidates(tx, rule.match_field).some((v) =>
+        v.toLowerCase().startsWith(matchValue.toLowerCase())
+      );
 
     case 'ends_with':
-      return String(fieldValue).toLowerCase().endsWith(matchValue.toLowerCase());
+      if (typeof fieldValue === 'number') return false;
+      return getStringMatchCandidates(tx, rule.match_field).some((v) =>
+        v.toLowerCase().endsWith(matchValue.toLowerCase())
+      );
 
     case 'exact':
-      return String(fieldValue).toLowerCase() === matchValue.toLowerCase();
+      if (typeof fieldValue === 'number') return false;
+      return getStringMatchCandidates(tx, rule.match_field).some((v) =>
+        v.toLowerCase() === matchValue.toLowerCase()
+      );
 
     case 'regex':
-      return safeRegexTest(matchValue, String(fieldValue));
+      if (typeof fieldValue === 'number') return false;
+      return getStringMatchCandidates(tx, rule.match_field).some((v) => safeRegexTest(matchValue, v));
 
     case 'greater_than':
       return typeof fieldValue === 'number' && fieldValue > parseFloat(matchValue);

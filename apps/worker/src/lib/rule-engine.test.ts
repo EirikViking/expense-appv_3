@@ -255,12 +255,61 @@ describe('Rule Engine', () => {
     });
 
     it('should not match non-matching rules', () => {
-      const tx = createTransaction({ description: 'GROCERY STORE' });
+      const tx = createTransaction({ description: 'GROCERY STORE', merchant: 'Grocery Store' });
       const rules = [createRule({ match_type: 'contains', match_value: 'NETFLIX' })];
 
       const actions = getMatchingRules(tx, rules);
 
       expect(actions).toHaveLength(0);
+    });
+
+    it('matches on combined merchant+description even when the rule targets description', () => {
+      // Simulates Storebrand PDF ingest where merchant gets populated from "Butikk",
+      // while description might be generic.
+      const tx = createTransaction({
+        description: 'KORTKJØP',
+        merchant: 'REMA 1000 SORENGA',
+      });
+
+      const rules = [
+        createRule({
+          id: 'rule-groceries',
+          name: 'Groceries',
+          match_field: 'description',
+          match_type: 'contains',
+          match_value: 'REMA',
+          action_type: 'set_category',
+          action_value: 'cat_food_groceries',
+        }),
+      ];
+
+      const actions = getMatchingRules(tx, rules);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].type).toBe('set_category');
+      expect(actions[0].value).toBe('cat_food_groceries');
+    });
+
+    it('still matches non-grocery rules via merchant text', () => {
+      const tx = createTransaction({
+        description: 'KORTKJØP',
+        merchant: 'FLYTOGET AS',
+      });
+
+      const rules = [
+        createRule({
+          id: 'rule-flytoget',
+          name: 'Flytoget',
+          match_field: 'description',
+          match_type: 'contains',
+          match_value: 'FLYTOGET',
+          action_type: 'set_category',
+          action_value: 'cat_transport_public',
+        }),
+      ];
+
+      const actions = getMatchingRules(tx, rules);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].value).toBe('cat_transport_public');
     });
   });
 
