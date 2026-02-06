@@ -1135,4 +1135,89 @@ transactions.post('/admin/repair-xlsx-signs', async (c) => {
   }
 });
 
+// Diagnostic: find rows that look like purchases but are stored as positive amounts (income by sign convention).
+transactions.get('/admin/diagnostics/suspicious-positive-purchases', async (c) => {
+  try {
+    const limitRaw = c.req.query('limit');
+    const limit = Math.min(Math.max(1, Number(limitRaw || 50)), 200);
+
+    // Keep this list short and obvious; it's for evidence + debugging, not a categorization engine.
+    const patterns = [
+      'SATS%',
+      'GOOGLE%',
+      'APPLE%',
+      'VIPPS%',
+      'WOLT%',
+      'FOODORA%',
+      'NARVESEN%',
+      '7-ELEVEN%',
+      'LOS TACOS%',
+      'CUTTERS%',
+      'XXL%',
+      'REMA%',
+      'KIWI%',
+      'MENY%',
+      'COOP%',
+      'EXTRA%',
+      'OBS%',
+      'SPAR%',
+      'JOKER%',
+    ];
+
+    const likeClause = patterns.map(() => 'UPPER(TRIM(t.description)) LIKE UPPER(?)').join(' OR ');
+
+    const rows = await c.env.DB.prepare(
+      `
+        SELECT
+          t.id,
+          t.tx_date,
+          t.amount,
+          t.description,
+          t.merchant,
+          COALESCE(t.is_transfer, 0) as is_transfer,
+          COALESCE(t.is_excluded, 0) as is_excluded,
+          tm.category_id as category_id,
+          c.name as category_name,
+          CASE WHEN json_valid(t.raw_json) THEN json_extract(t.raw_json, '$.section_label') ELSE NULL END as section_label,
+          CASE
+            WHEN json_valid(t.raw_json) THEN substr(COALESCE(json_extract(t.raw_json, '$.raw_line'), ''), 1, 200)
+            ELSE NULL
+          END as raw_line
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        LEFT JOIN categories c ON tm.category_id = c.id
+        WHERE t.source_type IN ('xlsx', 'pdf')
+          AND t.amount > 0
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND (${likeClause})
+        ORDER BY t.tx_date DESC, t.created_at DESC
+        LIMIT ?
+      `
+    ).bind(...patterns, limit).all<{
+      id: string;
+      tx_date: string;
+      amount: number;
+      description: string;
+      merchant: string | null;
+      is_transfer: 0 | 1;
+      is_excluded: 0 | 1;
+      category_id: string | null;
+      category_name: string | null;
+      section_label: string | null;
+      raw_line: string | null;
+    }>();
+
+    return c.json({
+      success: true,
+      scanned_limit: limit,
+      matched: (rows.results || []).length,
+      rows: rows.results || [],
+    });
+  } catch (error) {
+    console.error('Suspicious positive purchases diagnostic error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 export default transactions;
