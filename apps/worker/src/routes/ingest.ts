@@ -379,7 +379,19 @@ ingest.post('/pdf', async (c) => {
     }
 
     if (parsedTxs.length === 0) {
-      return c.json({ error: 'No valid transactions found in PDF' }, 400);
+      return c.json(
+        {
+          error: 'No valid transactions found in PDF',
+          code: 'PDF_NO_TRANSACTIONS',
+          message:
+            'No transactions were detected in this PDF. If this is a Storebrand "Detaljer" PDF, the parser may not recognize its block layout.',
+          debug: {
+            stats: stats || null,
+            skipped_lines_summary: summarizeSkippedLines(skipped_lines),
+          },
+        },
+        422
+      );
     }
 
     // Insert file record

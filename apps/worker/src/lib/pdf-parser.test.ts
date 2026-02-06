@@ -125,4 +125,40 @@ describe('pdf-parser detaljer block format', () => {
     expect(res.transactions.length).toBe(1);
     expect(res.transactions[0].description).toContain('SATS');
   });
+
+  it('parses Storebrand Detaljer blocks that start with BelÃ¸p + Transaksjonstekst (no Dato label)', () => {
+    const extracted = [
+      'Detaljer',
+      'BelÃ¸p -119,00 NOK',
+      'Transaksjonstekst APPLE.COM/BILL',
+      'Butikk APPLE.COM/BILL',
+      'Kort benyttet BokfÃ¸rt Rentedato Tilgjengelig',
+      '02.01.2026 03.01.2026 03.01.2026 03.01.2026',
+      '',
+      'BelÃ¸p 2 000,00 NOK',
+      'Transaksjonstekst OVERFÃ˜RING TIL KONTO',
+      'Fra konto 1234.56.78901',
+      'Opprett dato BokfÃ¸rt Rentedato Tilgjengelig',
+      '04.01.2026 04.01.2026 04.01.2026 04.01.2026',
+      '',
+      'BelÃ¸p -599,00 NOK',
+      'Transaksjonstekst AVTALEGIRO SATS NORWAY AS',
+      'Butikk SATS NORWAY AS',
+      'Kort benyttet BokfÃ¸rt Rentedato Tilgjengelig',
+      '05.01.2026 06.01.2026 06.01.2026 06.01.2026',
+    ].join('\n');
+
+    const res = parsePdfText(extracted);
+    expect(res.error).toBeUndefined();
+    expect(res.transactions).toHaveLength(3);
+    expect(res.transactions[0].tx_date).toBe('2026-01-03'); // BokfÃ¸rt
+    expect(res.transactions[0].amount).toBeCloseTo(-119.0, 2);
+    expect(res.transactions[1].tx_date).toBe('2026-01-04');
+    expect(res.transactions[1].amount).toBeCloseTo(2000.0, 2);
+    expect(res.transactions[2].tx_date).toBe('2026-01-06');
+    expect(res.transactions[2].amount).toBeCloseTo(-599.0, 2);
+
+    // Regression: date years must never be interpreted as amounts.
+    expect(res.transactions[0].amount).not.toBeCloseTo(2026.0, 2);
+  });
 });

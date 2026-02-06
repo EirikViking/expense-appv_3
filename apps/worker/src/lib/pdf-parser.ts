@@ -1,4 +1,4 @@
-import {
+﻿import {
   PDF_SECTION_PENDING,
   PDF_SECTION_BOOKED,
   type TransactionStatus,
@@ -34,6 +34,12 @@ export interface PdfParseResult {
     parsedCount: number;
     dateContainingLines: number;
     skippedCount: number;
+    detaljer?: {
+      total_blocks_detected: number;
+      transactions_parsed: number;
+      blocks_rejected_by_reason: Record<string, number>;
+      sample_rejected_blocks: string[];
+    };
   };
   skipped_lines?: SkippedLine[];
 }
@@ -479,12 +485,13 @@ function mergeWrappedLines(lines: string[]): string[] {
   return merged;
 }
 
-function looksLikeDetaljerFormat(textLower: string): boolean {
+function looksLikeDetaljerFormat(extractedText: string): boolean {
   // "Detaljer" PDFs typically contain these field labels.
+  // Use regex with /i to avoid Unicode/mis-encoding edge cases (e.g. "BelÃ¸p" lowercases to "belã¸p").
   return (
-    textLower.includes('transaksjonstekst') &&
-    (textLower.includes('beløp') || textLower.includes('belop')) &&
-    textLower.includes('dato')
+    /detaljer/i.test(extractedText) &&
+    /transaksjonstekst/i.test(extractedText) &&
+    /(beløp|belÃ¸p|belop)/i.test(extractedText)
   );
 }
 
@@ -511,7 +518,15 @@ function parseAmountFromValue(value: string): number | null {
   return null;
 }
 
-function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
+function parseDetaljerBlocks(extractedText: string): {
+  transactions: ParsedPdfTransaction[];
+  debug: {
+    total_blocks_detected: number;
+    transactions_parsed: number;
+    blocks_rejected_by_reason: Record<string, number>;
+    sample_rejected_blocks: string[];
+  };
+} {
   const lines = extractedText
     .split(/\n/)
     .map((l) => l.trim())
@@ -530,13 +545,28 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
     fra_konto: string | null;
   };
 
-  const blocks: Block[] = [];
   let current: Block | null = null;
+
+  const debug = {
+    total_blocks_detected: 0,
+    transactions_parsed: 0,
+    blocks_rejected_by_reason: {} as Record<string, number>,
+    sample_rejected_blocks: [] as string[],
+  };
+
+  const bumpReject = (reason: string, b: Block) => {
+    debug.blocks_rejected_by_reason[reason] = (debug.blocks_rejected_by_reason[reason] || 0) + 1;
+    if (debug.sample_rejected_blocks.length >= 3) return;
+    const raw = lines.slice(b.startIdx, Math.min(b.endIdx + 1, b.startIdx + 20)).join('\n');
+    debug.sample_rejected_blocks.push(raw.replace(/\d/g, 'X').slice(0, 400));
+  };
 
   const pushBlock = (b: Block) => {
     const desc = (b.butikk || b.transaksjonstekst || '').trim();
-    if (!b.date || b.amount === null || !desc) return;
-    if (!descriptionHasLetters(desc)) return;
+    if (b.amount === null) return bumpReject('missing_amount', b);
+    if (!desc) return bumpReject('missing_description', b);
+    if (!descriptionHasLetters(desc)) return bumpReject('non_letter_description', b);
+    if (!b.date) return bumpReject('missing_date', b);
 
     const raw_block = lines.slice(b.startIdx, b.endIdx + 1).join('\n');
     out.push({
@@ -553,6 +583,8 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
         fra_konto: b.fra_konto?.trim() || undefined,
       },
     });
+
+    debug.transactions_parsed += 1;
   };
 
   const isLabel = (line: string, label: string) => new RegExp(`^${label}\\b`, 'i').test(line);
@@ -566,51 +598,86 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
     return { value: null, consumed: 0 };
   };
 
+  const isBelopLine = (line: string) => isLabel(line, 'Beløp') || isLabel(line, 'BelÃ¸p') || isLabel(line, 'Belop');
+
+  const isDatesHeaderLine = (line: string) => {
+    const l = line.toLowerCase();
+    const hasBokfort = l.includes('bokf') || l.includes('bokfÃ¸rt');
+    const hasTilgjengelig = l.includes('tilgjengelig');
+    const hasRente = l.includes('rentedato') || l.includes('rente');
+    return hasBokfort && hasTilgjengelig && hasRente;
+  };
+
+  const tryReadDatesFromFollowingRow = (headerIdx: number): string | null => {
+    const next = lines[headerIdx + 1];
+    if (!next) return null;
+    const matches = [...next.matchAll(/\b(\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4})\b/g)].map((m) => m[1]);
+    if (matches.length >= 2) return parseDateFromValue(matches[1]);
+    if (matches.length === 1) return parseDateFromValue(matches[0]);
+    return null;
+  };
+
+  const findFallbackDateInBlock = (b: Block): string | null => {
+    for (let i = b.startIdx; i <= b.endIdx; i++) {
+      const d = parseDateFromValue(lines[i] || '');
+      if (d) return d;
+    }
+    return null;
+  };
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    // Start a new block on "Dato"
-    if (isLabel(line, 'Dato')) {
+    // Start a new block on "Beløp" (the only reliable transaction-start sentinel in Storebrand Detaljer).
+    if (isBelopLine(line)) {
       if (current) {
         current.endIdx = i - 1;
+        if (!current.date) current.date = findFallbackDateInBlock(current);
         pushBlock(current);
-        blocks.push(current);
       }
 
-      const { value, consumed } = readValue(i, 'Dato');
-      const date = value ? parseDateFromValue(value) : null;
+      debug.total_blocks_detected += 1;
+      // Some Detaljer extracts put the transaction date just above the Beløp line (e.g. "Dato" + date value).
+      // Grab a nearby date so older layouts remain parseable.
+      let initialDate: string | null = null;
+      for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
+        const d = parseDateFromValue(lines[j] || '');
+        if (d) {
+          initialDate = d;
+          break;
+        }
+      }
       current = {
         startIdx: i,
         endIdx: i,
-        date,
+        date: initialDate,
         amount: null,
         currency: null,
         transaksjonstekst: null,
         butikk: null,
         fra_konto: null,
       };
-      i += consumed;
-      continue;
-    }
 
-    if (!current) continue;
-
-    if (isLabel(line, 'Beløp') || isLabel(line, 'Belop')) {
       const { value, consumed } = readValue(i, 'Beløp');
-      const v = value ?? readValue(i, 'Belop').value;
+      const v = value ?? readValue(i, 'BelÃ¸p').value ?? readValue(i, 'Belop').value;
       if (v) {
         const amount = parseAmountFromValue(v);
         if (amount !== null) current.amount = amount;
         const c = v.match(/\b([A-Z]{3})\b/);
         if (c?.[1]) current.currency = c[1];
       }
+      current.endIdx = Math.max(current.endIdx, i + consumed);
       i += consumed;
       continue;
     }
 
+    if (!current) continue;
+    current.endIdx = i;
+
     if (isLabel(line, 'Transaksjonstekst')) {
       const { value, consumed } = readValue(i, 'Transaksjonstekst');
       if (value) current.transaksjonstekst = value;
+      current.endIdx = Math.max(current.endIdx, i + consumed);
       i += consumed;
       continue;
     }
@@ -618,6 +685,7 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
     if (isLabel(line, 'Butikk')) {
       const { value, consumed } = readValue(i, 'Butikk');
       if (value) current.butikk = value;
+      current.endIdx = Math.max(current.endIdx, i + consumed);
       i += consumed;
       continue;
     }
@@ -625,20 +693,26 @@ function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
     if (isLabel(line, 'Fra konto')) {
       const { value, consumed } = readValue(i, 'Fra konto');
       if (value) current.fra_konto = value;
+      current.endIdx = Math.max(current.endIdx, i + consumed);
       i += consumed;
       continue;
     }
 
-    current.endIdx = i;
+    if (isDatesHeaderLine(line)) {
+      const d = tryReadDatesFromFollowingRow(i);
+      if (d) current.date = d;
+      current.endIdx = Math.max(current.endIdx, i + 1);
+      continue;
+    }
   }
 
   if (current) {
     current.endIdx = lines.length - 1;
+    if (!current.date) current.date = findFallbackDateInBlock(current);
     pushBlock(current);
-    blocks.push(current);
   }
 
-  return out;
+  return { transactions: out, debug };
 }
 
 export function parsePdfText(extractedText: string): PdfParseResult {
@@ -646,8 +720,9 @@ export function parsePdfText(extractedText: string): PdfParseResult {
   const textLower = extractedText.toLowerCase();
 
   // Handle "Detaljer" format that doesn't contain the usual section headers.
-  if (looksLikeDetaljerFormat(textLower)) {
-    const txs = parseDetaljerBlocks(extractedText);
+  if (looksLikeDetaljerFormat(extractedText)) {
+    const detaljer = parseDetaljerBlocks(extractedText);
+    const txs = detaljer.transactions;
     return {
       transactions: txs,
       stats: {
@@ -655,6 +730,7 @@ export function parsePdfText(extractedText: string): PdfParseResult {
         parsedCount: txs.length,
         dateContainingLines: 0,
         skippedCount: 0,
+        detaljer: detaljer.debug,
       },
     };
   }
@@ -760,3 +836,4 @@ export function parsePdfText(extractedText: string): PdfParseResult {
     skipped_lines,
   };
 }
+
