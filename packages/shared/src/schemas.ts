@@ -250,6 +250,7 @@ export const transactionsQuerySchema = z.object({
   merchant_id: idSchema.optional(),
   merchant_name: z.string().max(200).optional(),
   include_transfers: queryBoolSchema.optional(),
+  include_excluded: queryBoolSchema.optional(),
   min_amount: z.coerce.number().optional(),
   max_amount: z.coerce.number().optional(),
   search: z.string().max(200).optional(),

@@ -14,6 +14,7 @@ import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
 import { parsePdfTransactionLine } from '../lib/pdf-parser';
+import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -140,6 +141,7 @@ transactions.get('/', async (c) => {
       merchant_id,
       merchant_name,
       include_transfers,
+      include_excluded,
       min_amount,
       max_amount,
       search,
@@ -181,6 +183,15 @@ transactions.get('/', async (c) => {
     if (max_amount !== undefined) {
       conditions.push('t.amount <= ?');
       params.push(max_amount);
+    }
+
+    // Hide excluded rows by default. If include_transfers is enabled, still show transfers even though they are marked excluded.
+    if (!include_excluded) {
+      if (include_transfers) {
+        conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+      } else {
+        conditions.push('COALESCE(t.is_excluded, 0) = 0');
+      }
     }
 
     if (!include_transfers) {
@@ -867,6 +878,259 @@ transactions.post('/admin/repair-year-amounts', async (c) => {
     });
   } catch (error) {
     console.error('Repair year amounts error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Exclude obviously non-transaction summary rows accidentally ingested from XLSX exports.
+// This is intentionally conservative and only targets amount=0 rows with known summary labels.
+transactions.post('/admin/exclude-xlsx-junk', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; dry_run?: boolean };
+    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+    const dryRun = body.dry_run !== false; // default true
+
+    const rows = await c.env.DB.prepare(
+      `
+        SELECT id, tx_date, amount, description, raw_json
+        FROM transactions
+        WHERE source_type = 'xlsx'
+          AND COALESCE(is_excluded, 0) = 0
+          AND amount = 0
+          AND (
+            LOWER(COALESCE(description, '')) LIKE 'saldo%'
+            OR LOWER(COALESCE(description, '')) LIKE 'totalbel%'
+            OR LOWER(COALESCE(description, '')) IN ('dato', 'beløp', 'belop', 'spesifikasjon', 'bokført', 'bokfort')
+          )
+        LIMIT ?
+      `
+    ).bind(limit).all<{ id: string; tx_date: string; amount: number; description: string; raw_json: string }>();
+
+    const matched = (rows.results || []).length;
+
+    if (dryRun) {
+      return c.json({
+        success: true,
+        dry_run: true,
+        matched,
+      });
+    }
+
+    const statements: D1PreparedStatement[] = [];
+
+    const addMetaNote = (txId: string, note: string) => {
+      statements.push(
+        c.env.DB.prepare(
+          `
+            INSERT INTO transaction_meta (transaction_id, notes, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              notes = CASE
+                WHEN notes IS NULL OR notes = '' THEN excluded.notes
+                ELSE notes || char(10) || excluded.notes
+              END,
+              updated_at = datetime('now')
+          `
+        ).bind(txId, note)
+      );
+    };
+
+    const ids = (rows.results || []).map((r) => r.id);
+    for (const id of ids) {
+      statements.push(
+        c.env.DB.prepare('UPDATE transactions SET is_excluded = 1 WHERE id = ?').bind(id)
+      );
+      addMetaNote(id, '[auto] excel junk row excluded');
+    }
+
+    if (statements.length > 0) {
+      await c.env.DB.batch(statements);
+    }
+
+    return c.json({
+      success: true,
+      dry_run: false,
+      matched,
+      updated: ids.length,
+    });
+  } catch (error) {
+    console.error('Exclude xlsx junk error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Repair XLSX sign mistakes (purchases stored as positive amounts) and mark payment rows as transfers.
+// This keeps analytics consistent with the sign convention: expenses are negative, income is positive.
+transactions.post('/admin/repair-xlsx-signs', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as { limit?: number; dry_run?: boolean };
+    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+    const dryRun = body.dry_run !== false; // default true
+
+    const rows = await c.env.DB.prepare(
+      `
+        SELECT
+          t.id,
+          t.tx_date,
+          t.amount,
+          t.description,
+          t.tx_hash,
+          t.raw_json,
+          COALESCE(t.is_excluded, 0) as is_excluded,
+          COALESCE(t.is_transfer, 0) as is_transfer,
+          tm.category_id as category_id
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.source_type = 'xlsx'
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND t.amount > 0
+        LIMIT ?
+      `
+    ).bind(limit).all<{
+      id: string;
+      tx_date: string;
+      amount: number;
+      description: string;
+      tx_hash: string;
+      raw_json: string;
+      is_excluded: 0 | 1;
+      is_transfer: 0 | 1;
+      category_id: string | null;
+    }>();
+
+    const scanned = (rows.results || []).length;
+
+    let matchedFlip = 0;
+    let matchedMarkTransfer = 0;
+    let updatedFlip = 0;
+    let updatedTransfer = 0;
+    let excludedDuplicates = 0;
+    let skippedRefunds = 0;
+    let skippedNoContext = 0;
+
+    const enabledRules = await getEnabledRules(c.env.DB);
+    const statements: D1PreparedStatement[] = [];
+    const touchedIds: string[] = [];
+
+    const addMetaNote = (txId: string, note: string) => {
+      statements.push(
+        c.env.DB.prepare(
+          `
+            INSERT INTO transaction_meta (transaction_id, notes, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              notes = CASE
+                WHEN notes IS NULL OR notes = '' THEN excluded.notes
+                ELSE notes || char(10) || excluded.notes
+              END,
+              updated_at = datetime('now')
+          `
+        ).bind(txId, note)
+      );
+    };
+
+    const looksLikeGroceries = (d: string) => {
+      const s = (d || '').toUpperCase();
+      return /\b(REMA|KIWI|MENY|COOP|EXTRA|OBS|SPAR|JOKER)\b/.test(s);
+    };
+
+    for (const r of rows.results || []) {
+      const section = extractSectionLabelFromRawJson(r.raw_json);
+
+      // Mark payment-like rows as transfers and excluded.
+      if (!r.is_transfer && isPaymentLikeRow(r.description, section)) {
+        matchedMarkTransfer++;
+        if (!dryRun) {
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_transfer = 1, is_excluded = 1 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, '[auto] xlsx sign repair: marked payment row as transfer');
+          updatedTransfer++;
+          touchedIds.push(r.id);
+        }
+        continue;
+      }
+
+      // Sign repair (only for purchases). Never touch refunds.
+      if (isRefundLike(r.description)) {
+        skippedRefunds++;
+        continue;
+      }
+
+      const inPurchaseSection = isPurchaseSection(section);
+      const fallbackGroceries = r.category_id === 'cat_food_groceries' && looksLikeGroceries(r.description);
+
+      if (!inPurchaseSection && !fallbackGroceries) {
+        skippedNoContext++;
+        continue;
+      }
+
+      matchedFlip++;
+
+      if (dryRun) continue;
+
+      const nextAmount = -Math.abs(r.amount);
+      const nextHash = await computeTxHash(r.tx_date, r.description, nextAmount, 'xlsx');
+
+      const conflict = await c.env.DB.prepare(
+        'SELECT id FROM transactions WHERE tx_hash = ? AND id != ? LIMIT 1'
+      ).bind(nextHash, r.id).first<{ id: string }>();
+
+      if (conflict?.id) {
+        excludedDuplicates++;
+        statements.push(
+          c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+        );
+        addMetaNote(r.id, `[auto] xlsx sign repair: excluded (hash conflict with ${conflict.id})`);
+        touchedIds.push(r.id);
+        continue;
+      }
+
+      statements.push(
+        c.env.DB.prepare('UPDATE transactions SET amount = ?, tx_hash = ? WHERE id = ?').bind(nextAmount, nextHash, r.id)
+      );
+      addMetaNote(r.id, '[auto] xlsx sign repair: flipped purchase amount sign');
+      updatedFlip++;
+      touchedIds.push(r.id);
+    }
+
+    if (!dryRun && statements.length > 0) {
+      await c.env.DB.batch(statements);
+
+      // Re-run rules for touched rows so category/merchant mapping stays consistent.
+      // (Rules can depend on amount and this also re-attaches tags deterministically.)
+      for (const id of touchedIds) {
+        const txRow = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<any>();
+        if (!txRow) continue;
+
+        const tx: Transaction = {
+          ...txRow,
+          is_excluded: !!txRow.is_excluded,
+          is_transfer: !!txRow.is_transfer,
+        };
+
+        try {
+          await applyRulesToTransaction(c.env.DB, tx, enabledRules);
+        } catch {
+          // keep endpoint best-effort; repair already updated the core row
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      dry_run: dryRun,
+      scanned,
+      matched_flip_sign: matchedFlip,
+      matched_mark_transfer: matchedMarkTransfer,
+      updated_flip_sign: dryRun ? 0 : updatedFlip,
+      updated_mark_transfer: dryRun ? 0 : updatedTransfer,
+      excluded_duplicates: dryRun ? 0 : excludedDuplicates,
+      skipped_refunds: skippedRefunds,
+      skipped_no_context: skippedNoContext,
+    });
+  } catch (error) {
+    console.error('Repair xlsx signs error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

@@ -571,6 +571,7 @@ export interface TransactionsQuery {
   merchant_id?: string;
   merchant_name?: string;
   include_transfers?: boolean;
+  include_excluded?: boolean;
   min_amount?: number;
   max_amount?: number;
   search?: string;

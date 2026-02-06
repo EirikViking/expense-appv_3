@@ -11,6 +11,7 @@ import {
 import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
 import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
+import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
@@ -211,9 +212,22 @@ ingest.post('/xlsx', async (c) => {
 
       for (const tx of transactions) {
       try {
-        const txHash = await computeTxHash(tx.tx_date, tx.description, tx.amount, 'xlsx');
-        const isTransfer = detectIsTransfer(tx.description);
+        // Normalize XLSX quirks before hashing/inserting:
+        // - enforce negative amounts for purchases in "Kjøp/uttak"
+        // - mark payment-like rows as transfers (excluded) so they don't pollute income
+        const normalized = normalizeXlsxAmountForIngest({
+          amount: tx.amount,
+          description: tx.description,
+          raw_json: tx.raw_json,
+        });
+
+        const amount = normalized.amount;
+
+        const isTransfer = normalized.flags?.is_transfer === 1
+          || detectIsTransfer(tx.description);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
+
+        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -230,7 +244,7 @@ ingest.post('/xlsx', async (c) => {
           tx.booked_date || null,
           tx.description,
           tx.merchant || null,
-          tx.amount,
+          amount,
           tx.currency,
           'booked',
           'xlsx',
