@@ -1360,6 +1360,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
     let excludedDuplicates = 0;
     let descriptionUpdated = 0;
     let merchantUpdated = 0;
+    let wouldUpdate = 0;
 
     const enabledRules = await getEnabledRules(c.env.DB);
     const statements: D1PreparedStatement[] = [];
@@ -1491,6 +1492,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       if (excludedDiff && nextIsExcluded === 1) excludedMarked++;
       if (descriptionDiff) descriptionUpdated++;
       if (merchantDiff) merchantUpdated++;
+      if (flowDiff || signDiff || transferDiff || excludedDiff || descriptionDiff || merchantDiff) wouldUpdate++;
 
       if (dryRun) continue;
 
@@ -1572,6 +1574,8 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       scanned,
       done,
       next_cursor: done ? null : nextCursor,
+      skipped: Math.max(0, (scanned - skippedNoRaw) - (dryRun ? wouldUpdate : touchedIds.length)),
+      would_update: dryRun ? wouldUpdate : undefined,
       flow_changed: flowChanged,
       sign_fixed: signFixed,
       description_updated: descriptionUpdated,
