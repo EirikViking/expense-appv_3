@@ -62,7 +62,7 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category_id') || '';
 
-  const defaultRange = useMemo(() => getMonthRange(), []);
+  const defaultRange = useMemo(() => getYearToDateRange(), []);
   const dateFrom = searchParams.get('date_from') || defaultRange.start;
   const dateTo = searchParams.get('date_to') || defaultRange.end;
   const statusFilter = (() => {
