@@ -60,8 +60,15 @@ const TX_PATTERNS = [
 const DATE_PATTERN = /(\d{2})[.\-\/](\d{2})[.\-\/](\d{2,4})/g;
 const INLINE_DATE_PATTERN = /\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}/;
 
-// Pattern to find amounts (Norwegian format: -1 234,56 or -1234.56 or 1234 kr)
-const AMOUNT_PATTERN = /(-?\d[\d\s]*[,.]?\d{0,2})\s*(?:kr)?\s*$/i;
+// Patterns to find amounts.
+// Important: be strict enough to not accidentally treat years (e.g. 2026) as amounts.
+const MONEY_DECIMAL_ANYWHERE_PATTERN = /-?\d[\d\s\u00A0]*[,.]\d{2}\s*(?:kr|nok)?/gi;
+// Integer amounts are only accepted if they look like actual money (negative sign or explicit currency).
+const MONEY_NEGATIVE_INT_AT_END_PATTERN = /-\d[\d\s\u00A0]*\s*$/i;
+const MONEY_INT_WITH_CURRENCY_AT_END_PATTERN = /-?\d[\d\s\u00A0]*\s*(?:kr|nok)\s*$/i;
+
+const DATE_TOKEN_PATTERN = /\b\d{2}[.\-\/]\d{2}[.\-\/]\d{2,4}\b/g;
+const ISO_DATE_TOKEN_PATTERN = /\b\d{4}-\d{2}-\d{2}\b/g;
 
 // Patterns for non-transaction content that should be skipped (not errors)
 const HEADER_PATTERNS = [
@@ -93,10 +100,78 @@ const EXCLUDED_PATTERNS = [
 
 function parseNorwegianAmount(amountStr: string): number {
   // Remove spaces (thousands separators)
-  let cleaned = amountStr.replace(/\s/g, '');
+  let cleaned = amountStr.replace(/\s|\u00A0/g, '');
   // Replace comma with dot for decimal
   cleaned = cleaned.replace(',', '.');
+  cleaned = cleaned.replace(/(kr|nok)$/i, '');
   return parseFloat(cleaned);
+}
+
+function stripDateTokens(text: string): string {
+  return text
+    .replace(DATE_TOKEN_PATTERN, ' ')
+    .replace(ISO_DATE_TOKEN_PATTERN, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function descriptionHasLetters(description: string): boolean {
+  return /[A-Za-zÆØÅæøå]/.test(description);
+}
+
+function getYearFromIsoDate(isoDate: string): number | null {
+  const m = /^(\d{4})-\d{2}-\d{2}$/.exec(isoDate);
+  if (!m) return null;
+  const y = parseInt(m[1], 10);
+  return Number.isFinite(y) ? y : null;
+}
+
+export function extractPdfAmountFromLine(line: string): { amount: number; raw: string } | null {
+  const stripped = stripDateTokens(line);
+
+  // Prefer decimal amounts anywhere, but take the last one (statements usually place the amount at the end).
+  MONEY_DECIMAL_ANYWHERE_PATTERN.lastIndex = 0;
+  const decimalMatches = [...stripped.matchAll(MONEY_DECIMAL_ANYWHERE_PATTERN)];
+  if (decimalMatches.length > 0) {
+    const raw = decimalMatches[decimalMatches.length - 1][0];
+    const amount = parseNorwegianAmount(raw);
+    if (!Number.isFinite(amount)) return null;
+    return { amount, raw };
+  }
+
+  // Fallback: integer amounts are only accepted if they look like money.
+  // 1) explicit currency at the end (e.g. "1234 kr")
+  if (MONEY_INT_WITH_CURRENCY_AT_END_PATTERN.test(stripped)) {
+    const parts = stripped.split(/\s+/);
+    const lastTwo = parts.slice(-2).join(' ');
+    const amount = parseNorwegianAmount(lastTwo);
+    if (Number.isFinite(amount)) {
+      const isoDate = parseNorwegianDateFromLine(line);
+      const year = isoDate ? getYearFromIsoDate(isoDate) : null;
+      if (amount >= 1900 && amount <= 2100 && year !== null && year === amount) {
+        return null;
+      }
+      return { amount, raw: lastTwo };
+    }
+  }
+
+  // 2) negative integer at the end (e.g. "-1234")
+  if (MONEY_NEGATIVE_INT_AT_END_PATTERN.test(stripped)) {
+    const lastToken = stripped.split(/\s+/).slice(-1)[0];
+    const amount = parseNorwegianAmount(lastToken);
+    if (!Number.isFinite(amount)) return null;
+
+    // Safety guard: if this "amount" is a year and the line has a date with the same year, reject it.
+    const isoDate = parseNorwegianDateFromLine(line);
+    const year = isoDate ? getYearFromIsoDate(isoDate) : null;
+    if (amount >= 1900 && amount <= 2100 && year !== null && year === amount) {
+      return null;
+    }
+
+    return { amount, raw: lastToken };
+  }
+
+  return null;
 }
 
 function parseNorwegianDate(day: string, month: string, year: string): string | null {
@@ -131,6 +206,14 @@ function parseNorwegianDate(day: string, month: string, year: string): string | 
   }
 
   return `${String(yearNum)}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+}
+
+function parseNorwegianDateFromLine(line: string): string | null {
+  DATE_PATTERN.lastIndex = 0;
+  const m = DATE_PATTERN.exec(line);
+  if (!m) return null;
+  const [, day, month, year] = m;
+  return parseNorwegianDate(day, month, year);
 }
 
 function tokenizeLine(line: string): string[] {
@@ -174,8 +257,8 @@ function classifySkippedLine(line: string): SkippedLine['reason'] {
     return 'no_date';
   }
 
-  // Check if no amount-like number at end
-  if (!AMOUNT_PATTERN.test(trimmed)) {
+  // Check if no amount-like number
+  if (!extractPdfAmountFromLine(trimmed)) {
     return 'no_amount';
   }
 
@@ -184,33 +267,36 @@ function classifySkippedLine(line: string): SkippedLine['reason'] {
 }
 
 function tryParseTransactionLine(line: string): { date: string; description: string; amount: number } | null {
+  const amountRes = extractPdfAmountFromLine(line);
+  if (!amountRes) return null;
+
   // Try each pattern
   for (const pattern of TX_PATTERNS) {
     const match = pattern.exec(line);
     if (match) {
       if (match.length === 6) {
-        const [, day, month, year, description, amountStr] = match;
+        const [, day, month, year, description] = match;
         const date = parseNorwegianDate(day, month, year);
-        const amount = parseNorwegianAmount(amountStr);
-        if (date && !isNaN(amount) && description.trim().length > 0) {
+        const desc = description.trim();
+        if (date && desc.length > 0 && descriptionHasLetters(desc)) {
           return {
             date,
-            description: description.trim(),
-            amount,
+            description: desc,
+            amount: amountRes.amount,
           };
         }
       }
 
       // Two dates (transaction + booked): fall back to the second date if the first is invalid.
       if (match.length === 9) {
-        const [, d1, m1, y1, d2, m2, y2, description, amountStr] = match;
+        const [, d1, m1, y1, d2, m2, y2, description] = match;
         const date = parseNorwegianDate(d1, m1, y1) ?? parseNorwegianDate(d2, m2, y2);
-        const amount = parseNorwegianAmount(amountStr);
-        if (date && !isNaN(amount) && description.trim().length > 0) {
+        const desc = description.trim();
+        if (date && desc.length > 0 && descriptionHasLetters(desc)) {
           return {
             date,
-            description: description.trim(),
-            amount,
+            description: desc,
+            amount: amountRes.amount,
           };
         }
       }
@@ -222,31 +308,33 @@ function tryParseTransactionLine(line: string): { date: string; description: str
   let dateMatch: RegExpExecArray | null;
   // Try all date-like matches and pick the first one that yields a valid ISO date.
   while ((dateMatch = DATE_PATTERN.exec(line))) {
-    const amountMatch = AMOUNT_PATTERN.exec(line);
-    if (!amountMatch) continue;
-
     const [, day, month, year] = dateMatch;
     const date = parseNorwegianDate(day, month, year);
     if (!date) continue;
 
-    const amount = parseNorwegianAmount(amountMatch[1]);
-    if (isNaN(amount)) continue;
+    // Best-effort description: remove date tokens and money tokens from the line.
+    // We keep this conservative to avoid parsing garbage like date-only lines.
+    let description = stripDateTokens(line);
+    MONEY_DECIMAL_ANYWHERE_PATTERN.lastIndex = 0;
+    description = description.replace(MONEY_DECIMAL_ANYWHERE_PATTERN, ' ');
+    description = description.replace(/-?\d[\d\s\u00A0]*\s*(?:kr|nok)\b/gi, ' ');
+    description = description.replace(/-\d[\d\s\u00A0]*\b/g, ' ');
+    description = description.replace(/\s+/g, ' ').trim();
 
-    // Extract description (text between date and amount)
-    const dateEndIdx = dateMatch.index + dateMatch[0].length;
-    const amountStartIdx = amountMatch.index;
-    const description = line.substring(dateEndIdx, amountStartIdx).trim();
-
-    if (description.length > 0) {
+    if (description.length > 0 && descriptionHasLetters(description)) {
       return {
         date,
         description,
-        amount,
+        amount: amountRes.amount,
       };
     }
   }
 
   return null;
+}
+
+export function parsePdfTransactionLine(line: string): { date: string; description: string; amount: number } | null {
+  return tryParseTransactionLine(line);
 }
 
 /**
@@ -305,7 +393,7 @@ function mergeWrappedLines(lines: string[]): string[] {
     if (!line) continue;
 
     const hasDate = INLINE_DATE_PATTERN.test(line);
-    const hasAmount = AMOUNT_PATTERN.test(line);
+    const hasAmount = Boolean(extractPdfAmountFromLine(line));
 
     if (buffer) {
       if (hasDate) {
@@ -325,7 +413,7 @@ function mergeWrappedLines(lines: string[]): string[] {
       }
 
       const candidate = `${buffer} ${line}`.replace(/\s+/g, ' ').trim();
-      if (AMOUNT_PATTERN.test(candidate)) {
+      if (extractPdfAmountFromLine(candidate)) {
         merged.push(candidate);
         buffer = null;
       } else {
