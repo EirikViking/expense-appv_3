@@ -22,6 +22,7 @@ import {
   CheckCircle,
   AlertTriangle,
   ArrowRight,
+  Tag,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +35,7 @@ import {
   formatDateShort,
   getMonthRange,
   getPreviousMonthRange,
+  getYearToDateRange,
 } from '@/lib/utils';
 import type {
   CategoryBreakdown,
@@ -53,11 +55,28 @@ export function DashboardPage() {
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [showCategoryDetails, setShowCategoryDetails] = useState(false);
-  const [excludeTransfers, setExcludeTransfers] = useState(true);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category_id') || '';
+
+  const defaultRange = useMemo(() => getMonthRange(), []);
+  const dateFrom = searchParams.get('date_from') || defaultRange.start;
+  const dateTo = searchParams.get('date_to') || defaultRange.end;
+  const statusFilter = (() => {
+    const s = searchParams.get('status');
+    return s === 'booked' || s === 'pending' ? (s as TransactionStatus) : '';
+  })();
+  const excludeTransfers = (() => {
+    const v = searchParams.get('include_transfers');
+    return !(v === '1' || v === 'true');
+  })();
+
+  const updateSearch = (fn: (next: URLSearchParams) => void) => {
+    const next = new URLSearchParams(searchParams);
+    fn(next);
+    setSearchParams(next, { replace: false });
+  };
 
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -86,27 +105,45 @@ export function DashboardPage() {
     setDrilldownOpen(true);
   };
 
-  const currentRange = useMemo(() => getMonthRange(), []);
-
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
-        const prevRange = getPreviousMonthRange();
-
         const [overviewRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes] =
           await Promise.all([
-            api.getAnalyticsOverview({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
-            api.getAnalyticsByCategory({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
+            api.getAnalyticsOverview({
+              date_from: dateFrom,
+              date_to: dateTo,
+              status: statusFilter || undefined,
+              include_transfers: !excludeTransfers,
+            }),
+            api.getAnalyticsByCategory({
+              date_from: dateFrom,
+              date_to: dateTo,
+              status: statusFilter || undefined,
+              include_transfers: !excludeTransfers,
+            }),
             api.getAnalyticsByMerchant({
-              date_from: currentRange.start,
-              date_to: currentRange.end,
+              date_from: dateFrom,
+              date_to: dateTo,
               limit: 8,
+              status: statusFilter || undefined,
               include_transfers: !excludeTransfers,
               category_id: selectedCategoryId || undefined,
             }),
-            api.getAnalyticsTimeseries({ date_from: currentRange.start, date_to: currentRange.end, granularity: 'day', include_transfers: !excludeTransfers }),
-            api.getAnalyticsAnomalies({ date_from: currentRange.start, date_to: currentRange.end, include_transfers: !excludeTransfers }),
+            api.getAnalyticsTimeseries({
+              date_from: dateFrom,
+              date_to: dateTo,
+              status: statusFilter || undefined,
+              granularity: 'day',
+              include_transfers: !excludeTransfers,
+            }),
+            api.getAnalyticsAnomalies({
+              date_from: dateFrom,
+              date_to: dateTo,
+              status: statusFilter || undefined,
+              include_transfers: !excludeTransfers,
+            }),
           ]);
 
         setOverview(overviewRes);
@@ -122,7 +159,7 @@ export function DashboardPage() {
     }
 
     loadData();
-  }, [excludeTransfers, selectedCategoryId]);
+  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter]);
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
@@ -131,6 +168,9 @@ export function DashboardPage() {
   const selectedCategory = selectedCategoryId
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
+
+  const groceries = categories.find((c) => c.category_id === 'cat_food_groceries') || null;
+  const groceriesSpend = groceries ? Math.abs(groceries.total) : 0;
 
   if (loading) {
     return (
@@ -178,8 +218,7 @@ export function DashboardPage() {
                 type="button"
                 className="text-blue-600 hover:underline"
                 onClick={() => {
-                  searchParams.delete('category_id');
-                  setSearchParams(searchParams, { replace: true });
+                  updateSearch((next) => next.delete('category_id'));
                 }}
               >
                 All categories
@@ -190,16 +229,112 @@ export function DashboardPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={excludeTransfers}
-              onChange={(e) => setExcludeTransfers(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            Exclude transfers
-          </label>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              onClick={() => {
+                const r = getMonthRange();
+                updateSearch((next) => {
+                  next.set('date_from', r.start);
+                  next.set('date_to', r.end);
+                });
+              }}
+            >
+              This month
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              onClick={() => {
+                const r = getPreviousMonthRange();
+                updateSearch((next) => {
+                  next.set('date_from', r.start);
+                  next.set('date_to', r.end);
+                });
+              }}
+            >
+              Last month
+            </button>
+            <button
+              type="button"
+              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              onClick={() => {
+                const r = getYearToDateRange();
+                updateSearch((next) => {
+                  next.set('date_from', r.start);
+                  next.set('date_to', r.end);
+                });
+              }}
+            >
+              Year to date
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="text-gray-500">From</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  updateSearch((next) => {
+                    if (e.target.value) next.set('date_from', e.target.value);
+                    else next.delete('date_from');
+                  });
+                }}
+                className="h-9 px-2 rounded border border-gray-300"
+              />
+              <span className="text-gray-500">To</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  updateSearch((next) => {
+                    if (e.target.value) next.set('date_to', e.target.value);
+                    else next.delete('date_to');
+                  });
+                }}
+                className="h-9 px-2 rounded border border-gray-300"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <span className="text-gray-500">Status</span>
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  updateSearch((next) => {
+                    if (v) next.set('status', v);
+                    else next.delete('status');
+                  });
+                }}
+                className="h-9 px-2 rounded border border-gray-300"
+              >
+                <option value="">All</option>
+                <option value="booked">Booked</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={excludeTransfers}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  updateSearch((next) => {
+                    if (checked) next.delete('include_transfers');
+                    else next.set('include_transfers', '1');
+                  });
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Exclude transfers
+            </label>
+          </div>
         </div>
       </div>
 
@@ -255,7 +390,14 @@ export function DashboardPage() {
 
         <Card
           className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => navigate(`/transactions?include_transfers=${excludeTransfers ? '0' : '1'}`)}
+          onClick={() => {
+            const qs = new URLSearchParams();
+            qs.set('date_from', dateFrom);
+            qs.set('date_to', dateTo);
+            qs.set('include_transfers', '1');
+            if (statusFilter) qs.set('status', statusFilter);
+            navigate(`/transactions?${qs.toString()}`);
+          }}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Transfers</CardTitle>
@@ -265,6 +407,33 @@ export function DashboardPage() {
             <div className="text-2xl font-bold">{formatCurrency(overview?.transfers.total || 0)}</div>
             <p className="text-xs text-gray-500 mt-1">
               In {formatCurrency(overview?.transfers.in || 0)} / Out {formatCurrency(overview?.transfers.out || 0)}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick shortcuts */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card
+          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          onClick={() => {
+            const qs = new URLSearchParams();
+            qs.set('date_from', dateFrom);
+            qs.set('date_to', dateTo);
+            qs.set('include_transfers', excludeTransfers ? '0' : '1');
+            if (statusFilter) qs.set('status', statusFilter);
+            qs.set('category_id', 'cat_food_groceries');
+            navigate(`/transactions?${qs.toString()}`);
+          }}
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Groceries spend</CardTitle>
+            <Tag className="h-4 w-4 text-gray-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatCurrency(groceriesSpend)}</div>
+            <p className="text-xs text-gray-500 mt-1">
+              One click drilldown to transactions
             </p>
           </CardContent>
         </Card>
@@ -381,12 +550,13 @@ export function DashboardPage() {
                         fill={entry.category_color || COLORS[index % COLORS.length]}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
                         onClick={() => {
-                          if (entry.category_id) {
-                            searchParams.set('category_id', entry.category_id);
-                          } else {
-                            searchParams.delete('category_id');
-                          }
-                          setSearchParams(searchParams, { replace: false });
+                          updateSearch((next) => {
+                            if (entry.category_id) {
+                              next.set('category_id', entry.category_id);
+                            } else {
+                              next.delete('category_id');
+                            }
+                          });
                         }}
                       />
                     ))}
@@ -429,9 +599,10 @@ export function DashboardPage() {
                     className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
                     onClick={() => {
                       const qs = new URLSearchParams();
-                      qs.set('date_from', currentRange.start);
-                      qs.set('date_to', currentRange.end);
+                      qs.set('date_from', dateFrom);
+                      qs.set('date_to', dateTo);
                       qs.set('include_transfers', excludeTransfers ? '0' : '1');
+                      if (statusFilter) qs.set('status', statusFilter);
                       if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
                       if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
                       else qs.set('merchant_name', merchant.merchant_name);
