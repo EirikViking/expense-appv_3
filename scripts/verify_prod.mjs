@@ -2,7 +2,7 @@
 // Verifies key production invariants after rebuild, without printing auth tokens/JWTs.
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
-const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
+const PASSWORD = process.env.RUN_REBUILD_PASSWORD;
 
 const PURCHASE_TERMS = [
   'CUTTERS',
@@ -51,7 +51,7 @@ async function jsonRequest(path, { method = 'GET', token, body } = {}) {
 
 async function login() {
   if (!PASSWORD) {
-    throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
+    throw new Error('Missing RUN_REBUILD_PASSWORD env var');
   }
   const data = await jsonRequest('/auth/login', {
     method: 'POST',
@@ -108,6 +108,14 @@ async function run() {
   const date_from = argValue('--from') || `${now.getFullYear()}-01-01`;
   const date_to = argValue('--to') || isoDate(now);
 
+  // 0) Server-side validation gate (fast fail)
+  const validate = await jsonRequest(
+    '/transactions/admin/validate-ingest?' + new URLSearchParams({ date_from, date_to }).toString(),
+    { token }
+  );
+
+  const validatePass = Boolean(validate?.ok);
+
   // 1) Groceries analytics total vs transactions sum(abs(amount))
   const byCat = await jsonRequest('/analytics/by-category?' + new URLSearchParams({ date_from, date_to }).toString(), { token });
   const cats = Array.isArray(byCat.categories) ? byCat.categories : [];
@@ -118,10 +126,11 @@ async function run() {
     date_from,
     date_to,
     category_id: 'cat_food_groceries',
-    flow_type: 'expense',
     include_transfers: false,
   });
-  const groceriesTxSum = absSumAmounts(groceriesTxs);
+  const groceriesTxSum = absSumAmounts(
+    groceriesTxs.filter((t) => t && (t.flow_type === 'expense' || (t.flow_type === 'unknown' && Number(t.amount) < 0)))
+  );
   const groceriesDelta = Math.abs(groceriesAnalytics - groceriesTxSum);
   const groceriesPass = groceriesDelta <= 1.0;
 
@@ -183,12 +192,16 @@ async function run() {
   }
   const incomePass = incomeViolations.length === 0;
 
-  const pass = groceriesPass && remaSearchPass && incomePass;
+  const pass = validatePass && groceriesPass && remaSearchPass && incomePass;
 
   console.log(
     JSON.stringify(
       {
         period: { date_from, date_to },
+        validate: {
+          ok: validatePass,
+          failures: Array.isArray(validate?.failures) ? validate.failures : [],
+        },
         groceries: {
           analytics_total: groceriesAnalytics,
           tx_abs_sum: groceriesTxSum,

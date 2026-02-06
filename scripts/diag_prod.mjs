@@ -2,7 +2,7 @@
 // Production diagnostics for ingestion vs analytics correctness (no JWT printing).
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
-const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
+const PASSWORD = process.env.RUN_REBUILD_PASSWORD;
 
 const GROCERY_TERMS = ['REMA', 'KIWI', 'MENY', 'COOP', 'EXTRA', 'OBS', 'SPAR', 'JOKER'];
 
@@ -46,7 +46,7 @@ async function jsonRequest(path, { method = 'GET', token, body } = {}) {
 }
 
 async function login() {
-  if (!PASSWORD) throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
+  if (!PASSWORD) throw new Error('Missing RUN_REBUILD_PASSWORD env var');
   const data = await jsonRequest('/auth/login', { method: 'POST', body: { password: PASSWORD } });
   if (!data || typeof data.token !== 'string' || !data.token) throw new Error('Login failed: token missing from response');
   return data.token;

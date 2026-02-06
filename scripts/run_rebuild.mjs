@@ -2,7 +2,7 @@
 // Runs the production rebuild endpoint in a loop (dry run or apply), without printing auth tokens.
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
-const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
+const PASSWORD = process.env.RUN_REBUILD_PASSWORD;
 
 function usageAndExit() {
   console.error('Usage: node scripts/run_rebuild.mjs --dry | --apply');
@@ -45,7 +45,7 @@ async function jsonRequest(path, { method = 'GET', token, body } = {}) {
 
 async function login() {
   if (!PASSWORD) {
-    throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
+    throw new Error('Missing RUN_REBUILD_PASSWORD env var');
   }
   const data = await jsonRequest('/auth/login', {
     method: 'POST',

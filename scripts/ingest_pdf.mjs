@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { access } from 'node:fs/promises';
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
-const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
+const PASSWORD = process.env.RUN_REBUILD_PASSWORD;
 
 function argValue(flag) {
   const idx = process.argv.indexOf(flag);
@@ -19,8 +19,11 @@ function argValue(flag) {
 }
 
 const filePath = argValue('--file');
+const verify = process.argv.includes('--verify');
+const overrideFrom = argValue('--from');
+const overrideTo = argValue('--to');
 if (!filePath) {
-  console.error('Usage: pnpm run ingest:pdf -- --file <path-to-pdf>');
+  console.error('Usage: pnpm run ingest:pdf -- --file <path-to-pdf> [--verify] [--from YYYY-MM-DD --to YYYY-MM-DD]');
   process.exit(2);
 }
 
@@ -50,10 +53,41 @@ async function jsonRequest(pathname, { method = 'GET', token, body } = {}) {
 }
 
 async function login() {
-  if (!PASSWORD) throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
+  if (!PASSWORD) throw new Error('Missing RUN_REBUILD_PASSWORD env var');
   const data = await jsonRequest('/auth/login', { method: 'POST', body: { password: PASSWORD } });
   if (!data || typeof data.token !== 'string' || !data.token) throw new Error('Login failed: token missing from response');
   return data.token;
+}
+
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function computeDateRangeFromExtractedText(text) {
+  const isoDates = new Set();
+  const ddmmyyyy = /\b(\d{2})\.(\d{2})\.(\d{4})\b/g;
+  const yyyymmdd = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+
+  for (const m of text.matchAll(ddmmyyyy)) {
+    const [, dd, mm, yyyy] = m;
+    isoDates.add(`${yyyy}-${mm}-${dd}`);
+  }
+  for (const m of text.matchAll(yyyymmdd)) {
+    isoDates.add(m[0]);
+  }
+
+  const sorted = [...isoDates].filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s)).sort();
+  if (sorted.length === 0) {
+    const now = new Date();
+    const to = isoDate(now);
+    const from = isoDate(new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000));
+    return { date_from: from, date_to: to, source: 'fallback_last_60_days' };
+  }
+
+  return { date_from: sorted[0], date_to: sorted[sorted.length - 1], source: 'pdf_dates' };
 }
 
 async function extractTextFromPdfBytes(bytes) {
@@ -129,6 +163,23 @@ async function run() {
     body: { file_hash, filename, source: 'pdf', extracted_text },
   });
 
+  let validation = null;
+  if (verify && !res.file_duplicate) {
+    const range = (overrideFrom && overrideTo)
+      ? { date_from: overrideFrom, date_to: overrideTo, source: 'override_args' }
+      : computeDateRangeFromExtractedText(extracted_text);
+
+    validation = await jsonRequest(
+      '/transactions/admin/validate-ingest?' + new URLSearchParams({ date_from: range.date_from, date_to: range.date_to }).toString(),
+      { token }
+    );
+
+    if (!validation || validation.ok !== true) {
+      const failures = Array.isArray(validation?.failures) ? validation.failures : ['unknown'];
+      throw new Error(`Post-ingest validation failed: ${failures.join(', ')}`);
+    }
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -138,6 +189,7 @@ async function run() {
         skipped_duplicates: res.skipped_duplicates,
         skipped_invalid: res.skipped_invalid,
         file_duplicate: res.file_duplicate,
+        ...(validation ? { validation } : {}),
       },
       null,
       2
