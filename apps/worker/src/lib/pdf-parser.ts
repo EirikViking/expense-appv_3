@@ -337,6 +337,44 @@ export function parsePdfTransactionLine(line: string): { date: string; descripti
   return tryParseTransactionLine(line);
 }
 
+function stripMoneyTokens(text: string): string {
+  // Remove typical money tokens ("-123,45", "123,45 kr", "-1234 nok") so merchant extraction can work.
+  MONEY_DECIMAL_ANYWHERE_PATTERN.lastIndex = 0;
+  return text
+    .replace(MONEY_DECIMAL_ANYWHERE_PATTERN, ' ')
+    .replace(/-?\d[\d\s\u00A0]*\s*(?:kr|nok)\b/gi, ' ')
+    .replace(MONEY_NEGATIVE_INT_AT_END_PATTERN, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Best-effort merchant extraction from a PDF raw line.
+ *
+ * Many Norwegian statements include "Butikk ..." (store/merchant) on the same or wrapped line.
+ * We extract that when present; otherwise we fall back to the parsed description.
+ */
+export function extractMerchantFromPdfLine(line: string): string | null {
+  const raw = String(line || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return null;
+
+  // Prefer explicit "Butikk" marker if present.
+  const butikkMatch = raw.match(/\bButikk\b\s*:?\s*(.+)$/i);
+  if (butikkMatch?.[1]) {
+    let merchant = stripMoneyTokens(stripDateTokens(butikkMatch[1]));
+    merchant = merchant.replace(/^[:\-–]\s*/, '').trim();
+    if (merchant && descriptionHasLetters(merchant) && !/^\d+([.,]\d+)?$/.test(merchant)) return merchant;
+  }
+
+  const parsed = tryParseTransactionLine(raw);
+  if (parsed?.description) {
+    const candidate = parsed.description.trim();
+    if (candidate && descriptionHasLetters(candidate) && !/^\d+([.,]\d+)?$/.test(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 /**
  * Check if a line is a section marker (not an error, just navigation)
  */

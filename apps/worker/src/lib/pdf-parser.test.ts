@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePdfText } from './pdf-parser';
+import { extractMerchantFromPdfLine, parsePdfText } from './pdf-parser';
 
 describe('pdf-parser date validation', () => {
   it('skips obviously invalid dates instead of inserting poisoned ISO strings', () => {
@@ -52,5 +52,20 @@ describe('pdf-parser amount validation', () => {
     expect(res.error).toBeUndefined();
     expect(res.transactions).toHaveLength(1);
     expect(res.transactions[0].amount).toBeCloseTo(-123.45, 2);
+  });
+});
+
+describe('pdf-parser merchant extraction', () => {
+  it('extracts a grocery merchant like REMA 1000 SORENGA for rule matching', () => {
+    const line = '05.01.2026 REMA 1000 SORENGA -130,45 NOK';
+    const merchant = extractMerchantFromPdfLine(line);
+    expect(merchant).toContain('REMA');
+    expect(merchant).toContain('SORENGA');
+  });
+
+  it('prefers Butikk marker when present', () => {
+    const line = '05.01.2026 Kortkjøp Butikk: REMA 1000 SORENGA -130,45';
+    const merchant = extractMerchantFromPdfLine(line);
+    expect(merchant).toBe('REMA 1000 SORENGA');
   });
 });

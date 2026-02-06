@@ -8,7 +8,7 @@ import {
   type IngestResponse,
   type Transaction,
 } from '@expense/shared';
-import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
+import { extractMerchantFromPdfLine, parsePdfText, parsePdfTransactionLine, type SkippedLine } from '../lib/pdf-parser';
 import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
@@ -241,6 +241,25 @@ ingest.post('/xlsx', async (c) => {
 
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
 
+        // Preserve original context for deterministic rebuilds/debugging.
+        const rawJson = (() => {
+          try {
+            const obj = JSON.parse(tx.raw_json);
+            if (obj && typeof obj === 'object') {
+              (obj as any).original_amount = tx.amount;
+              (obj as any).normalized_amount = amount;
+              (obj as any).normalized_flow_type = flowType;
+              (obj as any).normalized_is_transfer = Boolean(flags?.is_transfer);
+              (obj as any).normalized_is_excluded = Boolean(flags?.is_excluded);
+              (obj as any).normalized_reason = flow.reason;
+              return JSON.stringify(obj);
+            }
+          } catch {
+            // fall through
+          }
+          return tx.raw_json;
+        })();
+
         const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -262,7 +281,7 @@ ingest.post('/xlsx', async (c) => {
           'booked',
           'xlsx',
           file_hash,
-          tx.raw_json,
+          rawJson,
           flowType,
           flags
         );
@@ -355,21 +374,34 @@ ingest.post('/pdf', async (c) => {
 
       for (const tx of parsedTxs) {
       try {
-        const flow = classifyFlowType({
-          source_type: 'pdf',
-          description: tx.description,
-          amount: tx.amount,
-          raw_json: JSON.stringify({ raw_line: tx.raw_line }),
+        // Best-effort re-parse to improve description/amount (helps rule matching and prevents legacy pollution).
+        const reparsed = parsePdfTransactionLine(tx.raw_line);
+        const description = reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
+        const parsedAmount = reparsed?.amount !== undefined && reparsed.date === tx.tx_date ? reparsed.amount : tx.amount;
+        const merchantHint = extractMerchantFromPdfLine(tx.raw_line);
+
+        const rawJson = JSON.stringify({
+          raw_line: tx.raw_line,
+          parsed_description: description,
+          parsed_amount: parsedAmount,
+          merchant_hint: merchantHint,
         });
 
-        const normalized = normalizeAmountAndFlags({ flow_type: flow.flow_type, amount: tx.amount });
+        const flow = classifyFlowType({
+          source_type: 'pdf',
+          description,
+          amount: parsedAmount,
+          raw_json: rawJson,
+        });
+
+        const normalized = normalizeAmountAndFlags({ flow_type: flow.flow_type, amount: parsedAmount });
         const amount = normalized.amount;
 
-        const isTransfer = normalized.flags?.is_transfer === 1 || detectIsTransfer(tx.description);
+        const isTransfer = normalized.flags?.is_transfer === 1 || detectIsTransfer(description);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
 
-        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'pdf');
+        const txHash = await computeTxHash(tx.tx_date, description, amount, 'pdf');
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -384,14 +416,14 @@ ingest.post('/pdf', async (c) => {
           txHash,
           tx.tx_date,
           null, // PDF doesn't have separate booked date
-          tx.description,
-          null, // Merchant extracted separately if needed
+          description,
+          merchantHint,
           amount,
           'NOK',
           tx.status,
           'pdf',
           file_hash,
-          JSON.stringify({ raw_line: tx.raw_line }),
+          rawJson,
           flowType,
           flags
         );
