@@ -7,7 +7,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatCurrency, formatDate, formatDateLocal, cn } from '@/lib/utils';
+import {
+  formatCurrency,
+  formatDate,
+  formatDateLocal,
+  getMonthRange,
+  getPreviousMonthRange,
+  getYearToDateRange,
+  cn,
+} from '@/lib/utils';
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,6 +50,8 @@ export function TransactionsPage() {
   const [excludeTransfers, setExcludeTransfers] = useState(true);
   const [merchantId, setMerchantId] = useState('');
   const [merchantName, setMerchantName] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -122,6 +132,16 @@ export function TransactionsPage() {
           category_id: categoryId || undefined,
           merchant_id: merchantId || undefined,
           merchant_name: merchantName || undefined,
+          min_amount: (() => {
+            if (!minAmount.trim()) return undefined;
+            const n = Number(minAmount);
+            return Number.isFinite(n) ? n : undefined;
+          })(),
+          max_amount: (() => {
+            if (!maxAmount.trim()) return undefined;
+            const n = Number(maxAmount);
+            return Number.isFinite(n) ? n : undefined;
+          })(),
           search: searchQuery || undefined,
           include_transfers: !excludeTransfers,
           limit,
@@ -140,7 +160,7 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, searchQuery, page, categories.length, excludeTransfers]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers]);
 
   useEffect(() => {
     fetchData();
@@ -155,6 +175,8 @@ export function TransactionsPage() {
     const qCategory = searchParams.get('category_id') || '';
     const qMerchantId = searchParams.get('merchant_id') || '';
     const qMerchantName = searchParams.get('merchant_name') || '';
+    const qMinAmount = searchParams.get('min_amount') || '';
+    const qMaxAmount = searchParams.get('max_amount') || '';
     const qSearch = searchParams.get('search') || '';
     const qIncludeTransfers = searchParams.get('include_transfers');
 
@@ -165,6 +187,8 @@ export function TransactionsPage() {
     if (qCategory) setCategoryId(qCategory);
     if (qMerchantId) setMerchantId(qMerchantId);
     if (qMerchantName) setMerchantName(qMerchantName);
+    if (qMinAmount) setMinAmount(qMinAmount);
+    if (qMaxAmount) setMaxAmount(qMaxAmount);
     if (qSearch) setSearchQuery(qSearch);
     if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,12 +230,14 @@ export function TransactionsPage() {
     setCategoryId('');
     setMerchantId('');
     setMerchantName('');
+    setMinAmount('');
+    setMaxAmount('');
     setSearchQuery('');
     setExcludeTransfers(true);
     setPage(0);
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || searchQuery || !excludeTransfers;
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers;
 
   return (
     <div className="space-y-6">
@@ -263,6 +289,64 @@ export function TransactionsPage() {
       {showFilters && (
         <Card>
           <CardContent className="pt-6">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Quick date presets
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const r = getMonthRange();
+                    setDateFrom(r.start);
+                    setDateTo(r.end);
+                    setPage(0);
+                  }}
+                >
+                  This month
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const r = getPreviousMonthRange();
+                    setDateFrom(r.start);
+                    setDateTo(r.end);
+                    setPage(0);
+                  }}
+                >
+                  Last month
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const r = getYearToDateRange();
+                    setDateFrom(r.start);
+                    setDateTo(r.end);
+                    setPage(0);
+                  }}
+                >
+                  Year to date
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setDateFrom('');
+                    setDateTo('');
+                    setPage(0);
+                  }}
+                >
+                  Clear dates
+                </Button>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -343,6 +427,39 @@ export function TransactionsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Min amount
+                </label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="e.g. -500"
+                  value={minAmount}
+                  onChange={(e) => {
+                    setMinAmount(e.target.value);
+                    setPage(0);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max amount
+                </label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  placeholder="e.g. 0"
+                  value={maxAmount}
+                  onChange={(e) => {
+                    setMaxAmount(e.target.value);
+                    setPage(0);
+                  }}
+                />
               </div>
             </div>
 
