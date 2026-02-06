@@ -485,14 +485,27 @@ function mergeWrappedLines(lines: string[]): string[] {
   return merged;
 }
 
-function looksLikeDetaljerFormat(extractedText: string): boolean {
-  // "Detaljer" PDFs typically contain these field labels.
-  // Use regex with /i to avoid Unicode/mis-encoding edge cases (e.g. "BelÃ¸p" lowercases to "belã¸p").
-  return (
-    /detaljer/i.test(extractedText) &&
-    /transaksjonstekst/i.test(extractedText) &&
-    /(beløp|belÃ¸p|belop)/i.test(extractedText)
-  );
+function looksLikeStorebrandBelopBlocks(extractedText: string): boolean {
+  // Storebrand "Detaljer"/Kontobevegelser exports often embed each transaction as a repeated block where:
+  // - "Beløp ..." appears as a sentinel line
+  // - "Transaksjonstekst ..." carries the descriptor
+  //
+  // Important: do NOT rely on lowercased text for detecting "BelÃ¸p" variants, as mis-encoded characters can
+  // lowercase into surprising sequences. Use case-insensitive regex on the original string.
+  if (!/transaksjonstekst/i.test(extractedText)) return false;
+  if (!/(beløp|belÃ¸p|belop)/i.test(extractedText)) return false;
+
+  // Extra signal so we don't accidentally treat other PDFs as this format.
+  // We accept either an explicit date label OR the 4-date header line.
+  if (
+    /(^|\n)\s*dato\b/i.test(extractedText) ||
+    /(kort benyttet|opprett dato).{0,80}bokf/i.test(extractedText) ||
+    /rentedato/i.test(extractedText)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function parseDateFromValue(value: string): string | null {
@@ -637,18 +650,27 @@ function parseDetaljerBlocks(extractedText: string): {
       }
 
       debug.total_blocks_detected += 1;
-      // Some Detaljer extracts put the transaction date just above the Beløp line (e.g. "Dato" + date value).
-      // Grab a nearby date so older layouts remain parseable.
+
+      // Some Storebrand extracts put a "Dato" label above the Beløp line (either "Dato 06.01.2026" or
+      // "Dato" on its own followed by the date on the next line). If present, include it in the block and use it
+      // as the initial date fallback. Do NOT scan for arbitrary dates here; that can accidentally pull dates from
+      // the previous block.
+      let startIdx = i;
       let initialDate: string | null = null;
       for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
-        const d = parseDateFromValue(lines[j] || '');
-        if (d) {
-          initialDate = d;
+        const prev = lines[j] || '';
+        if (/^dato\b/i.test(prev)) {
+          const d = parseDateFromValue(prev) ?? parseDateFromValue(lines[j + 1] || '');
+          if (d) {
+            startIdx = j;
+            initialDate = d;
+          }
           break;
         }
       }
+
       current = {
-        startIdx: i,
+        startIdx,
         endIdx: i,
         date: initialDate,
         amount: null,
@@ -719,8 +741,8 @@ export function parsePdfText(extractedText: string): PdfParseResult {
   // Check for section markers (case-insensitive)
   const textLower = extractedText.toLowerCase();
 
-  // Handle "Detaljer" format that doesn't contain the usual section headers.
-  if (looksLikeDetaljerFormat(extractedText)) {
+  // Handle Storebrand block-based PDFs that don't contain the usual transaction line formats.
+  if (looksLikeStorebrandBelopBlocks(extractedText)) {
     const detaljer = parseDetaljerBlocks(extractedText);
     const txs = detaljer.transactions;
     return {
