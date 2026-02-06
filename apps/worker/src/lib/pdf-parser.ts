@@ -37,7 +37,7 @@ const TX_PATTERNS = [
   // Standard: DD.MM.YYYY  Description  -1 234,56
   /^(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,\d{2})\s*$/,
   // Two dates (transaction + booked): DD.MM.YY DD.MM.YY Description Amount
-  /^(\d{2})\.(\d{2})\.(\d{2,4})\s+\d{2}\.\d{2}\.\d{2,4}\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
+  /^(\d{2})\.(\d{2})\.(\d{2,4})\s+(\d{2})\.(\d{2})\.(\d{2,4})\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*$/,
   // Date at start, amount with "kr" suffix: DD.MM.YYYY  Description  1 234,56 kr
   /^(\d{2})\.(\d{2})\.(\d{4})\s+(.+?)\s+(-?\d[\d\s]*,?\d*)\s*(?:kr)?\s*$/i,
   // Date at start, amount can have spaces: DD.MM.YY Description 1234,56
@@ -99,14 +99,38 @@ function parseNorwegianAmount(amountStr: string): number {
   return parseFloat(cleaned);
 }
 
-function parseNorwegianDate(day: string, month: string, year: string): string {
+function parseNorwegianDate(day: string, month: string, year: string): string | null {
+  const dayNum = parseInt(day, 10);
+  const monthNum = parseInt(month, 10);
+
+  if (!Number.isFinite(dayNum) || !Number.isFinite(monthNum)) return null;
+  if (monthNum < 1 || monthNum > 12) return null;
+  if (dayNum < 1 || dayNum > 31) return null;
+
   // Handle 2-digit years
   let fullYear = year;
   if (year.length === 2) {
     const yearNum = parseInt(year, 10);
     fullYear = yearNum > 50 ? `19${year}` : `20${year}`;
   }
-  return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+
+  const yearNum = parseInt(fullYear, 10);
+  if (!Number.isFinite(yearNum)) return null;
+
+  // Guard rails: avoid poisoning analytics with impossible years/dates.
+  const currentYear = new Date().getFullYear();
+  if (yearNum < 1990 || yearNum > currentYear + 1) return null;
+
+  const d = new Date(Date.UTC(yearNum, monthNum - 1, dayNum));
+  if (
+    d.getUTCFullYear() !== yearNum ||
+    d.getUTCMonth() !== monthNum - 1 ||
+    d.getUTCDate() !== dayNum
+  ) {
+    return null;
+  }
+
+  return `${String(yearNum)}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
 }
 
 function tokenizeLine(line: string): string[] {
@@ -164,42 +188,61 @@ function tryParseTransactionLine(line: string): { date: string; description: str
   for (const pattern of TX_PATTERNS) {
     const match = pattern.exec(line);
     if (match) {
-      const [, day, month, year, description, amountStr] = match;
-      const amount = parseNorwegianAmount(amountStr);
-      if (!isNaN(amount) && description.trim().length > 0) {
-        return {
-          date: parseNorwegianDate(day, month, year),
-          description: description.trim(),
-          amount,
-        };
+      if (match.length === 6) {
+        const [, day, month, year, description, amountStr] = match;
+        const date = parseNorwegianDate(day, month, year);
+        const amount = parseNorwegianAmount(amountStr);
+        if (date && !isNaN(amount) && description.trim().length > 0) {
+          return {
+            date,
+            description: description.trim(),
+            amount,
+          };
+        }
+      }
+
+      // Two dates (transaction + booked): fall back to the second date if the first is invalid.
+      if (match.length === 9) {
+        const [, d1, m1, y1, d2, m2, y2, description, amountStr] = match;
+        const date = parseNorwegianDate(d1, m1, y1) ?? parseNorwegianDate(d2, m2, y2);
+        const amount = parseNorwegianAmount(amountStr);
+        if (date && !isNaN(amount) && description.trim().length > 0) {
+          return {
+            date,
+            description: description.trim(),
+            amount,
+          };
+        }
       }
     }
   }
 
   // Fallback: try to find date and amount separately
-  const dateMatch = DATE_PATTERN.exec(line);
   DATE_PATTERN.lastIndex = 0; // Reset regex state
-
-  if (dateMatch) {
+  let dateMatch: RegExpExecArray | null;
+  // Try all date-like matches and pick the first one that yields a valid ISO date.
+  while ((dateMatch = DATE_PATTERN.exec(line))) {
     const amountMatch = AMOUNT_PATTERN.exec(line);
-    if (amountMatch) {
-      const [, day, month, year] = dateMatch;
-      const amount = parseNorwegianAmount(amountMatch[1]);
+    if (!amountMatch) continue;
 
-      if (!isNaN(amount)) {
-        // Extract description (text between date and amount)
-        const dateEndIdx = dateMatch.index + dateMatch[0].length;
-        const amountStartIdx = amountMatch.index;
-        const description = line.substring(dateEndIdx, amountStartIdx).trim();
+    const [, day, month, year] = dateMatch;
+    const date = parseNorwegianDate(day, month, year);
+    if (!date) continue;
 
-        if (description.length > 0) {
-          return {
-            date: parseNorwegianDate(day, month, year),
-            description,
-            amount,
-          };
-        }
-      }
+    const amount = parseNorwegianAmount(amountMatch[1]);
+    if (isNaN(amount)) continue;
+
+    // Extract description (text between date and amount)
+    const dateEndIdx = dateMatch.index + dateMatch[0].length;
+    const amountStartIdx = amountMatch.index;
+    const description = line.substring(dateEndIdx, amountStartIdx).trim();
+
+    if (description.length > 0) {
+      return {
+        date,
+        description,
+        amount,
+      };
     }
   }
 
