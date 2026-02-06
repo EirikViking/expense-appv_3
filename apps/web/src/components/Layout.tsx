@@ -17,20 +17,22 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getVersionString, getApiBaseUrl } from '@/lib/version';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { useTranslation } from 'react-i18next';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/transactions', label: 'Transactions', icon: List },
-  { path: '/upload', label: 'Upload', icon: Upload },
-  { path: '/categories', label: 'Categories', icon: FolderTree },
-  { path: '/rules', label: 'Rules', icon: Workflow },
-  { path: '/budgets', label: 'Budgets', icon: PiggyBank },
-  { path: '/insights', label: 'Insights', icon: BarChart3 },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard },
+  { path: '/transactions', labelKey: 'nav.transactions', icon: List },
+  { path: '/upload', labelKey: 'nav.upload', icon: Upload },
+  { path: '/categories', labelKey: 'nav.categories', icon: FolderTree },
+  { path: '/rules', labelKey: 'nav.rules', icon: Workflow },
+  { path: '/budgets', labelKey: 'nav.budgets', icon: PiggyBank },
+  { path: '/insights', labelKey: 'nav.insights', icon: BarChart3 },
+  { path: '/settings', labelKey: 'nav.settings', icon: Settings },
 ];
 
 export function Layout({ children }: LayoutProps) {
@@ -38,6 +40,7 @@ export function Layout({ children }: LayoutProps) {
   const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { t } = useTranslation();
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -67,7 +70,7 @@ export function Layout({ children }: LayoutProps) {
               E
             </div>
             <span className="text-lg font-semibold text-gray-900 dark:text-white">
-              Expense Analytics
+              {t('appName')}
             </span>
           </Link>
           <button
@@ -97,19 +100,23 @@ export function Layout({ children }: LayoutProps) {
                     )}
                   >
                     <Icon className="h-5 w-5" />
-                    {item.label}
+                    {t(item.labelKey)}
                   </Link>
                 );
               })}
             </div>
 
             <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500">{t('lang.language')}</span>
+                <LanguageSwitcher compact />
+              </div>
               <button
                 onClick={() => logout()}
                 className="flex w-full items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
               >
                 <LogOut className="h-5 w-5" />
-                Logout
+                {t('common.logout')}
               </button>
             </div>
           </nav>
@@ -127,8 +134,11 @@ export function Layout({ children }: LayoutProps) {
             <Menu className="h-5 w-5 text-gray-500" />
           </button>
           <span className="text-lg font-semibold text-gray-900 dark:text-white">
-            Expense Analytics
+            {t('appName')}
           </span>
+          <div className="ml-auto">
+            <LanguageSwitcher compact />
+          </div>
         </header>
 
         <main className="flex-1 p-4 lg:p-6">
