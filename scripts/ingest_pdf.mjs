@@ -5,8 +5,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-
-import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
 const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
@@ -56,6 +55,11 @@ async function login() {
 }
 
 async function extractTextFromPdfBytes(bytes) {
+  // Resolve pdfjs-dist from the web workspace dependency so root scripts don't need hoisting.
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const pdfjsPath = path.join(repoRoot, 'apps', 'web', 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs');
+  const pdfjs = await import(pathToFileURL(pdfjsPath).href);
+
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(bytes) });
   const doc = await loadingTask.promise;
   let out = '';
@@ -111,4 +115,3 @@ run().catch((err) => {
   console.error(err && err.message ? err.message : String(err));
   process.exit(1);
 });
-
