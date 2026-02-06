@@ -1309,6 +1309,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
     }
 
     // Groceries sums: strict (flow_type=expense) vs fallback (expense OR unknown-negative) to catch misclassified flow/sign.
+    // Also compute an "analytics-style" total for groceries (matching /analytics/by-category conditions) and compare.
     const groceriesStrict = await c.env.DB.prepare(
       `
         SELECT
@@ -1352,9 +1353,65 @@ transactions.get('/admin/validate-ingest', async (c) => {
       `
     ).bind(dateFrom, dateTo).first<{ count: number }>();
 
+    // Match /analytics/by-category behavior for groceries, including splits and excluding transfers by default.
+    const groceriesAnalytics = await c.env.DB.prepare(
+      `
+        WITH categorized AS (
+          SELECT
+            t.id as transaction_id,
+            ABS(t.amount) as amount,
+            tm.category_id as category_id
+          FROM transactions t
+          LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+          WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+            AND NOT EXISTS (
+              SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+            )
+          UNION ALL
+          SELECT
+            t.id as transaction_id,
+            ABS(ts.amount) as amount,
+            ts.category_id as category_id
+          FROM transactions t
+          JOIN transaction_splits ts ON ts.parent_transaction_id = t.id
+          WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+        )
+        SELECT
+          COALESCE(SUM(categorized.amount), 0) as total
+        FROM categorized
+        WHERE categorized.category_id = 'cat_food_groceries'
+      `
+    ).bind(dateFrom, dateTo, dateFrom, dateTo).first<{ total: number }>();
+
+    // Base-transaction sum (matches /transactions listing without splits).
+    const groceriesTxBase = await c.env.DB.prepare(
+      `
+        SELECT COALESCE(SUM(ABS(t.amount)), 0) as total
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND tm.category_id = 'cat_food_groceries'
+          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+      `
+    ).bind(dateFrom, dateTo).first<{ total: number }>();
+
     const groceries_strict_sum = Number(groceriesStrict?.sum_abs || 0);
     const groceries_fallback_sum = Number(groceriesFallback?.sum_abs || 0);
     const groceries_flow_delta = Math.abs(groceries_fallback_sum - groceries_strict_sum);
+    const groceries_analytics_total = Number(groceriesAnalytics?.total || 0);
+    const groceries_tx_base_total = Number(groceriesTxBase?.total || 0);
+    const groceries_analytics_delta = Math.abs(groceries_analytics_total - groceries_tx_base_total);
 
     // Suspicious income (purchase keywords)
     const keywords = [
@@ -1401,6 +1458,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
     if (zero_active > 0) failures.push('zero_amount_rows_active');
     if (suspicious_count > 0) failures.push('suspicious_income_purchases');
     if (groceries_flow_delta > 1) failures.push('groceries_flow_type_mismatch');
+    if (groceries_analytics_delta > 1) failures.push('groceries_analytics_mismatch');
     if (Number(groceriesIncomeLeak?.count || 0) > 0) failures.push('groceries_income_leak');
 
     return c.json({
@@ -1418,6 +1476,9 @@ transactions.get('/admin/validate-ingest', async (c) => {
         source_type: source_counts,
       },
       groceries: {
+        analytics_total: groceries_analytics_total,
+        tx_base_total: groceries_tx_base_total,
+        analytics_delta: groceries_analytics_delta,
         strict: {
           tx_count: Number(groceriesStrict?.tx_count || 0),
           sum_abs: groceries_strict_sum,

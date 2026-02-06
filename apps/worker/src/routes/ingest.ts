@@ -247,6 +247,7 @@ ingest.post('/xlsx', async (c) => {
             const obj = JSON.parse(tx.raw_json);
             if (obj && typeof obj === 'object') {
               (obj as any).source_type = 'xlsx';
+              (obj as any).source_file = filename;
               (obj as any).source_filename = filename;
               (obj as any).source_file_hash = file_hash;
               (obj as any).source_fingerprint = file_hash;
@@ -265,6 +266,7 @@ ingest.post('/xlsx', async (c) => {
           }
           return JSON.stringify({
             source_type: 'xlsx',
+            source_file: filename,
             source_filename: filename,
             source_file_hash: file_hash,
             source_fingerprint: file_hash,
@@ -403,6 +405,7 @@ ingest.post('/pdf', async (c) => {
 
         const rawJson = JSON.stringify({
           source_type: 'pdf',
+          source_file: filename,
           source_filename: filename,
           source_file_hash: file_hash,
           source_fingerprint: file_hash,
