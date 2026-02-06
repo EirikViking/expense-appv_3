@@ -5,10 +5,15 @@ import { parseXlsxFile } from './xlsx-parser';
 function workbookToArrayBuffer(wb: XLSX.WorkBook): ArrayBuffer {
   const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as unknown;
   if (out instanceof ArrayBuffer) return out;
+
+  // XLSX can return Uint8Array backed by ArrayBuffer or SharedArrayBuffer. Copy into a fresh ArrayBuffer.
   if (out && typeof out === 'object' && 'buffer' in (out as any)) {
     const u8 = out as Uint8Array;
-    return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    const copy = new Uint8Array(u8.byteLength);
+    copy.set(u8);
+    return copy.buffer;
   }
+
   throw new Error('Unexpected XLSX.write output type');
 }
 
@@ -66,4 +71,3 @@ describe('parseXlsxFile (header section scan)', () => {
     expect(kiwi?.merchant).toBe('KIWI');
   });
 });
-
