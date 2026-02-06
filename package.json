@@ -19,6 +19,7 @@
     "typecheck": "pnpm -r typecheck",
     "rebuild:dry": "node scripts/run_rebuild.mjs --dry",
     "rebuild:apply": "node scripts/run_rebuild.mjs --apply",
+    "diag:prod": "node scripts/diag_prod.mjs",
     "verify:prod": "node scripts/verify_prod.mjs",
     "setup:local": "pnpm install && pnpm db:migrate:local",
     "db:migrate:local": "pnpm --filter worker db:migrate:local",

@@ -1,27 +1,23 @@
 /* eslint-disable no-console */
-// Verifies key production invariants after rebuild, without printing auth tokens/JWTs.
+// Production diagnostics for ingestion vs analytics correctness (no JWT printing).
 
 const API_BASE = (process.env.EXPENSE_API_BASE_URL || 'https://expense-api.cromkake.workers.dev').replace(/\/$/, '');
 const PASSWORD = process.env.RUN_REBUILD_PASSWORD || process.env.ADMIN_PASSWORD;
 
-const PURCHASE_TERMS = [
-  'CUTTERS',
-  'XXL',
-  'SATS',
-  'GOOGLE ONE',
-  'GOOGLE *GOOGLE ONE',
-  'LOS TACOS',
-  'NARVESEN',
-  'REMA',
-  'KIWI',
-  'MENY',
-];
+const GROCERY_TERMS = ['REMA', 'KIWI', 'MENY', 'COOP', 'EXTRA', 'OBS', 'SPAR', 'JOKER'];
 
-function isoDate(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function argValue(flag) {
+  const idx = process.argv.indexOf(flag);
+  if (idx === -1) return null;
+  return process.argv[idx + 1] || null;
+}
+
+const date_from = argValue('--from');
+const date_to = argValue('--to');
+
+if (!date_from || !date_to) {
+  console.error('Usage: pnpm run diag:prod -- --from YYYY-MM-DD --to YYYY-MM-DD');
+  process.exit(2);
 }
 
 async function jsonRequest(path, { method = 'GET', token, body } = {}) {
@@ -50,17 +46,9 @@ async function jsonRequest(path, { method = 'GET', token, body } = {}) {
 }
 
 async function login() {
-  if (!PASSWORD) {
-    throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
-  }
-  const data = await jsonRequest('/auth/login', {
-    method: 'POST',
-    body: { password: PASSWORD },
-  });
-
-  if (!data || typeof data.token !== 'string' || !data.token) {
-    throw new Error('Login failed: token missing from response');
-  }
+  if (!PASSWORD) throw new Error('Missing RUN_REBUILD_PASSWORD (or ADMIN_PASSWORD) env var');
+  const data = await jsonRequest('/auth/login', { method: 'POST', body: { password: PASSWORD } });
+  if (!data || typeof data.token !== 'string' || !data.token) throw new Error('Login failed: token missing from response');
   return data.token;
 }
 
@@ -95,21 +83,39 @@ function absSumAmounts(txs) {
   return sum;
 }
 
+function countPdfRawMatches(txs, term) {
+  const needle = term.toLowerCase();
+  let count = 0;
+  for (const tx of txs) {
+    if (!tx || typeof tx.raw_json !== 'string') continue;
+    try {
+      const obj = JSON.parse(tx.raw_json);
+      const hay = [
+        obj?.raw_line,
+        obj?.raw_block,
+        obj?.parsed_description,
+        obj?.merchant_hint,
+        tx.description,
+        tx.merchant,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase())
+        .join('\n');
+      if (hay.includes(needle)) count++;
+    } catch {
+      // ignore
+    }
+  }
+  return count;
+}
+
 async function run() {
   const token = await login();
 
-  const argValue = (flag) => {
-    const idx = process.argv.indexOf(flag);
-    if (idx === -1) return null;
-    return process.argv[idx + 1] || null;
-  };
-
-  const now = new Date();
-  const date_from = argValue('--from') || `${now.getFullYear()}-01-01`;
-  const date_to = argValue('--to') || isoDate(now);
-
-  // 1) Groceries analytics total vs transactions sum(abs(amount))
-  const byCat = await jsonRequest('/analytics/by-category?' + new URLSearchParams({ date_from, date_to }).toString(), { token });
+  const byCat = await jsonRequest(
+    '/analytics/by-category?' + new URLSearchParams({ date_from, date_to }).toString(),
+    { token }
+  );
   const cats = Array.isArray(byCat.categories) ? byCat.categories : [];
   const groceriesRow = cats.find((c) => c && c.category_id === 'cat_food_groceries');
   const groceriesAnalytics = groceriesRow ? Number(groceriesRow.total) : 0;
@@ -123,25 +129,18 @@ async function run() {
   });
   const groceriesTxSum = absSumAmounts(groceriesTxs);
   const groceriesDelta = Math.abs(groceriesAnalytics - groceriesTxSum);
-  const groceriesPass = groceriesDelta <= 1.0;
 
-  // 2) Income must not contain obvious purchase merchants (by search)
-  const incomeViolations = [];
-  for (const term of PURCHASE_TERMS) {
-    const txs = await fetchAllTransactions(token, {
-      date_from,
-      date_to,
-      flow_type: 'income',
-      search: term,
-      include_transfers: false,
-    });
-    if (txs.length > 0) {
-      incomeViolations.push({ term, count: txs.length });
-    }
+  const pdfTxs = await fetchAllTransactions(token, {
+    date_from,
+    date_to,
+    source_type: 'pdf',
+    include_transfers: false,
+  });
+
+  const pdfRawMatches = {};
+  for (const term of GROCERY_TERMS) {
+    pdfRawMatches[term] = countPdfRawMatches(pdfTxs, term);
   }
-  const incomePass = incomeViolations.length === 0;
-
-  const pass = groceriesPass && incomePass;
 
   console.log(
     JSON.stringify(
@@ -151,24 +150,21 @@ async function run() {
           analytics_total: groceriesAnalytics,
           tx_abs_sum: groceriesTxSum,
           delta: groceriesDelta,
-          pass: groceriesPass,
           tx_count: groceriesTxs.length,
         },
-        income: {
-          pass: incomePass,
-          violations: incomeViolations,
+        pdf: {
+          tx_count: pdfTxs.length,
+          raw_matches: pdfRawMatches,
         },
-        pass,
       },
       null,
       2
     )
   );
-
-  if (!pass) process.exit(1);
 }
 
 run().catch((err) => {
   console.error(err && err.message ? err.message : String(err));
   process.exit(1);
 });
+
