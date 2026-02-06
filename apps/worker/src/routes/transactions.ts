@@ -252,7 +252,10 @@ transactions.get('/', async (c) => {
     }
 
     if (search && search.trim()) {
-      // Make "search" useful by matching both raw description and canonical merchant name (if available).
+      // Make "search" useful by matching:
+      // - description
+      // - canonical merchant name (if available)
+      // - raw PDF/XLSX text hints stored in raw_json (raw_line/raw_block)
       if (!joinClause.includes('transaction_meta')) {
         joinClause += ' LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id';
       }
@@ -260,8 +263,21 @@ transactions.get('/', async (c) => {
       if (!joinClause.includes('merchants m')) {
         joinClause += merchantsJoin;
       }
-      conditions.push('(t.description LIKE ? OR COALESCE(m.canonical_name, \'\') LIKE ?)');
-      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+      const needle = `%${search.trim()}%`;
+      conditions.push(`(
+        t.description LIKE ? COLLATE NOCASE OR
+        COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
+        COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
+        (
+          json_valid(t.raw_json) AND
+          COALESCE(json_extract(t.raw_json, '$.raw_line'), '') LIKE ? COLLATE NOCASE
+        ) OR
+        (
+          json_valid(t.raw_json) AND
+          COALESCE(json_extract(t.raw_json, '$.raw_block'), '') LIKE ? COLLATE NOCASE
+        )
+      )`);
+      params.push(needle, needle, needle, needle, needle);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

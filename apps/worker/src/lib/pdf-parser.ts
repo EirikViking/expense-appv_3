@@ -10,6 +10,8 @@ export interface ParsedPdfTransaction {
   amount: number;
   status: TransactionStatus;
   raw_line: string;
+  raw_block?: string;
+  merchant_hint?: string;
 }
 
 export interface SkippedLine {
@@ -472,9 +474,181 @@ function mergeWrappedLines(lines: string[]): string[] {
   return merged;
 }
 
+function looksLikeDetaljerFormat(textLower: string): boolean {
+  // "Detaljer" PDFs typically contain these field labels.
+  return (
+    textLower.includes('transaksjonstekst') &&
+    (textLower.includes('beløp') || textLower.includes('belop')) &&
+    textLower.includes('dato')
+  );
+}
+
+function parseDateFromValue(value: string): string | null {
+  const m = value.match(/(\d{2})[.\-\/](\d{2})[.\-\/](\d{2,4})/);
+  if (!m) return null;
+  const [, day, month, year] = m;
+  return parseNorwegianDate(day, month, year);
+}
+
+function parseAmountFromValue(value: string): number | null {
+  // Accept "-130,45 NOK", "130,45", "-130.45", "1 234,56"
+  const cleaned = String(value || '').replace(/\s+/g, ' ').trim();
+  const m = cleaned.match(/-?\d[\d\s\u00A0]*[,.]\d{2}/);
+  if (m?.[0]) return parseNorwegianAmount(m[0]);
+
+  // Fallback: integers only if explicit currency.
+  const intWithCurrency = cleaned.match(/-?\d[\d\s\u00A0]*\s*(?:kr|nok)\b/i);
+  if (intWithCurrency?.[0]) {
+    const n = parseNorwegianAmount(intWithCurrency[0]);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  return null;
+}
+
+function parseDetaljerBlocks(extractedText: string): ParsedPdfTransaction[] {
+  const lines = extractedText
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const out: ParsedPdfTransaction[] = [];
+
+  type Block = {
+    startIdx: number;
+    endIdx: number;
+    date: string | null;
+    amount: number | null;
+    currency: string | null;
+    transaksjonstekst: string | null;
+    butikk: string | null;
+    fra_konto: string | null;
+  };
+
+  const blocks: Block[] = [];
+  let current: Block | null = null;
+
+  const pushBlock = (b: Block) => {
+    const desc = (b.butikk || b.transaksjonstekst || '').trim();
+    if (!b.date || b.amount === null || !desc) return;
+    if (!descriptionHasLetters(desc)) return;
+
+    const raw_block = lines.slice(b.startIdx, b.endIdx + 1).join('\n');
+    out.push({
+      tx_date: b.date,
+      description: desc,
+      amount: b.amount,
+      status: 'booked',
+      raw_line: `${b.date} ${desc} ${b.amount}`,
+      raw_block,
+      merchant_hint: b.butikk?.trim() || undefined,
+    });
+  };
+
+  const isLabel = (line: string, label: string) => new RegExp(`^${label}\\b`, 'i').test(line);
+  const readValue = (idx: number, label: string): { value: string | null; consumed: number } => {
+    const line = lines[idx] || '';
+    const re = new RegExp(`^${label}\\b\\s*:?[\\s]*`, 'i');
+    const sameLine = line.replace(re, '').trim();
+    if (sameLine) return { value: sameLine, consumed: 0 };
+    const next = lines[idx + 1];
+    if (next && !/^\w+\b\s*:?\s*$/.test(next)) return { value: next.trim(), consumed: 1 };
+    return { value: null, consumed: 0 };
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Start a new block on "Dato"
+    if (isLabel(line, 'Dato')) {
+      if (current) {
+        current.endIdx = i - 1;
+        pushBlock(current);
+        blocks.push(current);
+      }
+
+      const { value, consumed } = readValue(i, 'Dato');
+      const date = value ? parseDateFromValue(value) : null;
+      current = {
+        startIdx: i,
+        endIdx: i,
+        date,
+        amount: null,
+        currency: null,
+        transaksjonstekst: null,
+        butikk: null,
+        fra_konto: null,
+      };
+      i += consumed;
+      continue;
+    }
+
+    if (!current) continue;
+
+    if (isLabel(line, 'Beløp') || isLabel(line, 'Belop')) {
+      const { value, consumed } = readValue(i, 'Beløp');
+      const v = value ?? readValue(i, 'Belop').value;
+      if (v) {
+        const amount = parseAmountFromValue(v);
+        if (amount !== null) current.amount = amount;
+        const c = v.match(/\b([A-Z]{3})\b/);
+        if (c?.[1]) current.currency = c[1];
+      }
+      i += consumed;
+      continue;
+    }
+
+    if (isLabel(line, 'Transaksjonstekst')) {
+      const { value, consumed } = readValue(i, 'Transaksjonstekst');
+      if (value) current.transaksjonstekst = value;
+      i += consumed;
+      continue;
+    }
+
+    if (isLabel(line, 'Butikk')) {
+      const { value, consumed } = readValue(i, 'Butikk');
+      if (value) current.butikk = value;
+      i += consumed;
+      continue;
+    }
+
+    if (isLabel(line, 'Fra konto')) {
+      const { value, consumed } = readValue(i, 'Fra konto');
+      if (value) current.fra_konto = value;
+      i += consumed;
+      continue;
+    }
+
+    current.endIdx = i;
+  }
+
+  if (current) {
+    current.endIdx = lines.length - 1;
+    pushBlock(current);
+    blocks.push(current);
+  }
+
+  return out;
+}
+
 export function parsePdfText(extractedText: string): PdfParseResult {
   // Check for section markers (case-insensitive)
   const textLower = extractedText.toLowerCase();
+
+  // Handle "Detaljer" format that doesn't contain the usual section headers.
+  if (looksLikeDetaljerFormat(textLower)) {
+    const txs = parseDetaljerBlocks(extractedText);
+    return {
+      transactions: txs,
+      stats: {
+        totalLines: extractedText.split(/\n/).length,
+        parsedCount: txs.length,
+        dateContainingLines: 0,
+        skippedCount: 0,
+      },
+    };
+  }
+
   const hasPending = textLower.includes(PDF_SECTION_PENDING.toLowerCase()) ||
     textLower.includes('reservasjon');
   const hasBooked = textLower.includes(PDF_SECTION_BOOKED.toLowerCase()) ||

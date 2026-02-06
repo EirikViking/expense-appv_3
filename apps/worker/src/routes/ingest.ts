@@ -375,13 +375,15 @@ ingest.post('/pdf', async (c) => {
       for (const tx of parsedTxs) {
       try {
         // Best-effort re-parse to improve description/amount (helps rule matching and prevents legacy pollution).
+        // For "Detaljer" block PDFs we already have tx.description/tx.amount; re-parsing raw_line may not work.
         const reparsed = parsePdfTransactionLine(tx.raw_line);
         const description = reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
         const parsedAmount = reparsed?.amount !== undefined && reparsed.date === tx.tx_date ? reparsed.amount : tx.amount;
-        const merchantHint = extractMerchantFromPdfLine(tx.raw_line);
+        const merchantHint = tx.merchant_hint || extractMerchantFromPdfLine(tx.raw_line);
 
         const rawJson = JSON.stringify({
           raw_line: tx.raw_line,
+          ...(tx.raw_block ? { raw_block: tx.raw_block } : {}),
           parsed_description: description,
           parsed_amount: parsedAmount,
           merchant_hint: merchantHint,
