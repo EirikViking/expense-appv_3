@@ -50,7 +50,7 @@ analytics.get('/overview', async (c) => {
         COALESCE(COUNT(*), 0) as transfers_count
       FROM transactions t
       WHERE t.tx_date >= ? AND t.tx_date <= ?
-        AND COALESCE(t.is_transfer, 0) = 1
+        AND (COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = 'transfer')
     `).bind(date_from, date_to).first<{
       transfers_in: number;
       transfers_out: number;
@@ -62,9 +62,14 @@ analytics.get('/overview', async (c) => {
     const totalsResult = await c.env.DB.prepare(`
       SELECT
         COALESCE(SUM(CASE
-          WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+          WHEN (t.flow_type = 'income' OR (t.flow_type = 'unknown' AND t.amount > 0))
+            AND COALESCE(c.is_transfer, 0) = 0
+            THEN t.amount ELSE 0
         END), 0) as income,
-        COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as expenses,
+        COALESCE(SUM(CASE
+          WHEN (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            THEN ABS(t.amount) ELSE 0
+        END), 0) as expenses,
         COALESCE(SUM(t.amount), 0) as net
       FROM transactions t
       LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
@@ -111,7 +116,7 @@ function buildWhereClause(params: Record<string, unknown>, options?: { include_e
   // Default: exclude transactions marked as excluded, but allow transfers to be included in cashflow mode.
   if (!options?.include_excluded) {
     if (includeTransfers) {
-      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
     } else {
       conditions.push('COALESCE(t.is_excluded, 0) = 0');
     }
@@ -120,6 +125,7 @@ function buildWhereClause(params: Record<string, unknown>, options?: { include_e
   // Default: exclude transfer transactions unless explicitly included.
   if (!includeTransfers) {
     conditions.push('COALESCE(t.is_transfer, 0) = 0');
+    conditions.push('t.flow_type != \'transfer\'');
   }
 
   if (params.date_from) {
@@ -176,10 +182,14 @@ analytics.get('/summary', async (c) => {
       .prepare(`
         SELECT
           COALESCE(SUM(CASE 
-            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 
-            THEN t.amount ELSE 0 
+            WHEN (t.flow_type = 'income' OR (t.flow_type = 'unknown' AND t.amount > 0))
+              AND COALESCE(c.is_transfer, 0) = 0
+              THEN t.amount ELSE 0
           END), 0) as total_income,
-          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(CASE
+            WHEN (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+              THEN ABS(t.amount) ELSE 0
+          END), 0) as total_expenses,
           COALESCE(SUM(t.amount), 0) as net,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN ABS(t.amount) ELSE 0 END), 0) as pending_amount,
@@ -241,14 +251,19 @@ analytics.get('/by-category', async (c) => {
     const { date_from, date_to, status, source_type, tag_id, include_transfers } = parsed.data;
 
     // Build base conditions
-    const conditions: string[] = ['t.tx_date >= ?', 't.tx_date <= ?', 't.amount < 0'];
+    const conditions: string[] = [
+      't.tx_date >= ?',
+      't.tx_date <= ?',
+      "(t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))",
+    ];
     const bindings: (string | number)[] = [date_from, date_to];
 
     if (include_transfers) {
-      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
     } else {
       conditions.push('COALESCE(t.is_excluded, 0) = 0');
       conditions.push('COALESCE(t.is_transfer, 0) = 0');
+      conditions.push("t.flow_type != 'transfer'");
     }
 
     if (status) {
@@ -357,7 +372,7 @@ analytics.get('/by-merchant', async (c) => {
         FROM transactions t
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
-        ${clause} ${clause ? 'AND' : 'WHERE'} t.amount < 0
+        ${clause} ${clause ? 'AND' : 'WHERE'} (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
         GROUP BY m.id, COALESCE(m.canonical_name, t.description)
         ORDER BY total DESC
         LIMIT ?
@@ -394,7 +409,7 @@ analytics.get('/by-merchant', async (c) => {
         FROM transactions t
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
-        ${prevClause} ${prevClause ? 'AND' : 'WHERE'} t.amount < 0
+        ${prevClause} ${prevClause ? 'AND' : 'WHERE'} (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
         GROUP BY COALESCE(m.canonical_name, t.description)
       `)
       .bind(...prevBindings)
@@ -453,8 +468,12 @@ analytics.get('/timeseries', async (c) => {
       .prepare(`
         SELECT
           ${dateExpr} as date,
-          COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount ELSE 0 END), 0) as income,
-          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as expenses,
+          COALESCE(SUM(CASE
+            WHEN (t.flow_type = 'income' OR (t.flow_type = 'unknown' AND t.amount > 0)) THEN t.amount ELSE 0
+          END), 0) as income,
+          COALESCE(SUM(CASE
+            WHEN (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0)) THEN ABS(t.amount) ELSE 0
+          END), 0) as expenses,
           COALESCE(SUM(t.amount), 0) as net,
           COUNT(*) as count
         FROM transactions t
@@ -505,9 +524,10 @@ analytics.get('/subscriptions', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         WHERE t.tx_date >= ?
-          AND t.amount < 0
+          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
         GROUP BY COALESCE(m.id, t.description)
         HAVING COUNT(*) >= ?
           AND MAX(ABS(t.amount)) - MIN(ABS(t.amount)) < AVG(ABS(t.amount)) * 0.2
@@ -603,9 +623,9 @@ analytics.get('/anomalies', async (c) => {
           AVG(ABS(amount) * ABS(amount)) - AVG(ABS(amount)) * AVG(ABS(amount)) as variance
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ?
-          AND amount < 0
-          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
-          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
+          AND (flow_type = 'expense' OR (flow_type = 'unknown' AND amount < 0))
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? "(COALESCE(is_transfer,0)=1 OR flow_type='transfer')" : '0'}))
+          ${includeTransfers ? '' : "AND COALESCE(is_transfer, 0) = 0 AND flow_type != 'transfer'"}
       `)
       .bind(date_from, date_to)
       .first<{ mean: number; variance: number }>();
@@ -630,9 +650,10 @@ analytics.get('/anomalies', async (c) => {
           t.tx_date as date
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
           AND ABS(t.amount) > ?
-          AND (COALESCE(t.is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(t.is_transfer,0)=1' : '0'}))
-          ${includeTransfers ? '' : 'AND COALESCE(t.is_transfer, 0) = 0'}
+          AND (COALESCE(t.is_excluded, 0) = 0 OR (${includeTransfers ? "(COALESCE(t.is_transfer,0)=1 OR t.flow_type='transfer')" : '0'}))
+          ${includeTransfers ? '' : "AND COALESCE(t.is_transfer, 0) = 0 AND t.flow_type != 'transfer'"}
         ORDER BY ABS(t.amount) DESC
         LIMIT 50
       `)
@@ -752,9 +773,14 @@ analytics.get('/compare', async (c) => {
       .prepare(`
         SELECT
           COALESCE(SUM(CASE
-            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+            WHEN (t.flow_type = 'income' OR (t.flow_type = 'unknown' AND t.amount > 0))
+              AND COALESCE(c.is_transfer, 0) = 0
+              THEN t.amount ELSE 0
           END), 0) as total_income,
-          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(CASE
+            WHEN (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+              THEN ABS(t.amount) ELSE 0
+          END), 0) as total_expenses,
           COALESCE(SUM(t.amount), 0) as net,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN ABS(t.amount) ELSE 0 END), 0) as pending_amount,
@@ -776,9 +802,14 @@ analytics.get('/compare', async (c) => {
       .prepare(`
         SELECT
           COALESCE(SUM(CASE
-            WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+            WHEN (t.flow_type = 'income' OR (t.flow_type = 'unknown' AND t.amount > 0))
+              AND COALESCE(c.is_transfer, 0) = 0
+              THEN t.amount ELSE 0
           END), 0) as total_income,
-          COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as total_expenses,
+          COALESCE(SUM(CASE
+            WHEN (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+              THEN ABS(t.amount) ELSE 0
+          END), 0) as total_expenses,
           COALESCE(SUM(t.amount), 0) as net,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN 1 ELSE 0 END), 0) as pending_count,
           COALESCE(SUM(CASE WHEN t.status = 'pending' THEN ABS(t.amount) ELSE 0 END), 0) as pending_amount,

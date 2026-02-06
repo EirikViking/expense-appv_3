@@ -15,6 +15,7 @@ import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
 import { parsePdfTransactionLine } from '../lib/pdf-parser';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
+import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -188,7 +189,7 @@ transactions.get('/', async (c) => {
     // Hide excluded rows by default. If include_transfers is enabled, still show transfers even though they are marked excluded.
     if (!include_excluded) {
       if (include_transfers) {
-        conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+        conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
       } else {
         conditions.push('COALESCE(t.is_excluded, 0) = 0');
       }
@@ -196,6 +197,7 @@ transactions.get('/', async (c) => {
 
     if (!include_transfers) {
       conditions.push('COALESCE(t.is_transfer, 0) = 0');
+      conditions.push(\"t.flow_type != 'transfer'\");
     }
 
     // Join conditions for category/tag/merchant filtering
@@ -452,10 +454,11 @@ transactions.post('/', async (c) => {
     ).run();
 
     // Insert transaction
+    const flowType: 'expense' | 'income' = amount < 0 ? 'expense' : 'income';
     await c.env.DB.prepare(`
       INSERT INTO transactions
-        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, is_excluded, is_transfer)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, 0, 0)
+        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0)
     `).bind(
       id,
       txHash,
@@ -466,7 +469,8 @@ transactions.post('/', async (c) => {
       amount,
       sourceFileHash,
       JSON.stringify({ source: 'manual', notes: notes || null }),
-      now
+      now,
+      flowType
     ).run();
 
     // Insert meta
@@ -492,6 +496,7 @@ transactions.post('/', async (c) => {
           source_file_hash: sourceFileHash,
           raw_json: JSON.stringify({ source: 'manual' }),
           created_at: now,
+          flow_type: flowType,
           is_excluded: false,
           is_transfer: false,
         }, rules);
@@ -1216,6 +1221,214 @@ transactions.get('/admin/diagnostics/suspicious-positive-purchases', async (c) =
     });
   } catch (error) {
     console.error('Suspicious positive purchases diagnostic error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Rebuild flow_type and normalize amount signs for existing rows (idempotent; supports dry_run).
+transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      dry_run?: boolean;
+      limit?: number;
+      date_from?: string;
+      date_to?: string;
+      source_type?: 'xlsx' | 'pdf' | 'manual';
+    };
+
+    const dryRun = body.dry_run !== false; // default true
+    const limit = Math.min(Math.max(1, body.limit ?? 5000), 20000);
+
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (body.date_from) {
+      conditions.push('t.tx_date >= ?');
+      params.push(body.date_from);
+    }
+    if (body.date_to) {
+      conditions.push('t.tx_date <= ?');
+      params.push(body.date_to);
+    }
+    if (body.source_type) {
+      conditions.push('t.source_type = ?');
+      params.push(body.source_type);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const rows = await c.env.DB.prepare(
+      `
+        SELECT
+          t.id,
+          t.tx_date,
+          t.amount,
+          t.description,
+          t.source_type,
+          t.tx_hash,
+          t.raw_json,
+          t.flow_type,
+          COALESCE(t.is_transfer, 0) as is_transfer,
+          COALESCE(t.is_excluded, 0) as is_excluded
+        FROM transactions t
+        ${whereClause}
+        ORDER BY t.tx_date DESC, t.created_at DESC
+        LIMIT ?
+      `
+    ).bind(...params, limit).all<{
+      id: string;
+      tx_date: string;
+      amount: number;
+      description: string;
+      source_type: 'xlsx' | 'pdf' | 'manual';
+      tx_hash: string;
+      raw_json: string;
+      flow_type: string;
+      is_transfer: 0 | 1;
+      is_excluded: 0 | 1;
+    }>();
+
+    const scanned = (rows.results || []).length;
+
+    let flowChanged = 0;
+    let signFixed = 0;
+    let transferMarked = 0;
+    let excludedMarked = 0;
+    let skippedNoRaw = 0;
+    let excludedDuplicates = 0;
+
+    const enabledRules = await getEnabledRules(c.env.DB);
+    const statements: D1PreparedStatement[] = [];
+    const touchedIds: string[] = [];
+
+    const addMetaNote = (txId: string, note: string) => {
+      statements.push(
+        c.env.DB.prepare(
+          `
+            INSERT INTO transaction_meta (transaction_id, notes, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              notes = CASE
+                WHEN notes IS NULL OR notes = '' THEN excluded.notes
+                ELSE notes || char(10) || excluded.notes
+              END,
+              updated_at = datetime('now')
+          `
+        ).bind(txId, note)
+      );
+    };
+
+    for (const r of rows.results || []) {
+      if (!r.raw_json || !String(r.raw_json).trim()) {
+        skippedNoRaw++;
+        continue;
+      }
+
+      const forcedTransfer = r.is_transfer === 1;
+      const classification = forcedTransfer
+        ? { flow_type: 'transfer' as const, reason: 'forced-is_transfer' }
+        : classifyFlowType({
+          source_type: r.source_type,
+          description: r.description,
+          amount: r.amount,
+          raw_json: r.raw_json,
+        });
+
+      const nextFlow = classification.flow_type;
+      const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: r.amount });
+
+      const nextAmount = normalized.amount;
+      const nextIsTransfer = nextFlow === 'transfer' ? 1 : 0;
+      const nextIsExcluded = nextFlow === 'transfer' ? 1 : r.is_excluded;
+
+      const flowDiff = String(r.flow_type || 'unknown') !== nextFlow;
+      const signDiff = nextAmount !== r.amount;
+      const transferDiff = nextIsTransfer !== r.is_transfer;
+      const excludedDiff = nextIsExcluded !== r.is_excluded;
+
+      if (flowDiff) flowChanged++;
+      if (signDiff) signFixed++;
+      if (transferDiff && nextIsTransfer === 1) transferMarked++;
+      if (excludedDiff && nextIsExcluded === 1) excludedMarked++;
+
+      if (dryRun) continue;
+
+      if (!flowDiff && !signDiff && !transferDiff && !excludedDiff) continue;
+
+      // If amount changes we must update tx_hash to keep dedupe sane.
+      let nextHash = r.tx_hash;
+      if (signDiff) {
+        nextHash = await computeTxHash(r.tx_date, r.description, nextAmount, r.source_type);
+
+        const conflict = await c.env.DB.prepare(
+          'SELECT id FROM transactions WHERE tx_hash = ? AND id != ? LIMIT 1'
+        ).bind(nextHash, r.id).first<{ id: string }>();
+
+        if (conflict?.id) {
+          excludedDuplicates++;
+          statements.push(
+            c.env.DB.prepare('UPDATE transactions SET is_excluded = 1, amount = 0 WHERE id = ?').bind(r.id)
+          );
+          addMetaNote(r.id, `[auto] rebuild-flow: excluded (hash conflict with ${conflict.id})`);
+          touchedIds.push(r.id);
+          continue;
+        }
+      }
+
+      statements.push(
+        c.env.DB.prepare(
+          `
+            UPDATE transactions
+            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?
+            WHERE id = ?
+          `
+        ).bind(nextFlow, nextAmount, nextHash, nextIsTransfer, nextIsExcluded, r.id)
+      );
+
+      addMetaNote(
+        r.id,
+        `[auto] rebuild-flow: old_flow=${String(r.flow_type || 'unknown')} new_flow=${nextFlow} old_amount=${r.amount} new_amount=${nextAmount}`
+      );
+      touchedIds.push(r.id);
+    }
+
+    if (!dryRun && statements.length > 0) {
+      await c.env.DB.batch(statements);
+
+      // Re-run rules for touched rows so category/tags remain consistent after sign/flow changes.
+      for (const id of touchedIds) {
+        const txRow = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<any>();
+        if (!txRow) continue;
+
+        const tx: Transaction = {
+          ...txRow,
+          is_excluded: !!txRow.is_excluded,
+          is_transfer: !!txRow.is_transfer,
+          flow_type: (txRow.flow_type || 'unknown') as any,
+        };
+
+        try {
+          await applyRulesToTransaction(c.env.DB, tx, enabledRules);
+        } catch {
+          // best-effort
+        }
+      }
+    }
+
+    return c.json({
+      success: true,
+      dry_run: dryRun,
+      scanned,
+      flow_changed: flowChanged,
+      sign_fixed: signFixed,
+      transfer_marked: transferMarked,
+      excluded_marked: excludedMarked,
+      skipped_no_raw: skippedNoRaw,
+      excluded_duplicates: dryRun ? 0 : excludedDuplicates,
+      updated: dryRun ? 0 : touchedIds.length,
+    });
+  } catch (error) {
+    console.error('Rebuild flow/signs error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
