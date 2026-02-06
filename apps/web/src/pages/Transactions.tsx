@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
+import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,10 +50,12 @@ export function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [excludeTransfers, setExcludeTransfers] = useState(true);
+  const [showExcluded, setShowExcluded] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const [merchantName, setMerchantName] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
+  const [flowType, setFlowType] = useState<FlowType | ''>('');
 
   // Pagination
   const [page, setPage] = useState(0);
@@ -134,6 +136,7 @@ export function TransactionsPage() {
           category_id: categoryId || undefined,
           merchant_id: merchantId || undefined,
           merchant_name: merchantName || undefined,
+          flow_type: flowType || undefined,
           min_amount: (() => {
             if (!minAmount.trim()) return undefined;
             const n = Number(minAmount);
@@ -146,6 +149,7 @@ export function TransactionsPage() {
           })(),
           search: searchQuery || undefined,
           include_transfers: !excludeTransfers,
+          include_excluded: showExcluded ? true : undefined,
           limit,
           offset: page * limit,
         }),
@@ -162,7 +166,7 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType]);
 
   useEffect(() => {
     fetchData();
@@ -181,6 +185,8 @@ export function TransactionsPage() {
     const qMaxAmount = searchParams.get('max_amount') || '';
     const qSearch = searchParams.get('search') || '';
     const qIncludeTransfers = searchParams.get('include_transfers');
+    const qIncludeExcluded = searchParams.get('include_excluded');
+    const qFlowType = (searchParams.get('flow_type') || '') as FlowType | '';
 
     if (qDateFrom) setDateFrom(qDateFrom);
     if (qDateTo) setDateTo(qDateTo);
@@ -193,6 +199,8 @@ export function TransactionsPage() {
     if (qMaxAmount) setMaxAmount(qMaxAmount);
     if (qSearch) setSearchQuery(qSearch);
     if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
+    if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
+    if (qFlowType) setFlowType(qFlowType);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -236,10 +244,12 @@ export function TransactionsPage() {
     setMaxAmount('');
     setSearchQuery('');
     setExcludeTransfers(true);
+    setShowExcluded(false);
+    setFlowType('');
     setPage(0);
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers;
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
 
   return (
     <div className="space-y-6">
@@ -349,7 +359,7 @@ export function TransactionsPage() {
                 </Button>
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('common.fromDate')}
@@ -408,6 +418,25 @@ export function TransactionsPage() {
                   <option value="">{t('common.all')}</option>
                   <option value="xlsx">{t('common.creditCardXlsx')}</option>
                   <option value="pdf">{t('common.bankStatementPdf')}</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('transactions.flowType')}
+                </label>
+                <select
+                  value={flowType}
+                  onChange={(e) => {
+                    setFlowType(e.target.value as FlowType | '');
+                    setPage(0);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">{t('common.all')}</option>
+                  <option value="expense">{t('transactions.flowTypes.expense')}</option>
+                  <option value="income">{t('transactions.flowTypes.income')}</option>
+                  <option value="transfer">{t('transactions.flowTypes.transfer')}</option>
+                  <option value="unknown">{t('transactions.flowTypes.unknown')}</option>
                 </select>
               </div>
               <div>
@@ -498,7 +527,7 @@ export function TransactionsPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-4 flex items-center gap-6">
               <input
                 id="exclude-transfers"
                 type="checkbox"
@@ -512,6 +541,22 @@ export function TransactionsPage() {
               <label htmlFor="exclude-transfers" className="text-sm text-gray-700">
                 {t('transactions.excludeTransfersDefault')}
               </label>
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="show-excluded"
+                  type="checkbox"
+                  checked={showExcluded}
+                  onChange={(e) => {
+                    setShowExcluded(e.target.checked);
+                    setPage(0);
+                  }}
+                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor="show-excluded" className="text-sm text-gray-700">
+                  {t('transactions.showExcluded')}
+                </label>
+              </div>
             </div>
             {hasFilters && (
               <Button
@@ -642,14 +687,24 @@ export function TransactionsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <p className="font-medium truncate">{tx.description}</p>
+                            {tx.is_excluded && (
+                              <Badge variant="destructive" className="text-xs">
+                                {t('transactions.excluded')}
+                              </Badge>
+                            )}
                             {tx.is_transfer && (
                               <Badge variant="secondary" className="text-xs">
-                                Transfer
+                                {t('common.transfer')}
+                              </Badge>
+                            )}
+                            {tx.flow_type && tx.flow_type !== 'unknown' && tx.flow_type !== 'transfer' && (
+                              <Badge variant="outline" className="text-xs">
+                                {t(`transactions.flowTypes.${tx.flow_type}` as const)}
                               </Badge>
                             )}
                             {tx.is_recurring && (
                               <Badge variant="outline" className="text-xs">
-                                Recurring
+                                {t('common.recurring')}
                               </Badge>
                             )}
                           </div>

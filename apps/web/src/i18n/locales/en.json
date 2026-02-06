@@ -91,6 +91,15 @@
     "merchantExact": "Merchant (exact)",
     "merchantId": "Merchant ID",
     "excludeTransfersDefault": "Exclude transfers (default)",
+    "showExcluded": "Show excluded",
+    "excluded": "Excluded",
+    "flowType": "Flow",
+    "flowTypes": {
+      "expense": "Expense",
+      "income": "Income",
+      "transfer": "Transfer",
+      "unknown": "Unknown"
+    },
     "quickDatePresets": "Quick date presets",
     "confirmBulkDelete": "Are you sure you want to delete {{count}} transactions? This cannot be undone.",
     "failedBulkDelete": "Failed to delete transactions",

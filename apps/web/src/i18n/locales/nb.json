@@ -90,6 +90,15 @@
     "merchantExact": "Kjøpmann (eksakt)",
     "merchantId": "Kjøpmann-ID",
     "excludeTransfersDefault": "Ekskluder overføringer (standard)",
+    "showExcluded": "Vis utelatte",
+    "excluded": "Utelatt",
+    "flowType": "Type",
+    "flowTypes": {
+      "expense": "Utgift",
+      "income": "Inntekt",
+      "transfer": "Overføring",
+      "unknown": "Ukjent"
+    },
     "quickDatePresets": "Hurtigvalg dato",
     "confirmBulkDelete": "Er du sikker på at du vil slette {{count}} transaksjoner? Dette kan ikke angres.",
     "failedBulkDelete": "Kunne ikke slette transaksjoner",

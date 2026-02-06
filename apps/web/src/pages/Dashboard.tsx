@@ -403,6 +403,7 @@ export function DashboardPage() {
             qs.set('date_from', dateFrom);
             qs.set('date_to', dateTo);
             qs.set('include_transfers', '1');
+            qs.set('flow_type', 'transfer');
             if (statusFilter) qs.set('status', statusFilter);
             navigate(`/transactions?${qs.toString()}`);
           }}
@@ -431,6 +432,7 @@ export function DashboardPage() {
             qs.set('include_transfers', excludeTransfers ? '0' : '1');
             if (statusFilter) qs.set('status', statusFilter);
             qs.set('category_id', CATEGORY_IDS.groceries);
+            qs.set('flow_type', 'expense');
             navigate(`/transactions?${qs.toString()}`);
           }}
         >
@@ -616,6 +618,7 @@ export function DashboardPage() {
                       qs.set('include_transfers', excludeTransfers ? '0' : '1');
                       if (statusFilter) qs.set('status', statusFilter);
                       if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
+                      qs.set('flow_type', 'expense');
                       if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
                       else qs.set('merchant_name', merchant.merchant_name);
                       navigate(`/transactions?${qs.toString()}`);
