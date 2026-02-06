@@ -112,6 +112,11 @@ function countPdfRawMatches(txs, term) {
 async function run() {
   const token = await login();
 
+  const validate = await jsonRequest(
+    '/transactions/admin/validate-ingest?' + new URLSearchParams({ date_from, date_to }).toString(),
+    { token }
+  );
+
   const byCat = await jsonRequest(
     '/analytics/by-category?' + new URLSearchParams({ date_from, date_to }).toString(),
     { token }
@@ -138,15 +143,6 @@ async function run() {
     include_excluded: true,
   });
 
-  const allTxsInclExcluded = await fetchAllTransactions(token, {
-    date_from,
-    date_to,
-    include_transfers: false,
-    include_excluded: true,
-  });
-  const zeroAmount = allTxsInclExcluded.filter((t) => Number(t?.amount) === 0);
-  const zeroAmountActive = zeroAmount.filter((t) => !t?.is_excluded);
-
   const pdfRawMatches = {};
   for (const term of GROCERY_TERMS) {
     pdfRawMatches[term] = countPdfRawMatches(pdfTxs, term);
@@ -167,8 +163,13 @@ async function run() {
           raw_matches: pdfRawMatches,
         },
         zero_amount: {
-          total: zeroAmount.length,
-          active: zeroAmountActive.length,
+          total: Number(validate?.counts?.zero_amount?.active || 0) + Number(validate?.counts?.zero_amount?.excluded || 0),
+          active: Number(validate?.counts?.zero_amount?.active || 0),
+          excluded: Number(validate?.counts?.zero_amount?.excluded || 0),
+        },
+        validate: {
+          ok: Boolean(validate?.ok),
+          failures: Array.isArray(validate?.failures) ? validate.failures : [],
         },
       },
       null,
