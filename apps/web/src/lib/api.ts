@@ -45,6 +45,7 @@ import type {
   AnalyticsCompareResponse,
   AnalyticsOverview,
   UpdateTransactionRequest,
+  AnalyticsQuery,
 } from '@expense/shared';
 import { getApiBaseUrl } from './version';
 
@@ -409,27 +410,27 @@ export const api = {
   },
 
   // Analytics
-  getAnalyticsOverview: (query: { date_from?: string; date_to?: string; include_transfers?: boolean }) => {
+  getAnalyticsOverview: (query: Partial<AnalyticsQuery>) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<AnalyticsOverview>(`/analytics/overview${qs}`);
   },
 
-  getAnalyticsSummary: (query: { date_from?: string; date_to?: string; include_transfers?: boolean }) => {
+  getAnalyticsSummary: (query: Partial<AnalyticsQuery>) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<AnalyticsSummary>(`/analytics/summary${qs}`);
   },
 
-  getAnalyticsByCategory: (query: { date_from?: string; date_to?: string; include_transfers?: boolean }) => {
+  getAnalyticsByCategory: (query: Partial<AnalyticsQuery>) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<{ categories: CategoryBreakdown[]; total: number }>(`/analytics/by-category${qs}`);
   },
 
-  getAnalyticsByMerchant: (query: { date_from?: string; date_to?: string; limit?: number; include_transfers?: boolean; category_id?: string }) => {
+  getAnalyticsByMerchant: (query: Partial<AnalyticsQuery> & { limit?: number }) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<{ merchants: MerchantBreakdown[] }>(`/analytics/by-merchant${qs}`);
   },
 
-  getAnalyticsTimeseries: (query: { date_from?: string; date_to?: string; granularity?: string; include_transfers?: boolean }) => {
+  getAnalyticsTimeseries: (query: Partial<AnalyticsQuery>) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<{ series: TimeSeriesPoint[] }>(`/analytics/timeseries${qs}`);
   },
@@ -439,7 +440,7 @@ export const api = {
     return request<{ subscriptions: RecurringItem[] }>(`/analytics/subscriptions${qs}`);
   },
 
-  getAnalyticsAnomalies: (query: { date_from?: string; date_to?: string; threshold?: number; include_transfers?: boolean }) => {
+  getAnalyticsAnomalies: (query: Partial<AnalyticsQuery> & { threshold?: number }) => {
     const qs = buildQuery(toQueryRecord(query));
     return request<{
       anomalies: AnomalyItem[];

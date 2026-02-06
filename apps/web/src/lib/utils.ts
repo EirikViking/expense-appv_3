@@ -145,6 +145,15 @@ export function getPreviousMonthRange(date: Date = new Date()): { start: string;
   };
 }
 
+export function getYearToDateRange(date: Date = new Date()): { start: string; end: string } {
+  const start = new Date(date.getFullYear(), 0, 1);
+  const end = new Date(date);
+  return {
+    start: formatDateLocal(start),
+    end: formatDateLocal(end),
+  };
+}
+
 export function getLast30DaysRange(): { start: string; end: string } {
   const end = new Date();
   const start = new Date();
