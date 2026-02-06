@@ -197,7 +197,7 @@ transactions.get('/', async (c) => {
 
     if (!include_transfers) {
       conditions.push('COALESCE(t.is_transfer, 0) = 0');
-      conditions.push(\"t.flow_type != 'transfer'\");
+      conditions.push("t.flow_type != 'transfer'");
     }
 
     // Join conditions for category/tag/merchant filtering
