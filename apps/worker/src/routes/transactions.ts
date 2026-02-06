@@ -1498,6 +1498,95 @@ transactions.get('/admin/validate-ingest', async (c) => {
   }
 });
 
+// Hard D1 diagnostics for categorization within a date range (admin-only; source of truth).
+// This intentionally uses the same join shape as analytics (transaction_meta.category_id),
+// since `transactions` itself does not store category_id.
+transactions.post('/admin/diag-categories', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null) as { from?: unknown; to?: unknown } | null;
+    const from = body?.from;
+    const to = body?.to;
+
+    const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!isIsoDate(from) || !isIsoDate(to)) {
+      return c.json({ error: 'from and to are required (YYYY-MM-DD)' }, 400);
+    }
+
+    const totalRes = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as total
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+      `
+    ).bind(from, to).first<{ total: number }>();
+
+    const categorizedRes = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as categorized
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND tm.category_id IS NOT NULL
+      `
+    ).bind(from, to).first<{ categorized: number }>();
+
+    const terms = ['REMA', 'KIWI', 'COOP'];
+    const likeParams: string[] = [];
+    const likeClauses: string[] = [];
+    for (const term of terms) {
+      likeClauses.push('(t.merchant LIKE ? OR t.description LIKE ?)');
+      const pat = `%${term}%`;
+      likeParams.push(pat, pat);
+    }
+
+    const sampleRes = await c.env.DB.prepare(
+      `
+        SELECT
+          t.id,
+          t.tx_date,
+          t.merchant,
+          t.description,
+          tm.category_id,
+          COALESCE(t.is_excluded, 0) as is_excluded,
+          COALESCE(t.is_transfer, 0) as is_transfer,
+          t.flow_type
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND (${likeClauses.join(' OR ')})
+        ORDER BY t.tx_date DESC
+        LIMIT 10
+      `
+    )
+      .bind(from, to, ...likeParams)
+      .all<{
+        id: string;
+        tx_date: string;
+        merchant: string | null;
+        description: string;
+        category_id: string | null;
+        is_excluded: 0 | 1;
+        is_transfer: 0 | 1;
+        flow_type: string;
+      }>();
+
+    return c.json({
+      success: true,
+      period: { from, to },
+      counts: {
+        total: Number(totalRes?.total || 0),
+        categorized_active: Number(categorizedRes?.categorized || 0),
+      },
+      samples: sampleRes.results || [],
+      note: 'category_id is stored in transaction_meta; this endpoint joins it directly from D1',
+    });
+  } catch (error) {
+    console.error('Diag categories error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Rebuild flow_type and normalize amount signs for existing rows (idempotent; supports dry_run).
 transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
   try {

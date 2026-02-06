@@ -367,7 +367,10 @@ rules.post('/apply', async (c) => {
     }
 
     let totalProcessed = 0;
-    let totalUpdated = 0;
+    let totalMatched = 0;
+    let totalUpdatedAny = 0;
+    let totalUpdatedReal = 0;
+    let totalCategoryCandidates = 0;
     let totalErrors = 0;
 
     if (transaction_ids && transaction_ids.length > 0) {
@@ -380,7 +383,10 @@ rules.post('/apply', async (c) => {
 
       const batch = await applyRulesToBatch(c.env.DB, result.results || [], enabledRules);
       totalProcessed = batch.processed;
-      totalUpdated = batch.updated;
+      totalMatched = batch.matched;
+      totalUpdatedAny = batch.updated;
+      totalUpdatedReal = batch.updated_real;
+      totalCategoryCandidates = batch.category_candidates;
       totalErrors = batch.errors;
     } else if (all) {
       // Apply to all transactions in batches
@@ -397,7 +403,10 @@ rules.post('/apply', async (c) => {
 
         const batch = await applyRulesToBatch(c.env.DB, transactions, enabledRules);
         totalProcessed += batch.processed;
-        totalUpdated += batch.updated;
+        totalMatched += batch.matched;
+        totalUpdatedAny += batch.updated;
+        totalUpdatedReal += batch.updated_real;
+        totalCategoryCandidates += batch.category_candidates;
         totalErrors += batch.errors;
 
         offset += batch_size;
@@ -410,10 +419,59 @@ rules.post('/apply', async (c) => {
       }
     }
 
+    // Count still-uncategorized rows in the same scope.
+    let stillUncategorized = 0;
+    if (transaction_ids && transaction_ids.length > 0) {
+      const placeholders = transaction_ids.map(() => '?').join(',');
+      const res = await c.env.DB
+        .prepare(`
+          SELECT COUNT(*) as c
+          FROM transactions t
+          LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+          WHERE t.id IN (${placeholders})
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND tm.category_id IS NULL
+        `)
+        .bind(...transaction_ids)
+        .first<{ c: number }>();
+      stillUncategorized = Number(res?.c || 0);
+    } else if (all) {
+      const res = await c.env.DB
+        .prepare(`
+          SELECT COUNT(*) as c
+          FROM transactions t
+          LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+          WHERE COALESCE(t.is_excluded, 0) = 0
+            AND tm.category_id IS NULL
+        `)
+        .first<{ c: number }>();
+      stillUncategorized = Number(res?.c || 0);
+    }
+
+    // If we had candidates that should have resulted in a category write but got 0 writes,
+    // surface it as an error (this prevents "updated>0 but nothing actually changed" confusion).
+    if (totalCategoryCandidates > 0 && totalUpdatedReal === 0) {
+      return c.json(
+        {
+          error: 'No DB rows updated for category assignments; check D1 binding and WHERE conditions',
+          matched: totalMatched,
+          category_candidates: totalCategoryCandidates,
+          updated_real: totalUpdatedReal,
+          still_uncategorized: stillUncategorized,
+        },
+        500
+      );
+    }
+
     const response: ApplyRulesResponse = {
       processed: totalProcessed,
-      updated: totalUpdated,
+      // `updated` is now the real number of category writes for observability.
+      updated: totalUpdatedReal,
       errors: totalErrors,
+      matched: totalMatched,
+      updated_real: totalUpdatedReal,
+      category_candidates: totalCategoryCandidates,
+      still_uncategorized: stillUncategorized,
     };
 
     return c.json(response);

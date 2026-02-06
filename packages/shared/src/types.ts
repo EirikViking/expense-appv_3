@@ -455,6 +455,14 @@ export interface ApplyRulesResponse {
   processed: number;
   updated: number;
   errors: number;
+  /**
+   * Optional richer telemetry (backwards compatible).
+   * `updated` is the real number of category writes (updated_real) for visibility.
+   */
+  matched?: number;
+  updated_real?: number;
+  category_candidates?: number;
+  still_uncategorized?: number;
 }
 
 // ============================================

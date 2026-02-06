@@ -315,4 +315,8 @@ export const applyRulesResponseSchema = z.object({
   processed: z.number(),
   updated: z.number(),
   errors: z.number(),
+  matched: z.number().optional(),
+  updated_real: z.number().optional(),
+  category_candidates: z.number().optional(),
+  still_uncategorized: z.number().optional(),
 });

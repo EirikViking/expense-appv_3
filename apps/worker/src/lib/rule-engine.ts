@@ -147,11 +147,33 @@ export async function applyRulesToTransaction(
   db: D1Database,
   tx: Transaction,
   rules: Rule[]
-): Promise<{ updated: boolean; actions: RuleAction[] }> {
+): Promise<{
+  matched: boolean;
+  updated: boolean;
+  category_candidate: boolean;
+  category_updated: boolean;
+  actions: RuleAction[];
+}> {
+  if (tx.is_excluded) {
+    return {
+      matched: false,
+      updated: false,
+      category_candidate: false,
+      category_updated: false,
+      actions: [],
+    };
+  }
+
   const actions = getMatchingRules(tx, rules);
 
   if (actions.length === 0) {
-    return { updated: false, actions: [] };
+    return {
+      matched: false,
+      updated: false,
+      category_candidate: false,
+      category_updated: false,
+      actions: [],
+    };
   }
 
   // Group actions by type - first match wins for each type
@@ -166,75 +188,109 @@ export async function applyRulesToTransaction(
 
   // Check if meta exists
   const existingMeta = await db
-    .prepare('SELECT 1 FROM transaction_meta WHERE transaction_id = ?')
+    .prepare('SELECT category_id, merchant_id, notes, is_recurring FROM transaction_meta WHERE transaction_id = ?')
     .bind(tx.id)
-    .first();
+    .first<{ category_id: string | null; merchant_id: string | null; notes: string | null; is_recurring: number | null }>();
+
+  const desiredCategoryId = categoryAction?.value ?? null;
+  const prevCategoryId = existingMeta ? (existingMeta.category_id ?? null) : null;
+  const categoryCandidate = Boolean(desiredCategoryId && desiredCategoryId !== prevCategoryId);
+
+  let anyDbChanges = false;
+  let categoryUpdated = false;
 
   if (existingMeta) {
-    // Update existing meta - only update fields that have actions
-    const updates: string[] = ['updated_at = ?'];
-    const params: (string | number | null)[] = [now];
+    // Update existing meta - only update fields that actually change (avoid "updated_at only" writes).
+    const updates: string[] = [];
+    const params: (string | number | null)[] = [];
 
-    if (categoryAction) {
+    if (categoryCandidate) {
       updates.push('category_id = ?');
-      params.push(categoryAction.value);
+      params.push(desiredCategoryId);
     }
 
-    if (merchantAction) {
+    if (merchantAction && merchantAction.value !== existingMeta.merchant_id) {
       updates.push('merchant_id = ?');
       params.push(merchantAction.value);
     }
 
-    if (notesAction) {
+    if (notesAction && notesAction.value !== existingMeta.notes) {
       updates.push('notes = ?');
       params.push(notesAction.value);
     }
 
     if (recurringAction) {
-      updates.push('is_recurring = ?');
-      params.push(recurringAction.value === 'true' ? 1 : 0);
+      const desiredRecurring = recurringAction.value === 'true' ? 1 : 0;
+      const prevRecurring = existingMeta.is_recurring ? 1 : 0;
+      if (desiredRecurring !== prevRecurring) {
+        updates.push('is_recurring = ?');
+        params.push(desiredRecurring);
+      }
     }
 
-    params.push(tx.id);
+    if (updates.length > 0) {
+      updates.push('updated_at = ?');
+      params.push(now);
+      params.push(tx.id);
 
-    await db
-      .prepare(`UPDATE transaction_meta SET ${updates.join(', ')} WHERE transaction_id = ?`)
-      .bind(...params)
-      .run();
+      const res = await db
+        .prepare(`UPDATE transaction_meta SET ${updates.join(', ')} WHERE transaction_id = ?`)
+        .bind(...params)
+        .run();
+
+      const changes = Number((res as any)?.meta?.changes || 0);
+      if (changes > 0) anyDbChanges = true;
+      if (categoryCandidate && changes > 0) categoryUpdated = true;
+    }
   } else {
-    // Insert new meta
-    await db
-      .prepare(`
-        INSERT INTO transaction_meta (transaction_id, category_id, merchant_id, notes, is_recurring, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `)
-      .bind(
-        tx.id,
-        categoryAction?.value || null,
-        merchantAction?.value || null,
-        notesAction?.value || null,
-        recurringAction?.value === 'true' ? 1 : 0,
-        now
-      )
-      .run();
+    // Insert new meta only when we have a meta field action (tags don't require meta).
+    const shouldInsertMeta = Boolean(desiredCategoryId || merchantAction || notesAction || recurringAction);
+    if (shouldInsertMeta) {
+      const res = await db
+        .prepare(`
+          INSERT INTO transaction_meta (transaction_id, category_id, merchant_id, notes, is_recurring, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `)
+        .bind(
+          tx.id,
+          desiredCategoryId,
+          merchantAction?.value || null,
+          notesAction?.value || null,
+          recurringAction?.value === 'true' ? 1 : 0,
+          now
+        )
+        .run();
+
+      const changes = Number((res as any)?.meta?.changes || 0);
+      if (changes > 0) anyDbChanges = true;
+      if (desiredCategoryId && changes > 0) categoryUpdated = true;
+    }
   }
 
   // Handle tags - add any new tags (don't remove existing ones for idempotency)
   for (const tagAction of tagActions) {
     try {
-      await db
+      const res = await db
         .prepare(`
           INSERT OR IGNORE INTO transaction_tags (transaction_id, tag_id, created_at)
           VALUES (?, ?, ?)
         `)
         .bind(tx.id, tagAction.value, now)
         .run();
+      const changes = Number((res as any)?.meta?.changes || 0);
+      if (changes > 0) anyDbChanges = true;
     } catch {
       // Ignore duplicate tag errors
     }
   }
 
-  return { updated: true, actions };
+  return {
+    matched: true,
+    updated: anyDbChanges,
+    category_candidate: categoryCandidate,
+    category_updated: categoryUpdated,
+    actions,
+  };
 }
 
 // Apply rules to multiple transactions in batches
@@ -242,21 +298,34 @@ export async function applyRulesToBatch(
   db: D1Database,
   transactions: Transaction[],
   rules: Rule[]
-): Promise<{ processed: number; updated: number; errors: number }> {
+): Promise<{ processed: number; matched: number; updated: number; updated_real: number; category_candidates: number; errors: number }> {
+  let matched = 0;
   let updated = 0;
+  let updatedReal = 0;
+  let categoryCandidates = 0;
   let errors = 0;
 
   for (const tx of transactions) {
     try {
       const result = await applyRulesToTransaction(db, tx, rules);
+      if (result.matched) matched++;
       if (result.updated) updated++;
+      if (result.category_candidate) categoryCandidates++;
+      if (result.category_updated) updatedReal++;
     } catch (err) {
       errors++;
       console.error('Error applying rules to transaction:', tx.id, err);
     }
   }
 
-  return { processed: transactions.length, updated, errors };
+  return {
+    processed: transactions.length,
+    matched,
+    updated,
+    updated_real: updatedReal,
+    category_candidates: categoryCandidates,
+    errors,
+  };
 }
 
 // Get all enabled rules from database

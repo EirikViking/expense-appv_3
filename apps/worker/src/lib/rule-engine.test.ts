@@ -60,8 +60,9 @@ class MockD1 {
     return {
       bind: (...params: unknown[]) => ({
         first: async () => {
-          if (normalized.startsWith('select 1 from transaction_meta')) {
-            return this.meta.has(params[0] as string) ? { exists: 1 } : null;
+          if (normalized.startsWith('select category_id')) {
+            const row = this.meta.get(params[0] as string);
+            return row ? { ...row } : null;
           }
           return null;
         },
@@ -74,11 +75,31 @@ class MockD1 {
               notes: (notes as string) || null,
               is_recurring: Number(isRecurring),
             });
+            return { meta: { changes: 1 } };
+          } else if (normalized.startsWith('update transaction_meta')) {
+            // Best-effort update for tests. The real implementation uses parameterized SQL.
+            const transactionId = params[params.length - 1] as string;
+            const existing = this.meta.get(transactionId) || {
+              category_id: null,
+              merchant_id: null,
+              notes: null,
+              is_recurring: 0,
+            };
+
+            // Only category_id is relevant for these tests.
+            if (normalized.includes('category_id = ?')) {
+              existing.category_id = (params[0] as string) || null;
+            }
+            this.meta.set(transactionId, existing);
+            return { meta: { changes: 1 } };
           } else if (normalized.startsWith('insert or ignore into transaction_tags')) {
             const [transactionId, tagId] = params;
-            this.tags.add(`${transactionId as string}:${tagId as string}`);
+            const key = `${transactionId as string}:${tagId as string}`;
+            const before = this.tags.has(key);
+            this.tags.add(key);
+            return { meta: { changes: before ? 0 : 1 } };
           }
-          return { success: true };
+          return { meta: { changes: 0 } };
         },
         all: async () => ({ results: [] }),
       }),
