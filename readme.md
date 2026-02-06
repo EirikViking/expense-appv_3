@@ -21,3 +21,19 @@ Personal expense analytics app for Norwegian bank and credit card data.
 pnpm install
 pnpm dev:web     # http://localhost:5173
 pnpm dev:worker  # http://localhost:8788
+```
+
+## Production diagnostics (CLI)
+
+These scripts talk to the deployed API and require an admin password in your shell environment.
+
+Set one of:
+- `RUN_REBUILD_PASSWORD`
+- `ADMIN_PASSWORD`
+
+Then run:
+
+```bash
+pnpm run diag:prod -- --from 2025-01-01 --to 2025-04-06
+pnpm run verify:prod -- --from 2025-01-01 --to 2025-04-06
+```
