@@ -49,3 +49,16 @@ To skip validation (not recommended):
 pnpm run ingest:pdf -- --file path/to/statement.pdf --no-verify
 pnpm run ingest:xlsx -- --file path/to/statement.xlsx --no-verify
 ```
+
+## Storebrand "Detaljer" PDF Parsing
+
+The backend parser supports Storebrand "Detaljer" PDFs using a block parser:
+- Transaction start sentinel: `Beløp ... <CURRENCY>` (amount is parsed only from this line)
+- Description: `Transaksjonstekst ...`
+- Merchant hint (optional): `Butikk ...`
+- Dates: prefers the `Bokført` date from the 4-date row following the header line `... Bokført Rentedato Tilgjengelig`
+
+If the parser returns zero transactions, the API responds with HTTP `422`:
+- `code: "PDF_NO_TRANSACTIONS"`
+- `message`: user-friendly text
+- `debug.stats`: parse stats including Storebrand Detaljer block counts and up to 3 redacted rejected blocks
