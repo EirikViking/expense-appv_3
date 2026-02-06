@@ -19,11 +19,11 @@ function argValue(flag) {
 }
 
 const filePath = argValue('--file');
-const verify = process.argv.includes('--verify');
+const verify = !process.argv.includes('--no-verify');
 const overrideFrom = argValue('--from');
 const overrideTo = argValue('--to');
 if (!filePath) {
-  console.error('Usage: pnpm run ingest:pdf -- --file <path-to-pdf> [--verify] [--from YYYY-MM-DD --to YYYY-MM-DD]');
+  console.error('Usage: pnpm run ingest:pdf -- --file <path-to-pdf> [--no-verify] [--from YYYY-MM-DD --to YYYY-MM-DD]');
   process.exit(2);
 }
 

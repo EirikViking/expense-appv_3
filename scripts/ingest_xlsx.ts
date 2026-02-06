@@ -19,10 +19,10 @@ function argValue(flag: string): string | null {
 }
 
 const filePath = argValue('--file');
-const verify = process.argv.includes('--verify');
+const verify = !process.argv.includes('--no-verify');
 
 if (!filePath) {
-  console.error('Usage: pnpm run ingest:xlsx -- --file <path-to-xlsx> [--verify]');
+  console.error('Usage: pnpm run ingest:xlsx -- --file <path-to-xlsx> [--no-verify]');
   process.exit(2);
 }
 
@@ -131,4 +131,3 @@ run().catch((err) => {
   console.error(err && err.message ? err.message : String(err));
   process.exit(1);
 });
-

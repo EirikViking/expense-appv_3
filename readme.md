@@ -43,9 +43,9 @@ To ingest a local PDF without using the frontend uploader:
 pnpm run ingest:pdf -- --file path/to/statement.pdf
 ```
 
-To ingest and fail fast if validation detects issues:
+To skip validation (not recommended):
 
 ```bash
-pnpm run ingest:pdf:verify -- --file path/to/statement.pdf
-pnpm run ingest:xlsx:verify -- --file path/to/statement.xlsx
+pnpm run ingest:pdf -- --file path/to/statement.pdf --no-verify
+pnpm run ingest:xlsx -- --file path/to/statement.xlsx --no-verify
 ```
