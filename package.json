@@ -21,6 +21,7 @@
     "rebuild:apply": "node scripts/run_rebuild.mjs --apply",
     "diag:prod": "node scripts/diag_prod.mjs",
     "verify:prod": "node scripts/verify_prod.mjs",
+    "ingest:pdf": "node scripts/ingest_pdf.mjs",
     "setup:local": "pnpm install && pnpm db:migrate:local",
     "db:migrate:local": "pnpm --filter worker db:migrate:local",
     "db:migrate:remote": "pnpm --filter worker db:migrate:remote",

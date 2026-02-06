@@ -125,6 +125,48 @@ async function run() {
   const groceriesDelta = Math.abs(groceriesAnalytics - groceriesTxSum);
   const groceriesPass = groceriesDelta <= 1.0;
 
+  // 1b) Search should find ingested REMA transactions when PDF raw text contains REMA.
+  const pdfTxs = await fetchAllTransactions(token, {
+    date_from,
+    date_to,
+    source_type: 'pdf',
+    include_transfers: false,
+    include_excluded: true,
+  });
+  const pdfRemaRawCount = (() => {
+    let c = 0;
+    for (const tx of pdfTxs) {
+      if (!tx || typeof tx.raw_json !== 'string') continue;
+      try {
+        const obj = JSON.parse(tx.raw_json);
+        const hay = [
+          obj?.raw_line,
+          obj?.raw_block,
+          obj?.parsed_description,
+          obj?.merchant_hint,
+          tx.description,
+          tx.merchant,
+        ]
+          .filter(Boolean)
+          .map((v) => String(v).toLowerCase())
+          .join('\n');
+        if (hay.includes('rema')) c++;
+      } catch {
+        // ignore
+      }
+    }
+    return c;
+  })();
+  const pdfRemaSearchTxs = await fetchAllTransactions(token, {
+    date_from,
+    date_to,
+    source_type: 'pdf',
+    search: 'REMA',
+    include_transfers: false,
+    include_excluded: true,
+  });
+  const remaSearchPass = pdfRemaRawCount === 0 ? true : (pdfRemaSearchTxs.length > 0);
+
   // 2) Income must not contain obvious purchase merchants (by search)
   const incomeViolations = [];
   for (const term of PURCHASE_TERMS) {
@@ -141,7 +183,7 @@ async function run() {
   }
   const incomePass = incomeViolations.length === 0;
 
-  const pass = groceriesPass && incomePass;
+  const pass = groceriesPass && remaSearchPass && incomePass;
 
   console.log(
     JSON.stringify(
@@ -153,6 +195,11 @@ async function run() {
           delta: groceriesDelta,
           pass: groceriesPass,
           tx_count: groceriesTxs.length,
+        },
+        search: {
+          pdf_rema_raw_count: pdfRemaRawCount,
+          pdf_rema_search_count: pdfRemaSearchTxs.length,
+          pass: remaSearchPass,
         },
         income: {
           pass: incomePass,

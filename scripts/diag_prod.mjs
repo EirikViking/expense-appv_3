@@ -135,7 +135,17 @@ async function run() {
     date_to,
     source_type: 'pdf',
     include_transfers: false,
+    include_excluded: true,
   });
+
+  const allTxsInclExcluded = await fetchAllTransactions(token, {
+    date_from,
+    date_to,
+    include_transfers: false,
+    include_excluded: true,
+  });
+  const zeroAmount = allTxsInclExcluded.filter((t) => Number(t?.amount) === 0);
+  const zeroAmountActive = zeroAmount.filter((t) => !t?.is_excluded);
 
   const pdfRawMatches = {};
   for (const term of GROCERY_TERMS) {
@@ -156,6 +166,10 @@ async function run() {
           tx_count: pdfTxs.length,
           raw_matches: pdfRawMatches,
         },
+        zero_amount: {
+          total: zeroAmount.length,
+          active: zeroAmountActive.length,
+        },
       },
       null,
       2
@@ -167,4 +181,3 @@ run().catch((err) => {
   console.error(err && err.message ? err.message : String(err));
   process.exit(1);
 });
-

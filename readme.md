@@ -37,3 +37,9 @@ Then run:
 pnpm run diag:prod -- --from 2025-01-01 --to 2025-04-06
 pnpm run verify:prod -- --from 2025-01-01 --to 2025-04-06
 ```
+
+To ingest a local PDF without using the frontend uploader:
+
+```bash
+pnpm run ingest:pdf -- --file path/to/statement.pdf
+```
