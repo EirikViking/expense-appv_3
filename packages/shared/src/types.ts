@@ -36,6 +36,7 @@ export interface Transaction {
   source_file_hash: string;
   raw_json: string;
   created_at: string;
+  flow_type: 'unknown' | 'expense' | 'income' | 'transfer';
   is_excluded: boolean;
   is_transfer: boolean;
 }
