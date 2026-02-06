@@ -18,6 +18,9 @@ import {
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD');
 const hexColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Color must be hex format #RRGGBB').nullable().optional();
 const idSchema = z.string().min(1);
+const queryBoolSchema = z
+  .enum(['true', 'false', '1', '0'])
+  .transform((v) => v === 'true' || v === '1');
 
 // ============================================
 // Auth schemas
@@ -66,6 +69,14 @@ export const createTransactionSchema = z.object({
   category_id: idSchema.nullable().optional(),
   merchant_id: idSchema.nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+});
+
+// Patch transaction core fields (used for transfer/excluded flags and optional merchant override)
+export const updateTransactionSchema = z.object({
+  is_transfer: z.boolean().optional(),
+  is_excluded: z.boolean().optional(),
+  merchant: z.string().max(200).nullable().optional(),
+  category_id: idSchema.nullable().optional(),
 });
 
 // ============================================
@@ -238,6 +249,7 @@ export const transactionsQuerySchema = z.object({
   tag_id: idSchema.optional(),
   merchant_id: idSchema.optional(),
   merchant_name: z.string().max(200).optional(),
+  include_transfers: queryBoolSchema.optional(),
   min_amount: z.coerce.number().optional(),
   max_amount: z.coerce.number().optional(),
   search: z.string().max(200).optional(),
@@ -255,6 +267,7 @@ export const analyticsQuerySchema = z.object({
   category_id: idSchema.optional(),
   tag_id: idSchema.optional(),
   merchant_id: idSchema.optional(),
+  include_transfers: queryBoolSchema.optional(),
   granularity: z.enum(['day', 'week', 'month']).default('day'),
 });
 

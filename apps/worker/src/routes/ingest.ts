@@ -10,6 +10,7 @@ import {
 } from '@expense/shared';
 import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
 import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
+import { detectIsTransfer } from '../lib/transfer-detect';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
@@ -137,7 +138,8 @@ async function insertTransaction(
   status: string,
   sourceType: string,
   sourceFileHash: string,
-  rawJson: string
+  rawJson: string,
+  flags?: { is_excluded?: number; is_transfer?: number }
 ): Promise<void> {
   const id = generateId();
   const now = new Date().toISOString();
@@ -145,8 +147,8 @@ async function insertTransaction(
   await db
     .prepare(
       `INSERT INTO transactions
-       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, is_excluded, is_transfer)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -161,7 +163,9 @@ async function insertTransaction(
       sourceType,
       sourceFileHash,
       rawJson,
-      now
+      now,
+      flags?.is_excluded ?? 0,
+      flags?.is_transfer ?? 0
     )
     .run();
 }
@@ -205,9 +209,11 @@ ingest.post('/xlsx', async (c) => {
     let skipped_duplicates = 0;
     let skipped_invalid = 0;
 
-    for (const tx of transactions) {
+      for (const tx of transactions) {
       try {
         const txHash = await computeTxHash(tx.tx_date, tx.description, tx.amount, 'xlsx');
+        const isTransfer = detectIsTransfer(tx.description);
+        const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -229,7 +235,8 @@ ingest.post('/xlsx', async (c) => {
           'booked',
           'xlsx',
           file_hash,
-          tx.raw_json
+          tx.raw_json,
+          flags
         );
 
         inserted++;
@@ -318,9 +325,11 @@ ingest.post('/pdf', async (c) => {
     let skipped_duplicates = 0;
     let skipped_invalid = 0;
 
-    for (const tx of parsedTxs) {
+      for (const tx of parsedTxs) {
       try {
         const txHash = await computeTxHash(tx.tx_date, tx.description, tx.amount, 'pdf');
+        const isTransfer = detectIsTransfer(tx.description);
+        const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -342,7 +351,8 @@ ingest.post('/pdf', async (c) => {
           tx.status,
           'pdf',
           file_hash,
-          JSON.stringify({ raw_line: tx.raw_line })
+          JSON.stringify({ raw_line: tx.raw_line }),
+          flags
         );
 
         inserted++;

@@ -34,7 +34,7 @@ describe('ingest routes', () => {
       'https://expense-appv-3.pages.dev'
     );
 
-    const body = await response.json();
+    const body = await response.json() as any;
     expect(body.error).toBe('Invalid JSON');
     expect(body.code).toBe('invalid_json');
   });

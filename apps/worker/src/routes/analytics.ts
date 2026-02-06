@@ -14,15 +14,112 @@ import { buildCategoryBreakdown, toNumber } from '../lib/analytics';
 
 const analytics = new Hono<{ Bindings: Env }>();
 
+// Overview endpoint used by the new dashboard.
+// Defaults to excluding transfers from income/expense/net spend, but returns transfers as a separate number.
+analytics.get('/overview', async (c) => {
+  try {
+    const query = c.req.query();
+    const parsed = analyticsQuerySchema.safeParse(query);
+
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
+    }
+
+    const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers } = parsed.data;
+
+    // When include_transfers=true, we show cashflow (net includes transfers). Otherwise, net is "net spend" style.
+    const includeTransfers = include_transfers === true;
+
+    // Base filters using existing helper (handles excluded/transfers behavior consistently)
+    const { clause, bindings } = buildWhereClause({
+      date_from,
+      date_to,
+      status,
+      source_type,
+      category_id,
+      merchant_id,
+      tag_id,
+      include_transfers,
+    });
+
+    // Compute transfers separately (always include transfers, even if excluded, to avoid "missing transfers")
+    const transfersResult = await c.env.DB.prepare(`
+      SELECT
+        COALESCE(SUM(CASE WHEN t.amount > 0 THEN t.amount ELSE 0 END), 0) as transfers_in,
+        COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as transfers_out,
+        COALESCE(COUNT(*), 0) as transfers_count
+      FROM transactions t
+      WHERE t.tx_date >= ? AND t.tx_date <= ?
+        AND COALESCE(t.is_transfer, 0) = 1
+    `).bind(date_from, date_to).first<{
+      transfers_in: number;
+      transfers_out: number;
+      transfers_count: number;
+    }>();
+
+    // Income/expense/net for the filtered set (respecting include_transfers mode)
+    // For income, still exclude categories marked as transfer.
+    const totalsResult = await c.env.DB.prepare(`
+      SELECT
+        COALESCE(SUM(CASE
+          WHEN t.amount > 0 AND COALESCE(c.is_transfer, 0) = 0 THEN t.amount ELSE 0
+        END), 0) as income,
+        COALESCE(SUM(CASE WHEN t.amount < 0 THEN ABS(t.amount) ELSE 0 END), 0) as expenses,
+        COALESCE(SUM(t.amount), 0) as net
+      FROM transactions t
+      LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
+      LEFT JOIN categories c ON tm.category_id = c.id
+      ${clause}
+    `).bind(...bindings).first<{ income: number; expenses: number; net: number }>();
+
+    const income = toNumber(totalsResult?.income);
+    const expenses = toNumber(totalsResult?.expenses);
+    const net = toNumber(totalsResult?.net);
+
+    // "Net spend" is a UI-friendly metric: positive means you spent more than you earned.
+    // For cashflow view, UI can prefer `net_cashflow` (= net).
+    const netSpend = expenses - income;
+
+    return c.json({
+      period: { start: date_from, end: date_to },
+      include_transfers: includeTransfers,
+      income,
+      expenses,
+      net_cashflow: net,
+      net_spend: netSpend,
+      transfers: {
+        in: toNumber(transfersResult?.transfers_in),
+        out: toNumber(transfersResult?.transfers_out),
+        total: toNumber(transfersResult?.transfers_in) + toNumber(transfersResult?.transfers_out),
+        count: toNumber(transfersResult?.transfers_count),
+      },
+    });
+  } catch (error) {
+    console.error('Analytics overview error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Build WHERE clause from query params
 // By default, excludes transactions marked as is_excluded unless include_excluded is true
 function buildWhereClause(params: Record<string, unknown>, options?: { include_excluded?: boolean }): { clause: string; bindings: (string | number)[] } {
   const conditions: string[] = [];
   const bindings: (string | number)[] = [];
 
-  // Default: exclude transactions marked as excluded (is_excluded = 0 or NULL for old rows)
+  const includeTransfers = params.include_transfers === true;
+
+  // Default: exclude transactions marked as excluded, but allow transfers to be included in cashflow mode.
   if (!options?.include_excluded) {
-    conditions.push('COALESCE(t.is_excluded, 0) = 0');
+    if (includeTransfers) {
+      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+    } else {
+      conditions.push('COALESCE(t.is_excluded, 0) = 0');
+    }
+  }
+
+  // Default: exclude transfer transactions unless explicitly included.
+  if (!includeTransfers) {
+    conditions.push('COALESCE(t.is_transfer, 0) = 0');
   }
 
   if (params.date_from) {
@@ -70,8 +167,8 @@ analytics.get('/summary', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id } = parsed.data;
-    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id });
+    const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers } = parsed.data;
+    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers });
 
     // Join with categories to check is_transfer for income calculation
     // Transfers (where category is_transfer=1) should NOT count as income
@@ -141,11 +238,18 @@ analytics.get('/by-category', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to, status, source_type, tag_id } = parsed.data;
+    const { date_from, date_to, status, source_type, tag_id, include_transfers } = parsed.data;
 
     // Build base conditions
-    const conditions: string[] = ['t.tx_date >= ?', 't.tx_date <= ?', 't.amount < 0', 'COALESCE(t.is_excluded, 0) = 0'];
+    const conditions: string[] = ['t.tx_date >= ?', 't.tx_date <= ?', 't.amount < 0'];
     const bindings: (string | number)[] = [date_from, date_to];
+
+    if (include_transfers) {
+      conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1)');
+    } else {
+      conditions.push('COALESCE(t.is_excluded, 0) = 0');
+      conditions.push('COALESCE(t.is_transfer, 0) = 0');
+    }
 
     if (status) {
       conditions.push('t.status = ?');
@@ -228,7 +332,7 @@ analytics.get('/by-merchant', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to, status, source_type, category_id, tag_id } = parsed.data;
+    const { date_from, date_to, status, source_type, category_id, tag_id, include_transfers } = parsed.data;
     const limit = parseInt(c.req.query('limit') || '20');
 
     // Current period
@@ -239,6 +343,7 @@ analytics.get('/by-merchant', async (c) => {
       source_type,
       category_id,
       tag_id,
+      include_transfers,
     });
 
     const currentResult = await c.env.DB
@@ -278,6 +383,7 @@ analytics.get('/by-merchant', async (c) => {
       source_type,
       category_id,
       tag_id,
+      include_transfers,
     });
 
     const prevResult = await c.env.DB
@@ -330,8 +436,8 @@ analytics.get('/timeseries', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, granularity } = parsed.data;
-    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id });
+    const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, granularity, include_transfers } = parsed.data;
+    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers });
 
     // Determine date grouping
     let dateExpr: string;

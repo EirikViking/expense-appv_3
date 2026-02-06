@@ -19,6 +19,7 @@ function createTransaction(overrides: Partial<Transaction> = {}): Transaction {
     raw_json: '{}',
     created_at: '2024-01-15T12:00:00Z',
     is_excluded: false,
+    is_transfer: false,
     ...overrides,
   };
 }

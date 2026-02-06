@@ -8,6 +8,8 @@ binding = "CF_VERSION_METADATA"
 binding = "DB"
 database_name = "expense-db"
 database_id = "1002bca0-397d-4065-897e-447b1d48cd2e"
+migrations_table = "d1_migrations"
+migrations_dir = "d1-migrations"
 
 # R2 is optional - uncomment to enable file storage
 # [[r2_buckets]]
@@ -27,6 +29,8 @@ ENVIRONMENT = "review"
 binding = "DB"
 database_name = "expense-db-review"
 database_id = "56454cea-b4b8-4674-a8b0-134340ad7df0"
+migrations_table = "d1_migrations"
+migrations_dir = "d1-migrations"
 
 [dev]
 port = 8788

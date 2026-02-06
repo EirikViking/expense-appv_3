@@ -37,6 +37,7 @@ export interface Transaction {
   raw_json: string;
   created_at: string;
   is_excluded: boolean;
+  is_transfer: boolean;
 }
 
 // Enriched transaction with metadata joined
@@ -561,6 +562,7 @@ export interface TransactionsQuery {
   tag_id?: string;
   merchant_id?: string;
   merchant_name?: string;
+  include_transfers?: boolean;
   min_amount?: number;
   max_amount?: number;
   search?: string;
@@ -578,6 +580,7 @@ export interface AnalyticsQuery {
   category_id?: string;
   tag_id?: string;
   merchant_id?: string;
+  include_transfers?: boolean;
   granularity?: 'day' | 'week' | 'month';
 }
 

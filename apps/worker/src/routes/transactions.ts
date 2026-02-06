@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import {
   transactionsQuerySchema,
   createTransactionSchema,
+  updateTransactionSchema,
   computeTxHash,
   generateId,
   type Transaction,
@@ -14,10 +15,16 @@ import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
+type DbBool = 0 | 1;
+type DbTransactionRow = Omit<Transaction, 'is_excluded' | 'is_transfer'> & {
+  is_excluded: DbBool;
+  is_transfer: DbBool;
+};
+
 // Helper to enrich transactions with metadata
 async function enrichTransactions(
   db: D1Database,
-  txs: Transaction[]
+  txs: DbTransactionRow[]
 ): Promise<TransactionWithMeta[]> {
   if (txs.length === 0) return [];
 
@@ -97,6 +104,8 @@ async function enrichTransactions(
 
     return {
       ...tx,
+      is_excluded: tx.is_excluded === 1,
+      is_transfer: tx.is_transfer === 1,
       category_id: meta?.category_id || null,
       category_name: meta?.category_name || null,
       category_color: meta?.category_color || null,
@@ -128,6 +137,7 @@ transactions.get('/', async (c) => {
       tag_id,
       merchant_id,
       merchant_name,
+      include_transfers,
       min_amount,
       max_amount,
       search,
@@ -174,6 +184,10 @@ transactions.get('/', async (c) => {
     if (search) {
       conditions.push('t.description LIKE ?');
       params.push(`%${search}%`);
+    }
+
+    if (!include_transfers) {
+      conditions.push('COALESCE(t.is_transfer, 0) = 0');
     }
 
     // Join conditions for category/tag/merchant filtering
@@ -242,7 +256,7 @@ transactions.get('/', async (c) => {
 
     const results = await c.env.DB.prepare(selectQuery)
       .bind(...params, limit, offset)
-      .all<Transaction>();
+      .all<DbTransactionRow>();
 
     // Enrich with metadata
     const enrichedTransactions = await enrichTransactions(c.env.DB, results.results || []);
@@ -268,7 +282,7 @@ transactions.get('/:id', async (c) => {
 
     const result = await c.env.DB.prepare(
       'SELECT * FROM transactions WHERE id = ?'
-    ).bind(id).first<Transaction>();
+    ).bind(id).first<DbTransactionRow>();
 
     if (!result) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -278,6 +292,84 @@ transactions.get('/:id', async (c) => {
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction get error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Patch transaction core fields (transfer/excluded flags, merchant override, and optional category_id)
+transactions.patch('/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const parsed = updateTransactionSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
+    }
+
+    // Ensure transaction exists
+    const existing = await c.env.DB.prepare('SELECT 1 FROM transactions WHERE id = ?').bind(id).first();
+    if (!existing) {
+      return c.json({ error: 'Transaction not found' }, 404);
+    }
+
+    const now = new Date().toISOString();
+    const { is_transfer, is_excluded, merchant, category_id } = parsed.data;
+
+    const updates: string[] = [];
+    const params: (string | number | null)[] = [];
+
+    if (merchant !== undefined) {
+      updates.push('merchant = ?');
+      params.push(merchant);
+    }
+
+    if (is_transfer !== undefined) {
+      updates.push('is_transfer = ?');
+      params.push(is_transfer ? 1 : 0);
+
+      // If user marks transfer and didn't explicitly set excluded, default to excluded.
+      if (is_transfer === true && is_excluded === undefined) {
+        updates.push('is_excluded = 1');
+      }
+    }
+
+    if (is_excluded !== undefined) {
+      updates.push('is_excluded = ?');
+      params.push(is_excluded ? 1 : 0);
+    }
+
+    if (updates.length > 0) {
+      params.push(id);
+      await c.env.DB.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run();
+    }
+
+    // Optional category update via transaction_meta (keeps existing meta endpoint working)
+    if (category_id !== undefined) {
+      // Validate category exists if provided (null clears)
+      if (category_id) {
+        const cat = await c.env.DB.prepare('SELECT 1 FROM categories WHERE id = ?').bind(category_id).first();
+        if (!cat) {
+          return c.json({ error: 'Category not found' }, 400);
+        }
+      }
+
+      const metaExists = await c.env.DB.prepare('SELECT 1 FROM transaction_meta WHERE transaction_id = ?').bind(id).first();
+      if (metaExists) {
+        await c.env.DB.prepare('UPDATE transaction_meta SET category_id = ?, updated_at = ? WHERE transaction_id = ?')
+          .bind(category_id || null, now, id).run();
+      } else {
+        await c.env.DB.prepare('INSERT INTO transaction_meta (transaction_id, category_id, updated_at) VALUES (?, ?, ?)')
+          .bind(id, category_id || null, now).run();
+      }
+    }
+
+    const updated = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
+    if (!updated) return c.json({ error: 'Transaction not found' }, 404);
+    const enriched = await enrichTransactions(c.env.DB, [updated]);
+    return c.json(enriched[0]);
+  } catch (error) {
+    console.error('Transaction patch error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -341,8 +433,8 @@ transactions.post('/', async (c) => {
     // Insert transaction
     await c.env.DB.prepare(`
       INSERT INTO transactions
-        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?)
+        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, is_excluded, is_transfer)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, 0, 0)
     `).bind(
       id,
       txHash,
@@ -380,12 +472,13 @@ transactions.post('/', async (c) => {
           raw_json: JSON.stringify({ source: 'manual' }),
           created_at: now,
           is_excluded: false,
+          is_transfer: false,
         }, rules);
       }
     }
 
     // Return the enriched transaction
-    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<Transaction>();
+    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
     if (!newTx) {
       return c.json({ error: 'Failed to create transaction' }, 500);
     }
