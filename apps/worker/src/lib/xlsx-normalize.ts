@@ -83,8 +83,8 @@ export function isPaymentLikeRow(description: string | null | undefined, section
   if (d.startsWith('innbetaling')) return true;
   if (s.startsWith('innbetaling')) return true;
   if (d.includes('innbetaling bankgiro')) return true;
-  if (d.includes('bankgiro') && (d.includes('innbetaling') || d.includes('betaling'))) return true;
-  if (s.includes('innbetaling') && (s.includes('bankgiro') || s.includes('giro') || s.includes('betaling'))) return true;
+  if (d.includes('bankgiro') && d.includes('innbetaling')) return true;
+  if (s.includes('innbetaling') && (s.includes('bankgiro') || s.includes('giro'))) return true;
 
   return false;
 }

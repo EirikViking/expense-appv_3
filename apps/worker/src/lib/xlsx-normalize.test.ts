@@ -27,7 +27,7 @@ describe('xlsx-normalize', () => {
 
   it('marks payment-like rows as transfer+excluded', () => {
     expect(isPaymentLikeRow('INNBETALING BANKGIRO', null)).toBe(true);
-    expect(isPaymentLikeRow('Betaling bankgiro', null)).toBe(true);
+    expect(isPaymentLikeRow('Betaling bankgiro', null)).toBe(false);
     expect(isPaymentLikeRow('REMA 1000', 'Kjøp/uttak')).toBe(false);
 
     const norm = normalizeXlsxAmountForIngest({
@@ -63,4 +63,3 @@ describe('xlsx-normalize', () => {
     expect(refund.amount).toBe(50);
   });
 });
-

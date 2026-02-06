@@ -12,6 +12,7 @@ import { parsePdfText, type SkippedLine } from '../lib/pdf-parser';
 import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
+import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import type { Env } from '../types';
 
 const ingest = new Hono<{ Bindings: Env }>();
@@ -140,6 +141,7 @@ async function insertTransaction(
   sourceType: string,
   sourceFileHash: string,
   rawJson: string,
+  flowType: string,
   flags?: { is_excluded?: number; is_transfer?: number }
 ): Promise<void> {
   const id = generateId();
@@ -148,8 +150,8 @@ async function insertTransaction(
   await db
     .prepare(
       `INSERT INTO transactions
-       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, is_excluded, is_transfer)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -165,6 +167,7 @@ async function insertTransaction(
       sourceFileHash,
       rawJson,
       now,
+      flowType,
       flags?.is_excluded ?? 0,
       flags?.is_transfer ?? 0
     )
@@ -212,23 +215,33 @@ ingest.post('/xlsx', async (c) => {
 
       for (const tx of transactions) {
       try {
-        // Normalize XLSX quirks before hashing/inserting:
-        // - enforce negative amounts for purchases in "Kjøp/uttak"
-        // - mark payment-like rows as transfers (excluded) so they don't pollute income
-        const normalized = normalizeXlsxAmountForIngest({
+        // Classify flow + normalize sign so purchases never land in income.
+        const flow = classifyFlowType({
+          source_type: 'xlsx',
+          description: tx.description,
+          amount: tx.amount,
+          raw_json: tx.raw_json,
+        });
+
+        // Keep XLSX-specific safety guards (section-based purchase normalization + refunds).
+        const xlsxNormalized = normalizeXlsxAmountForIngest({
           amount: tx.amount,
           description: tx.description,
           raw_json: tx.raw_json,
         });
 
+        const normalized = normalizeAmountAndFlags({ flow_type: flow.flow_type, amount: xlsxNormalized.amount });
         const amount = normalized.amount;
 
-        const isTransfer = normalized.flags?.is_transfer === 1
-          || detectIsTransfer(tx.description);
+        const isTransfer =
+          normalized.flags?.is_transfer === 1 ||
+          xlsxNormalized.flags?.is_transfer === 1 ||
+          detectIsTransfer(tx.description);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
-        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
+        const flowType = isTransfer ? 'transfer' : flow.flow_type;
 
+        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
         if (isTxDuplicate) {
@@ -250,6 +263,7 @@ ingest.post('/xlsx', async (c) => {
           'xlsx',
           file_hash,
           tx.raw_json,
+          flowType,
           flags
         );
 
@@ -341,9 +355,21 @@ ingest.post('/pdf', async (c) => {
 
       for (const tx of parsedTxs) {
       try {
-        const txHash = await computeTxHash(tx.tx_date, tx.description, tx.amount, 'pdf');
-        const isTransfer = detectIsTransfer(tx.description);
+        const flow = classifyFlowType({
+          source_type: 'pdf',
+          description: tx.description,
+          amount: tx.amount,
+          raw_json: JSON.stringify({ raw_line: tx.raw_line }),
+        });
+
+        const normalized = normalizeAmountAndFlags({ flow_type: flow.flow_type, amount: tx.amount });
+        const amount = normalized.amount;
+
+        const isTransfer = normalized.flags?.is_transfer === 1 || detectIsTransfer(tx.description);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
+        const flowType = isTransfer ? 'transfer' : flow.flow_type;
+
+        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'pdf');
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
@@ -360,12 +386,13 @@ ingest.post('/pdf', async (c) => {
           null, // PDF doesn't have separate booked date
           tx.description,
           null, // Merchant extracted separately if needed
-          tx.amount,
+          amount,
           'NOK',
           tx.status,
           'pdf',
           file_hash,
           JSON.stringify({ raw_line: tx.raw_line }),
+          flowType,
           flags
         );
 
