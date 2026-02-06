@@ -506,6 +506,8 @@ analytics.get('/subscriptions', async (c) => {
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         WHERE t.tx_date >= ?
           AND t.amount < 0
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
         GROUP BY COALESCE(m.id, t.description)
         HAVING COUNT(*) >= ?
           AND MAX(ABS(t.amount)) - MIN(ABS(t.amount)) < AVG(ABS(t.amount)) * 0.2
@@ -589,8 +591,9 @@ analytics.get('/anomalies', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to } = parsed.data;
+    const { date_from, date_to, include_transfers } = parsed.data;
     const threshold = parseFloat(c.req.query('threshold') || '2.5');
+    const includeTransfers = include_transfers === true;
 
     // Get transactions with amount stats
     const statsResult = await c.env.DB
@@ -599,7 +602,10 @@ analytics.get('/anomalies', async (c) => {
           AVG(ABS(amount)) as mean,
           AVG(ABS(amount) * ABS(amount)) - AVG(ABS(amount)) * AVG(ABS(amount)) as variance
         FROM transactions
-        WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+        WHERE tx_date >= ? AND tx_date <= ?
+          AND amount < 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
       `)
       .bind(date_from, date_to)
       .first<{ mean: number; variance: number }>();
@@ -625,6 +631,8 @@ analytics.get('/anomalies', async (c) => {
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
           AND ABS(t.amount) > ?
+          AND (COALESCE(t.is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(t.is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(t.is_transfer, 0) = 0'}
         ORDER BY ABS(t.amount) DESC
         LIMIT 50
       `)
@@ -858,7 +866,8 @@ analytics.get('/fun-facts', async (c) => {
       return c.json({ error: 'Invalid query', details: parsed.error.message }, 400);
     }
 
-    const { date_from, date_to } = parsed.data;
+    const { date_from, date_to, include_transfers } = parsed.data;
+    const includeTransfers = include_transfers === true;
     const facts: FunFact[] = [];
 
     // Fact 1: Biggest spending day
@@ -867,7 +876,8 @@ analytics.get('/fun-facts', async (c) => {
         SELECT tx_date, SUM(ABS(amount)) as total
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
-          AND COALESCE(is_excluded, 0) = 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY tx_date
         ORDER BY total DESC
         LIMIT 1
@@ -893,7 +903,8 @@ analytics.get('/fun-facts', async (c) => {
         SELECT description, COUNT(*) as count, SUM(ABS(amount)) as total
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
-          AND COALESCE(is_excluded, 0) = 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY description
         ORDER BY count DESC
         LIMIT 1
@@ -917,7 +928,8 @@ analytics.get('/fun-facts', async (c) => {
         SELECT AVG(ABS(amount)) as avg_amount, COUNT(*) as count
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
-          AND COALESCE(is_excluded, 0) = 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
       `)
       .bind(date_from, date_to)
       .first<{ avg_amount: number; count: number }>();
@@ -954,7 +966,8 @@ analytics.get('/fun-facts', async (c) => {
           COUNT(*) as count
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
-          AND COALESCE(is_excluded, 0) = 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY day_type
       `)
       .bind(date_from, date_to)
@@ -985,7 +998,8 @@ analytics.get('/fun-facts', async (c) => {
         SELECT description, ABS(amount) as amount
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
-          AND COALESCE(is_excluded, 0) = 0
+          AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
+          ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         ORDER BY ABS(amount) ASC
         LIMIT 1
       `)
