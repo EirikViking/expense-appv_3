@@ -1,6 +1,7 @@
 import type {
   SourceType,
   TransactionStatus,
+  FlowType,
   MatchType,
   RuleMatchField,
   RuleMatchType,
@@ -36,7 +37,7 @@ export interface Transaction {
   source_file_hash: string;
   raw_json: string;
   created_at: string;
-  flow_type: 'unknown' | 'expense' | 'income' | 'transfer';
+  flow_type: FlowType;
   is_excluded: boolean;
   is_transfer: boolean;
 }
@@ -571,6 +572,7 @@ export interface TransactionsQuery {
   tag_id?: string;
   merchant_id?: string;
   merchant_name?: string;
+  flow_type?: FlowType;
   include_transfers?: boolean;
   include_excluded?: boolean;
   min_amount?: number;

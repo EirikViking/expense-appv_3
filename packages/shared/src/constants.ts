@@ -6,6 +6,10 @@ export type SourceType = (typeof SOURCE_TYPES)[number];
 export const TRANSACTION_STATUSES = ['pending', 'booked'] as const;
 export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 
+// Explicit flow classification (source of truth; do not infer from amount sign alone)
+export const FLOW_TYPES = ['unknown', 'expense', 'income', 'transfer'] as const;
+export type FlowType = (typeof FLOW_TYPES)[number];
+
 // Category rule match types (legacy - for old category_rules table)
 export const MATCH_TYPES = ['exact', 'contains', 'regex'] as const;
 export type MatchType = (typeof MATCH_TYPES)[number];

@@ -141,6 +141,7 @@ transactions.get('/', async (c) => {
       tag_id,
       merchant_id,
       merchant_name,
+      flow_type,
       include_transfers,
       include_excluded,
       min_amount,
@@ -184,6 +185,11 @@ transactions.get('/', async (c) => {
     if (max_amount !== undefined) {
       conditions.push('t.amount <= ?');
       params.push(max_amount);
+    }
+
+    if (flow_type) {
+      conditions.push('t.flow_type = ?');
+      params.push(flow_type);
     }
 
     // Hide excluded rows by default. If include_transfers is enabled, still show transfers even though they are marked excluded.

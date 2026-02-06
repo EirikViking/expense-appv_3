@@ -1,7 +1,5 @@
-import type { SourceType } from '@expense/shared';
+import type { FlowType, SourceType } from '@expense/shared';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from './xlsx-normalize';
-
-export type FlowType = 'unknown' | 'expense' | 'income' | 'transfer';
 
 function normalizeForMatch(input: string): string {
   return input

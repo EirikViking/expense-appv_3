@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   SOURCE_TYPES,
   TRANSACTION_STATUSES,
+  FLOW_TYPES,
   RULE_MATCH_FIELDS,
   RULE_MATCH_TYPES,
   RULE_ACTION_TYPES,
@@ -249,6 +250,7 @@ export const transactionsQuerySchema = z.object({
   tag_id: idSchema.optional(),
   merchant_id: idSchema.optional(),
   merchant_name: z.string().max(200).optional(),
+  flow_type: z.enum(FLOW_TYPES).optional(),
   include_transfers: queryBoolSchema.optional(),
   include_excluded: queryBoolSchema.optional(),
   min_amount: z.coerce.number().optional(),
