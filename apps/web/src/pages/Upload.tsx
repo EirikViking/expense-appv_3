@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { api } from '../lib/api';
+import { Link } from 'react-router-dom';
+import { api, type ValidateIngestResponse } from '../lib/api';
 import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
 import { extractPdfText } from '../lib/pdf-extractor';
@@ -13,6 +14,9 @@ interface FileResult {
   status: 'processing' | 'success' | 'error';
   result?: IngestResponse;
   error?: string;
+  validation?: ValidateIngestResponse;
+  validation_range?: { date_from: string; date_to: string };
+  validation_error?: string;
 }
 
 const SKIPPED_SUMMARY_LABELS = [
@@ -63,6 +67,71 @@ export function UploadPage() {
     setDetailsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const isoDate = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  const fallbackRange = () => {
+    const now = new Date();
+    const date_to = isoDate(now);
+    const date_from = isoDate(new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000));
+    return { date_from, date_to };
+  };
+
+  const rangeFromXlsxTransactions = (transactions: Array<{ tx_date: string }>) => {
+    const dates = transactions
+      .map((t) => t?.tx_date)
+      .filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d))
+      .sort();
+    if (dates.length === 0) return fallbackRange();
+    return { date_from: dates[0], date_to: dates[dates.length - 1] };
+  };
+
+  const rangeFromPdfText = (text: string) => {
+    const isoDates = new Set<string>();
+    const ddmmyyyy = /\b(\d{2})\.(\d{2})\.(\d{4})\b/g;
+    const yyyymmdd = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
+
+    for (const m of text.matchAll(ddmmyyyy)) {
+      const [, dd, mm, yyyy] = m;
+      isoDates.add(`${yyyy}-${mm}-${dd}`);
+    }
+    for (const m of text.matchAll(yyyymmdd)) {
+      isoDates.add(m[0]);
+    }
+
+    const sorted = [...isoDates].filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s)).sort();
+    if (sorted.length === 0) return fallbackRange();
+    return { date_from: sorted[0], date_to: sorted[sorted.length - 1] };
+  };
+
+  const runValidation = async (filename: string, range: { date_from: string; date_to: string }) => {
+    updateResult(filename, { validation_range: range, validation_error: undefined });
+    try {
+      const validation = await api.validateIngest(range);
+      updateResult(filename, { validation });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Validation request failed';
+      updateResult(filename, {
+        validation: {
+          ok: false,
+          failures: ['validate_request_failed'],
+          period: range,
+        },
+        validation_error: message,
+      });
+    }
+  };
+
+  const failureLabel = (code: string) => {
+    const key = `upload.validation.failures.${code}`;
+    const translated = t(key);
+    return translated === key ? code : translated;
+  };
+
   const processFile = useCallback(async (file: File) => {
     const filename = file.name;
 
@@ -109,6 +178,9 @@ export function UploadPage() {
         }
 
         updateResult(filename, { status: 'success', result });
+        if (!result.file_duplicate && result.inserted > 0) {
+          void runValidation(filename, rangeFromXlsxTransactions(transactions));
+        }
       } else if (file.name.toLowerCase().endsWith('.pdf')) {
         // Extract text from PDF in browser
         const { text, error } = await extractPdfText(arrayBuffer);
@@ -135,6 +207,9 @@ export function UploadPage() {
         }
 
         updateResult(filename, { status: 'success', result });
+        if (!result.file_duplicate && result.inserted > 0) {
+          void runValidation(filename, rangeFromPdfText(text));
+        }
       } else {
         updateResult(filename, {
           status: 'error',
@@ -267,6 +342,54 @@ export function UploadPage() {
                             {t('upload.duplicatesSkipped')}
                           </p>
                         )}
+                      </div>
+                    )}
+
+                    {!result.result.file_duplicate && (
+                      <div className="mt-3">
+                        {result.validation ? (
+                          <div
+                            className={`rounded-md border p-3 ${result.validation.ok
+                                ? 'border-green-200 bg-green-100/60 text-green-900'
+                                : 'border-red-200 bg-red-100/60 text-red-900'
+                              }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold">
+                                  {result.validation.ok ? t('upload.validation.ok') : t('upload.validation.failed')}
+                                </p>
+                                {!result.validation.ok && (
+                                  <ul className="mt-1 list-disc pl-5 text-sm">
+                                    {(result.validation.failures || []).map((code) => (
+                                      <li key={code}>{failureLabel(code)}</li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {result.validation_error && (
+                                  <p className="mt-1 text-xs opacity-80">{result.validation_error}</p>
+                                )}
+                              </div>
+                              {result.validation_range && (
+                                <Link
+                                  to={
+                                    '/transactions?' +
+                                    new URLSearchParams({
+                                      date_from: result.validation_range.date_from,
+                                      date_to: result.validation_range.date_to,
+                                      include_excluded: 'true',
+                                    }).toString()
+                                  }
+                                  className="shrink-0 rounded-md bg-white/70 px-3 py-2 text-xs font-medium hover:bg-white"
+                                >
+                                  {t('upload.validation.viewTransactions')}
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        ) : result.validation_range ? (
+                          <p className="text-xs text-gray-600">{t('upload.validation.running')}</p>
+                        ) : null}
                       </div>
                     )}
 

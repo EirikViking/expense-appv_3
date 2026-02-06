@@ -159,6 +159,20 @@
       "noAmount": "mangler beløp",
       "parseFailed": "kunne ikke tolke",
       "excludedPattern": "utelatt mønster"
+    },
+    "validation": {
+      "running": "Validerer import...",
+      "ok": "Validering OK",
+      "failed": "Validering feilet",
+      "viewTransactions": "Se transaksjoner",
+      "failures": {
+        "validate_request_failed": "Kunne ikke kjøre validering (forespørsel feilet)",
+        "zero_amount_rows_active": "Det finnes aktive 0-beløp-rader (skal være utelatt)",
+        "suspicious_income_purchases": "Mistenkelige kjøp er klassifisert som inntekt",
+        "groceries_flow_type_mismatch": "Dagligvarer har feil flyt-type/fortegn",
+        "groceries_analytics_mismatch": "Dagligvarer i innsikt matcher ikke sum av transaksjoner",
+        "groceries_income_leak": "Dagligvarer inneholder inntektsrader (skal være utgifter)"
+      }
     }
   }
 }

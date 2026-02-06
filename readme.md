@@ -27,9 +27,8 @@ pnpm dev:worker  # http://localhost:8788
 
 These scripts talk to the deployed API and require an admin password in your shell environment.
 
-Set one of:
+Set:
 - `RUN_REBUILD_PASSWORD`
-- `ADMIN_PASSWORD`
 
 Then run:
 
@@ -42,4 +41,11 @@ To ingest a local PDF without using the frontend uploader:
 
 ```bash
 pnpm run ingest:pdf -- --file path/to/statement.pdf
+```
+
+To ingest and fail fast if validation detects issues:
+
+```bash
+pnpm run ingest:pdf:verify -- --file path/to/statement.pdf
+pnpm run ingest:xlsx:verify -- --file path/to/statement.xlsx
 ```

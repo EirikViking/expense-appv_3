@@ -49,6 +49,27 @@ import type {
 } from '@expense/shared';
 import { getApiBaseUrl } from './version';
 
+export interface ValidateIngestResponse {
+  ok: boolean;
+  failures: string[];
+  period: { date_from: string; date_to: string };
+  counts?: {
+    total?: number;
+    excluded?: number;
+    zero_amount?: { active?: number; excluded?: number };
+    flow_type?: Record<string, number>;
+    source_type?: Record<string, number>;
+  };
+  groceries?: {
+    analytics_total?: number;
+    tx_base_total?: number;
+    analytics_delta?: number;
+    flow_delta?: number;
+    income_leak_count?: number;
+  };
+  suspicious_income?: Array<{ description: string; count: number; total_abs: number }>;
+}
+
 // Token storage key
 const AUTH_TOKEN_KEY = 'expense_auth_token';
 
@@ -162,6 +183,11 @@ export const api = {
   getTransactions: (query: TransactionsQuery = {}) => {
     const qs = buildQuery(toQueryRecord(query as unknown as Record<string, unknown>));
     return request<TransactionsResponse>(`/transactions${qs}`);
+  },
+
+  validateIngest: (params: { date_from: string; date_to: string }) => {
+    const qs = buildQuery(params);
+    return request<ValidateIngestResponse>(`/transactions/admin/validate-ingest${qs}`);
   },
 
   getTransaction: (id: string) =>

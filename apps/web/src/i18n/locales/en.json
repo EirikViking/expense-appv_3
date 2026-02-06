@@ -160,6 +160,20 @@
       "noAmount": "missing amount",
       "parseFailed": "parse failed",
       "excludedPattern": "excluded patterns"
+    },
+    "validation": {
+      "running": "Validating import...",
+      "ok": "Validation passed",
+      "failed": "Validation failed",
+      "viewTransactions": "View transactions",
+      "failures": {
+        "validate_request_failed": "Could not run validation (request failed)",
+        "zero_amount_rows_active": "There are active 0-amount rows (should be excluded)",
+        "suspicious_income_purchases": "Suspicious purchases classified as income",
+        "groceries_flow_type_mismatch": "Groceries contains mismatched flow types/signs",
+        "groceries_analytics_mismatch": "Groceries analytics does not match the groceries transactions sum",
+        "groceries_income_leak": "Groceries contains income rows (should be expenses)"
+      }
     }
   }
 }
