@@ -21,6 +21,22 @@ export interface XlsxParseResult {
 const MAX_HEADER_SCAN_ROWS = 50;
 const DATE_VALUE_PATTERN = /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/;
 
+const SUMMARY_LABEL_PATTERNS: RegExp[] = [
+  /^saldo\s+fra\s+forrige\s+m[aå]ned$/i,
+  /^saldo\s+hendelser$/i,
+  /^totalbel[oø]p$/i,
+  /^utg[aå]ende\s+saldo$/i,
+  /^inng[aå]ende\s+saldo$/i,
+  /^saldo$/i,
+];
+
+const SECTION_TERMINATOR_PATTERNS: RegExp[] = [
+  ...SUMMARY_LABEL_PATTERNS,
+  /^sum$/i,
+  /^totalt$/i,
+  /^total$/i,
+];
+
 // Possible column name variations for different Norwegian banks
 // EXPANDED to cover Storebrand, DNB, Skandiabanken, Nordea, Sparebank1, etc.
 const COLUMN_VARIATIONS = {
@@ -70,6 +86,22 @@ const ALL_NORMALIZED_HEADERS = new Set(
 );
 
 const STOREBRAND_CURRENCY_CODES = new Set(['NOK', 'SEK', 'EUR', 'USD']);
+
+function normalizeCellText(value: unknown): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function looksLikeSummaryLabel(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return SUMMARY_LABEL_PATTERNS.some((re) => re.test(t));
+}
+
+function looksLikeSectionTerminator(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return SECTION_TERMINATOR_PATTERNS.some((re) => re.test(t));
+}
 
 /**
  * Convert Excel serial date to ISO string (YYYY-MM-DD)
@@ -190,6 +222,53 @@ function parseNorwegianAmount(value: unknown): number | null {
   return null;
 }
 
+function parsePreferredAmount(belopRaw: unknown, utlBelopRaw: unknown): number | null {
+  const belop = parseNorwegianAmount(belopRaw);
+  const utl = parseNorwegianAmount(utlBelopRaw);
+
+  // Prefer Beløp if present and non-zero (most exports put signed amount here).
+  if (belop !== null && belop !== 0) return belop;
+
+  // Fall back to Utl. beløp if Beløp is missing/zero but Utl. beløp is non-zero.
+  if (utl !== null && utl !== 0) return utl;
+
+  // Never default to 0 on parse failure or empty cells.
+  return null;
+}
+
+function deriveMerchantFromSpesifikasjon(description: string): string | undefined {
+  const s = description.replace(/\s+/g, ' ').trim();
+  if (!s) return undefined;
+
+  const upper = s.toUpperCase();
+
+  // Quick groceries anchors (helps rules + analytics immediately).
+  if (/\bREMA\b/.test(upper)) return 'REMA 1000';
+  if (/\bKIWI\b/.test(upper)) return 'KIWI';
+  if (/\bMENY\b/.test(upper)) return 'MENY';
+  if (/\bCOOP\b/.test(upper)) return 'COOP';
+  if (/\bEXTRA\b/.test(upper)) return 'EXTRA';
+  if (/\bOBS\b/.test(upper)) return 'OBS';
+  if (/\bSPAR\b/.test(upper)) return 'SPAR';
+  if (/\bJOKER\b/.test(upper)) return 'JOKER';
+
+  // Strip common prefixes from bank exports.
+  const stripped = s
+    .replace(/^(VISA|BANKAXEPT|BANKAXEPT\/VISA|KORTKJØP|KORTKJOP|KJØP|KJOP)\s+/i, '')
+    .trim();
+
+  const tokens = stripped.split(' ').filter(Boolean);
+  if (tokens.length === 0) return undefined;
+
+  // If we have a common "NAME 1234 ..." pattern, keep the first two tokens.
+  if (tokens.length >= 2 && /^\d{2,4}$/.test(tokens[1])) {
+    return `${tokens[0]} ${tokens[1]}`.toUpperCase();
+  }
+
+  // Otherwise keep the first 1-3 tokens (avoid extremely long merchants).
+  return tokens.slice(0, 3).join(' ').toUpperCase();
+}
+
 function isLikelyDateValue(value: unknown): boolean {
   if (value === null || value === undefined || value === '') return false;
 
@@ -302,6 +381,218 @@ function getRowValues(sheet: XLSX.WorkSheet, range: XLSX.Range, row: number): un
     values.push(cell && cell.v !== undefined && cell.v !== null ? cell.v : '');
   }
   return values;
+}
+
+type SectionColumnIndexMapping = {
+  headerRow: number;
+  headers: string[];
+  dateColIdx: number;
+  bookedDateColIdx?: number;
+  descColIdx?: number;
+  amountColIdx: number;
+  foreignAmountColIdx?: number;
+  currencyColIdx?: number;
+  merchantColIdx?: number;
+};
+
+function buildNormalizedSet(variations: string[]): Set<string> {
+  return new Set(variations.map(normalizeHeaderValue));
+}
+
+const HEADER_SETS = {
+  DATE: buildNormalizedSet(COLUMN_VARIATIONS.DATE),
+  BOOKED_DATE: buildNormalizedSet(COLUMN_VARIATIONS.BOOKED_DATE),
+  DESCRIPTION: buildNormalizedSet(COLUMN_VARIATIONS.DESCRIPTION),
+  AMOUNT: buildNormalizedSet(COLUMN_VARIATIONS.AMOUNT),
+  CURRENCY: buildNormalizedSet(COLUMN_VARIATIONS.CURRENCY),
+  MERCHANT: buildNormalizedSet(COLUMN_VARIATIONS.MERCHANT),
+};
+
+function findHeaderIndex(headers: string[], headerSet: Set<string>): number | undefined {
+  for (let i = 0; i < headers.length; i++) {
+    const n = normalizeHeaderValue(headers[i] || '');
+    if (n && headerSet.has(n)) return i;
+  }
+  return undefined;
+}
+
+function detectHeaderSectionAtRow(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range,
+  row: number
+): SectionColumnIndexMapping | null {
+  const rowValues = getRowValues(sheet, range, row);
+  const headers = rowValues.map((v) => normalizeCellText(v));
+  const nonEmpty = headers.filter(Boolean);
+  if (nonEmpty.length < 2) return null;
+
+  const dateIdx = findHeaderIndex(headers, HEADER_SETS.DATE);
+  const amountIdx = findHeaderIndex(headers, HEADER_SETS.AMOUNT);
+  const descIdx = findHeaderIndex(headers, HEADER_SETS.DESCRIPTION);
+
+  // Must have at least Date + Amount to be a usable section.
+  if (dateIdx === undefined || amountIdx === undefined) return null;
+
+  // Heuristic: reject rows that look like data rows (date+amount values), not headers.
+  const analysis = analyzeRowValues(rowValues);
+  const looksLikeDataRow = analysis.dateCount > 0 && analysis.amountCount > 0;
+  if (looksLikeDataRow) return null;
+
+  // Optional indices.
+  const bookedIdx = findHeaderIndex(headers, HEADER_SETS.BOOKED_DATE);
+  const currencyIdx = findHeaderIndex(headers, HEADER_SETS.CURRENCY);
+  const merchantIdx = findHeaderIndex(headers, HEADER_SETS.MERCHANT);
+
+  // Try to locate "Utl. beløp" style column if present (we treat it as a foreign amount candidate).
+  const foreignIdx = headers.findIndex((h) => /utl/i.test(h) && /bel[oø]p/i.test(h));
+  const foreignAmountColIdx = foreignIdx >= 0 ? foreignIdx : undefined;
+
+  return {
+    headerRow: row,
+    headers,
+    dateColIdx: dateIdx,
+    bookedDateColIdx: bookedIdx,
+    descColIdx: descIdx,
+    amountColIdx: amountIdx,
+    foreignAmountColIdx,
+    currencyColIdx: currencyIdx,
+    merchantColIdx: merchantIdx,
+  };
+}
+
+function parseSheetByHeaderSections(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range,
+  sheetName: string
+): { transactions: ParsedXlsxTransaction[]; debug: Record<string, number> } {
+  const transactions: ParsedXlsxTransaction[] = [];
+  const debug = {
+    sections_found: 0,
+    rows_parsed: 0,
+    rows_skipped_no_section: 0,
+    rows_skipped_blank: 0,
+    rows_skipped_header: 0,
+    rows_skipped_terminator: 0,
+    rows_skipped_no_date: 0,
+    rows_skipped_no_amount: 0,
+    rows_skipped_summary: 0,
+    rows_skipped_no_description: 0,
+    rows_skipped_zero_amount: 0,
+  };
+
+  let current: SectionColumnIndexMapping | null = null;
+
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const header = detectHeaderSectionAtRow(sheet, range, r);
+    if (header) {
+      current = header;
+      debug.sections_found++;
+      debug.rows_skipped_header++;
+      continue;
+    }
+
+    if (!current) {
+      debug.rows_skipped_no_section++;
+      continue;
+    }
+
+    const rowValues = getRowValues(sheet, range, r);
+    const rowTexts = rowValues.map((v) => normalizeCellText(v));
+    const isCompletelyBlank = rowTexts.every((t) => !t);
+    if (isCompletelyBlank) {
+      debug.rows_skipped_blank++;
+      // Blank row terminates the current section.
+      current = null;
+      continue;
+    }
+
+    const descRaw = current.descColIdx !== undefined ? rowValues[current.descColIdx] : undefined;
+    const descText = normalizeCellText(descRaw);
+
+    if (looksLikeSectionTerminator(descText)) {
+      debug.rows_skipped_terminator++;
+      current = null;
+      continue;
+    }
+
+    if (looksLikeSummaryLabel(descText)) {
+      debug.rows_skipped_summary++;
+      continue;
+    }
+
+    const txDateRaw = rowValues[current.dateColIdx];
+    const txDate = parseNorwegianDate(txDateRaw);
+    if (!txDate) {
+      debug.rows_skipped_no_date++;
+      continue;
+    }
+
+    const amountRaw = rowValues[current.amountColIdx];
+    const foreignAmountRaw =
+      current.foreignAmountColIdx !== undefined ? rowValues[current.foreignAmountColIdx] : undefined;
+    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    if (amount === null) {
+      debug.rows_skipped_no_amount++;
+      continue;
+    }
+    if (amount === 0) {
+      debug.rows_skipped_zero_amount++;
+      continue;
+    }
+
+    const bookedRaw =
+      current.bookedDateColIdx !== undefined ? rowValues[current.bookedDateColIdx] : undefined;
+    const bookedDate = parseNorwegianDate(bookedRaw) || undefined;
+
+    const currencyRaw =
+      current.currencyColIdx !== undefined ? rowValues[current.currencyColIdx] : undefined;
+    const currencyStr = normalizeCellText(currencyRaw) || 'NOK';
+
+    let merchantFromCol: string | undefined;
+    if (current.merchantColIdx !== undefined) {
+      const headerText = normalizeCellText(current.headers[current.merchantColIdx]);
+      const headerNorm = normalizeHeaderValue(headerText);
+      // Many exports use "Sted/Location" for a city/store location, not the merchant.
+      const isLocationColumn = headerNorm === 'sted' || headerNorm === 'location';
+      if (!isLocationColumn) {
+        const merchantRaw = rowValues[current.merchantColIdx];
+        merchantFromCol = normalizeCellText(merchantRaw) || undefined;
+      }
+    }
+
+    const description = descText;
+    if (!description) {
+      debug.rows_skipped_no_description++;
+      continue;
+    }
+
+    const merchant = merchantFromCol || deriveMerchantFromSpesifikasjon(description);
+
+    const rawRow: Record<string, unknown> = {};
+    for (let i = 0; i < current.headers.length && i < rowValues.length; i++) {
+      const key = current.headers[i] || `col_${i}`;
+      rawRow[key] = rowValues[i];
+    }
+
+    transactions.push({
+      tx_date: txDate,
+      booked_date: bookedDate,
+      description,
+      merchant,
+      amount,
+      currency: currencyStr,
+      raw_json: JSON.stringify({
+        source: 'xlsx',
+        sheet: sheetName,
+        row: r + 1, // 1-based for humans
+        header_row: current.headerRow + 1,
+        raw_row: rawRow,
+      }),
+    });
+    debug.rows_parsed++;
+  }
+
+  return { transactions, debug };
 }
 
 function findFirstNonEmptyRow(sheet: XLSX.WorkSheet, range: XLSX.Range): { row: number; values: unknown[] } | null {
@@ -610,7 +901,7 @@ function parseHeaderlessFile(
 
     // Parse amount
     const amount = parseNorwegianAmount(amountCell.v);
-    if (amount === null) {
+    if (amount === null || amount === 0) {
       console.log(`[XLSX Parser] Row ${row}: Invalid amount value:`, amountCell.v);
       continue;
     }
@@ -678,6 +969,8 @@ function parseFileWithHeaders(
     // Get values using detected column names
     const txDateRaw = row[mapping.dateCol];
     const amountRaw = row[mapping.amountCol];
+    const foreignAmountRaw =
+      row['Utl. beløp'] ?? row['Utl beløp'] ?? row['Utl. belop'] ?? row['Utl belop'];
 
     // Optional columns - try mapped column or fallback to standard
     const bookedDateRaw = mapping.bookedDateCol ? row[mapping.bookedDateCol] : row[XLSX_COLUMNS.BOOKED_DATE];
@@ -685,20 +978,25 @@ function parseFileWithHeaders(
       ? row[mapping.descriptionCol]
       : row[XLSX_COLUMNS.DESCRIPTION] || row['Tekst'] || row['Beskrivelse'] || '';
     const currency = mapping.currencyCol ? row[mapping.currencyCol] : row[XLSX_COLUMNS.CURRENCY];
-    const merchant = mapping.merchantCol ? row[mapping.merchantCol] : row[XLSX_COLUMNS.LOCATION];
+    const merchant =
+      mapping.merchantCol &&
+      normalizeHeaderValue(mapping.merchantCol) !== 'sted' &&
+      normalizeHeaderValue(mapping.merchantCol) !== 'location'
+        ? row[mapping.merchantCol]
+        : undefined;
 
     // Parse date (required) - pass raw value for Excel serial date handling
     const txDate = parseNorwegianDate(txDateRaw);
     if (!txDate) continue;
 
     // Parse amount (required)
-    const amount = parseNorwegianAmount(amountRaw);
+    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
     if (amount === null) continue;
 
     // Parse optional fields
     const bookedDate = parseNorwegianDate(bookedDateRaw) || undefined;
     let descriptionStr = String(description || '').trim();
-    const merchantStr = String(merchant || '').trim() || undefined;
+    let merchantStr = String(merchant || '').trim() || undefined;
     const currencyStr = String(currency || 'NOK').trim();
 
     // If no description column found, try to construct one from other columns
@@ -721,6 +1019,10 @@ function parseFileWithHeaders(
 
     // Still no description? Skip this row
     if (!descriptionStr) continue;
+
+    if (!merchantStr) {
+      merchantStr = deriveMerchantFromSpesifikasjon(descriptionStr);
+    }
 
     transactions.push({
       tx_date: txDate,
@@ -753,6 +1055,17 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
 
     const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
     console.log(`[XLSX Parser] Sheet "${sheetName}" range: ${sheet['!ref']}, rows: ${range.e.r - range.s.r + 1}`);
+
+    // Robust path: scan for repeated header sections and parse only real transaction rows.
+    const sectionParsed = parseSheetByHeaderSections(sheet, range, sheetName);
+    if (sectionParsed.transactions.length > 0) {
+      const detectedFormat = `Header section scan - sections=${sectionParsed.debug.sections_found}, tx=${sectionParsed.transactions.length}`;
+      return {
+        transactions: sectionParsed.transactions,
+        detectedFormat,
+        debugInfo: JSON.stringify(sectionParsed.debug),
+      };
+    }
 
     // First try to find header row with known column names
     let mapping = findHeaderRowAndColumns(sheet);
