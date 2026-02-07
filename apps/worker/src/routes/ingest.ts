@@ -248,6 +248,11 @@ async function applyCategoryRulesSqlForFile(
   // 2) Ensure existing meta rows are not left NULL/empty (UI shows '?'). Everything becomes at least defaultCategoryId.
   // 3) Update those default categories to the best matching rule by priority.
 
+  // NOTE: In prod, all enabled rules currently use:
+  // - match_type: 'contains'
+  // - match_field: 'description'
+  // We still match against LOWER(merchant + ' ' + description) so PDF/XLSX behave consistently.
+
   // 1) Fill missing split categories first. If a transaction has splits, analytics uses split categories.
   const splitRes = await db
     .prepare(
@@ -262,14 +267,14 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
-              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+              AND (t.flow_type != 'transfer')
           )
       `
     )
     .bind(defaultCategoryId, fileHash)
     .run();
 
-  // 2) Insert missing meta rows for eligible non-split expenses (default category).
+  // 2) Insert missing meta rows for eligible non-split active rows (default category).
   const metaInsertRes = await db
     .prepare(
       `
@@ -281,7 +286,6 @@ async function applyCategoryRulesSqlForFile(
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
-          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
           AND tm.transaction_id IS NULL
           AND NOT EXISTS (
             SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
@@ -305,7 +309,6 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
-              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
               AND NOT EXISTS (
                 SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
               )
@@ -322,31 +325,24 @@ async function applyCategoryRulesSqlForFile(
       `
         UPDATE transaction_meta
         SET
-          category_id = (
+          category_id = COALESCE((
             SELECT r.action_value
             FROM rules r
             JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
             WHERE r.enabled = 1
               AND r.action_type = 'set_category'
-              AND r.match_field IN ('description', 'merchant')
-              AND r.match_type IN ('contains', 'starts_with', 'ends_with', 'exact')
+              AND r.match_type = 'contains'
               AND COALESCE(r.match_value, '') != ''
               AND t2.source_file_hash = ?
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
               AND t2.flow_type != 'transfer'
-              AND (t2.flow_type = 'expense' OR (t2.flow_type = 'unknown' AND t2.amount < 0))
-              AND (
-                (r.match_type = 'contains' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%')
-                OR (r.match_type = 'starts_with' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE LOWER(r.match_value) || '%')
-                OR (r.match_type = 'ends_with' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value))
-                OR (r.match_type = 'exact' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) = LOWER(r.match_value))
-              )
+              AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
             ORDER BY r.priority ASC
             LIMIT 1
-          ),
+          ), category_id),
           updated_at = ?
-        WHERE (category_id IS NULL OR category_id = '' OR category_id = ?)
+        WHERE category_id = ?
           AND transaction_id IN (
             SELECT t.id
             FROM transactions t
@@ -354,36 +350,13 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
-              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
               AND NOT EXISTS (
                 SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
               )
           )
-          AND EXISTS (
-            SELECT 1
-            FROM rules r
-            JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
-            WHERE r.enabled = 1
-              AND r.action_type = 'set_category'
-              AND r.match_field IN ('description', 'merchant')
-              AND r.match_type IN ('contains', 'starts_with', 'ends_with', 'exact')
-              AND COALESCE(r.match_value, '') != ''
-              AND t2.source_file_hash = ?
-              AND COALESCE(t2.is_excluded, 0) = 0
-              AND COALESCE(t2.is_transfer, 0) = 0
-              AND t2.flow_type != 'transfer'
-              AND (t2.flow_type = 'expense' OR (t2.flow_type = 'unknown' AND t2.amount < 0))
-              AND (
-                (r.match_type = 'contains' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%')
-                OR (r.match_type = 'starts_with' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE LOWER(r.match_value) || '%')
-                OR (r.match_type = 'ends_with' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value))
-                OR (r.match_type = 'exact' AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) = LOWER(r.match_value))
-              )
-            LIMIT 1
-          )
       `
     )
-    .bind(fileHash, now, defaultCategoryId, fileHash, fileHash)
+    .bind(fileHash, now, defaultCategoryId, fileHash)
     .run();
 
   const updates =
