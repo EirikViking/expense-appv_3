@@ -111,6 +111,7 @@
     "detailsTitle": "Transaksjonsdetaljer",
     "idLabel": "ID: {{id}}",
     "technicalData": "Teknisk data",
+    "editOne": "Rediger",
     "deleteOne": "Slett transaksjon",
     "confirmDeleteOne": "Er du sikker på at du vil slette denne transaksjonen?",
     "failedDeleteOne": "Kunne ikke slette transaksjon",

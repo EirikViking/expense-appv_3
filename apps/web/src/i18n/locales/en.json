@@ -112,6 +112,7 @@
     "detailsTitle": "Transaction details",
     "idLabel": "ID: {{id}}",
     "technicalData": "Technical data",
+    "editOne": "Edit",
     "deleteOne": "Delete transaction",
     "confirmDeleteOne": "Are you sure you want to delete this transaction?",
     "failedDeleteOne": "Failed to delete transaction",

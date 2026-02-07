@@ -58,7 +58,8 @@ export function DashboardPage() {
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
-  const [showCategoryDetails, setShowCategoryDetails] = useState(false);
+  // Default ON: this is the main value of the dashboard for most users.
+  const [showCategoryDetails, setShowCategoryDetails] = useState(true);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
