@@ -1,4 +1,4 @@
--- Extended categorization rules for Norwegian transactions
+﻿-- Extended categorization rules for Norwegian transactions
 -- Covers groceries, restaurants, transport, streaming, fitness, bills, tech, shopping, travel
 
 INSERT OR IGNORE INTO rules (
@@ -66,4 +66,5 @@ INSERT OR IGNORE INTO rules (
 
   -- Investments (typically should be excluded/transfer)
   ('rule_kron', 'Investment: KRON', 50, 1, 'description', 'contains', 'Kjøp Kron', NULL, 'set_category', 'cat_transfer', datetime('now'), datetime('now'));
+
 

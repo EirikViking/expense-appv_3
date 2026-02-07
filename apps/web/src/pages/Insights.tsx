@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -52,8 +52,10 @@ import {
   ArrowDownRight,
   ChevronRight,
 } from 'lucide-react';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 export function InsightsPage() {
+  const { showBudgets } = useFeatureFlags();
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
@@ -420,37 +422,39 @@ export function InsightsPage() {
             </CardContent>
           </Card>
 
-          <Card
-            className="cursor-pointer hover:bg-gray-50 transition-colors"
-            onClick={() => openKPIDrilldown('Total Income', { flowType: 'income' })}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-500">Total Income</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {formatCurrency(comparison?.current?.total_income ?? 0)}
-                  </p>
+          {showBudgets && (
+            <Card
+              className="cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => openKPIDrilldown('Total Income', { flowType: 'income' })}
+            >
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-gray-500">Total Income</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {formatCurrency(comparison?.current?.total_income ?? 0)}
+                    </p>
+                  </div>
+                  <div className={cn(
+                    'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
+                    (comparison?.change_percentage?.income ?? 0) > 0
+                      ? 'bg-green-100 text-green-700'
+                      : 'bg-red-100 text-red-700'
+                  )}>
+                    {(comparison?.change_percentage?.income ?? 0) > 0 ? (
+                      <ArrowUpRight className="h-4 w-4" />
+                    ) : (
+                      <ArrowDownRight className="h-4 w-4" />
+                    )}
+                    {Math.abs(comparison?.change_percentage?.income ?? 0).toFixed(1)}%
+                  </div>
                 </div>
-                <div className={cn(
-                  'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  (comparison?.change_percentage?.income ?? 0) > 0
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-red-100 text-red-700'
-                )}>
-                  {(comparison?.change_percentage?.income ?? 0) > 0 ? (
-                    <ArrowUpRight className="h-4 w-4" />
-                  ) : (
-                    <ArrowDownRight className="h-4 w-4" />
-                  )}
-                  {Math.abs(comparison?.change_percentage?.income ?? 0).toFixed(1)}%
-                </div>
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                vs {formatCurrency(comparison?.previous?.total_income ?? 0)} last period
-              </p>
-            </CardContent>
-          </Card>
+                <p className="text-xs text-gray-400 mt-2">
+                  vs {formatCurrency(comparison?.previous?.total_income ?? 0)} last period
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           <Card
             className="cursor-pointer hover:bg-gray-50 transition-colors"
@@ -533,14 +537,16 @@ export function InsightsPage() {
                   fill="#fecaca"
                   name="Expenses"
                 />
-                <Area
-                  type="monotone"
-                  dataKey="income"
-                  stackId="2"
-                  stroke="#22c55e"
-                  fill="#bbf7d0"
-                  name="Income"
-                />
+                {showBudgets && (
+                  <Area
+                    type="monotone"
+                    dataKey="income"
+                    stackId="2"
+                    stroke="#22c55e"
+                    fill="#bbf7d0"
+                    name="Income"
+                  />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -566,7 +572,7 @@ export function InsightsPage() {
               </Button>
             </div>
             <p className="text-xs text-gray-500">
-              Vises nar kategorisering er tilgjengelig.
+              Vises når kategorisering er tilgjengelig.
             </p>
           </CardHeader>
           <CardContent>
@@ -745,3 +751,4 @@ export function InsightsPage() {
     </div>
   );
 }
+

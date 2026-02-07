@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import { classifyFlowType, normalizeAmountAndFlags } from './flow-classify';
 
 describe('flow-classify', () => {
@@ -27,6 +27,14 @@ describe('flow-classify', () => {
     expect(n.amount).toBe(5000);
   });
 
+
+  it('never classifies Skatteetaten payments as income (treat as expense)', () => {
+    const c = classifyFlowType({ source_type: 'xlsx', description: 'SKATTEETATEN', amount: 1000, raw_json: null });
+    expect(c.flow_type).toBe('expense');
+    const n = normalizeAmountAndFlags({ flow_type: c.flow_type, amount: 1000 });
+    expect(n.amount).toBe(-1000);
+  });
+
   it('classifies innbetaling bankgiro as transfer (excluded)', () => {
     const c = classifyFlowType({
       source_type: 'xlsx',
@@ -39,4 +47,5 @@ describe('flow-classify', () => {
     expect(n.flags).toEqual({ is_transfer: 1, is_excluded: 1 });
   });
 });
+
 

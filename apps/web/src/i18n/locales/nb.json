@@ -1,4 +1,4 @@
-{
+﻿{
   "appName": "Utgiftsanalyse",
   "nav": {
     "dashboard": "Dashbord",
@@ -88,7 +88,7 @@
     "last6Months": "Siste 6 måneder",
     "last12Months": "Siste 12 måneder",
     "noGroceriesData": "Ingen dagligvaredata",
-    "month": "MÃ¥ned",
+    "month": "Måned",
     "spent": "Brukt",
     "txCountShort": "Tx",
     "clickToDrilldown": "Klikk for drilldown",
@@ -107,10 +107,10 @@
     "excluded": "Utelatt",
     "sort": {
       "label": "Sorter",
-      "dateDesc": "Dato (nyest fÃ¸rst)",
-      "dateAsc": "Dato (eldst fÃ¸rst)",
-      "amountAbsDesc": "BelÃ¸p (stÃ¸rst fÃ¸rst)",
-      "amountAbsAsc": "BelÃ¸p (minst fÃ¸rst)",
+      "dateDesc": "Dato (nyest først)",
+      "dateAsc": "Dato (eldst først)",
+      "amountAbsDesc": "Beløp (størst først)",
+      "amountAbsAsc": "Beløp (minst først)",
       "merchantAsc": "Butikk (A-Z)",
       "merchantDesc": "Butikk (Z-A)"
     },
@@ -201,3 +201,4 @@
     "showErrorDetails": "Vis feildetaljer"
   }
 }
+

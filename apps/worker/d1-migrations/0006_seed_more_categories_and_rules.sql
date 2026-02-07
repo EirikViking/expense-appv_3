@@ -1,4 +1,4 @@
--- Seed additional categories and rules to reduce "Other" and make the app useful out of the box.
+﻿-- Seed additional categories and rules to reduce "Other" and make the app useful out of the box.
 -- Safe to run multiple times (INSERT OR IGNORE).
 
 -- Extra categories (optional)
@@ -38,4 +38,5 @@ INSERT OR IGNORE INTO rules (
   -- Events/activities
   ('rule_more_viator', 'Events: VIATOR', 70, 1, 'description', 'contains', 'VIATOR', NULL, 'set_category', 'cat_entertainment_events', datetime('now'), datetime('now')),
   ('rule_more_musement', 'Events: MUSEMENT', 70, 1, 'description', 'contains', 'MUSEMENT', NULL, 'set_category', 'cat_entertainment_events', datetime('now'), datetime('now'));
+
 
