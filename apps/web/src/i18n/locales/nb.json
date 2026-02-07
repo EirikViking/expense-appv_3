@@ -101,6 +101,15 @@
     "excludeTransfersDefault": "Ekskluder overføringer (standard)",
     "showExcluded": "Vis utelatte",
     "excluded": "Utelatt",
+    "sort": {
+      "label": "Sorter",
+      "dateDesc": "Dato (nyest fÃ¸rst)",
+      "dateAsc": "Dato (eldst fÃ¸rst)",
+      "amountAbsDesc": "BelÃ¸p (stÃ¸rst fÃ¸rst)",
+      "amountAbsAsc": "BelÃ¸p (minst fÃ¸rst)",
+      "merchantAsc": "Butikk (A-Z)",
+      "merchantDesc": "Butikk (Z-A)"
+    },
     "flowType": "Type",
     "flowTypes": {
       "expense": "Utgift",

@@ -258,7 +258,11 @@ export const transactionsQuerySchema = z.object({
   search: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(DEFAULT_PAGE_SIZE),
   offset: z.coerce.number().int().min(0).default(0),
-  sort_by: z.enum(['date', 'amount', 'description']).default('date'),
+  // date: tx_date
+  // amount: signed amount
+  // amount_abs: absolute amount (useful to find largest transactions)
+  // merchant: canonical merchant name (fallback to raw merchant/description)
+  sort_by: z.enum(['date', 'amount', 'amount_abs', 'description', 'merchant']).default('date'),
   sort_order: z.enum(['asc', 'desc']).default('desc'),
 });
 

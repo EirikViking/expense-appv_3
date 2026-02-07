@@ -57,6 +57,9 @@ export function TransactionsPage() {
   const [maxAmount, setMaxAmount] = useState('');
   const [flowType, setFlowType] = useState<FlowType | ''>('');
 
+  // Sorting
+  const [sortKey, setSortKey] = useState<'date_desc' | 'date_asc' | 'amount_abs_desc' | 'amount_abs_asc' | 'merchant_asc' | 'merchant_desc'>('date_desc');
+
   // Pagination
   const [page, setPage] = useState(0);
   const limit = 50;
@@ -152,6 +155,12 @@ export function TransactionsPage() {
           include_excluded: showExcluded ? true : undefined,
           limit,
           offset: page * limit,
+          sort_by: (() => {
+            if (sortKey.startsWith('amount_abs')) return 'amount_abs';
+            if (sortKey.startsWith('merchant')) return 'merchant';
+            return 'date';
+          })(),
+          sort_order: sortKey.endsWith('_asc') ? 'asc' : 'desc',
         }),
         categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
       ]);
@@ -166,7 +175,7 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType]);
+  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey]);
 
   useEffect(() => {
     fetchData();
@@ -187,6 +196,8 @@ export function TransactionsPage() {
     const qIncludeTransfers = searchParams.get('include_transfers');
     const qIncludeExcluded = searchParams.get('include_excluded');
     const qFlowType = (searchParams.get('flow_type') || '') as FlowType | '';
+    const qSortBy = searchParams.get('sort_by') || '';
+    const qSortOrder = searchParams.get('sort_order') || '';
 
     if (qDateFrom) setDateFrom(qDateFrom);
     if (qDateTo) setDateTo(qDateTo);
@@ -201,6 +212,15 @@ export function TransactionsPage() {
     if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
     if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
     if (qFlowType) setFlowType(qFlowType);
+
+    // Sort init (keep backward compatibility)
+    if (qSortBy || qSortOrder) {
+      const by = qSortBy || 'date';
+      const order = qSortOrder || (by === 'merchant' ? 'asc' : 'desc');
+      if (by === 'merchant') setSortKey(order === 'asc' ? 'merchant_asc' : 'merchant_desc');
+      else if (by === 'amount_abs') setSortKey(order === 'asc' ? 'amount_abs_asc' : 'amount_abs_desc');
+      else setSortKey(order === 'asc' ? 'date_asc' : 'date_desc');
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -246,6 +266,7 @@ export function TransactionsPage() {
     setExcludeTransfers(true);
     setShowExcluded(false);
     setFlowType('');
+    setSortKey('date_desc');
     setPage(0);
   };
 
@@ -283,18 +304,40 @@ export function TransactionsPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input
-          type="text"
-          placeholder={t('common.searchTransactionsPlaceholder')}
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-            setPage(0);
-          }}
-          className="pl-10"
-        />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="relative md:col-span-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Input
+            type="text"
+            placeholder={t('common.searchTransactionsPlaceholder')}
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(0);
+            }}
+            className="pl-10"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            {t('transactions.sort.label')}
+          </label>
+          <select
+            value={sortKey}
+            onChange={(e) => {
+              setSortKey(e.target.value as typeof sortKey);
+              setPage(0);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="date_desc">{t('transactions.sort.dateDesc')}</option>
+            <option value="date_asc">{t('transactions.sort.dateAsc')}</option>
+            <option value="amount_abs_desc">{t('transactions.sort.amountAbsDesc')}</option>
+            <option value="amount_abs_asc">{t('transactions.sort.amountAbsAsc')}</option>
+            <option value="merchant_asc">{t('transactions.sort.merchantAsc')}</option>
+            <option value="merchant_desc">{t('transactions.sort.merchantDesc')}</option>
+          </select>
+        </div>
       </div>
 
       {/* Filters Panel */}

@@ -588,7 +588,7 @@ export interface TransactionsQuery {
   search?: string;
   limit?: number;
   offset?: number;
-  sort_by?: 'date' | 'amount' | 'description';
+  sort_by?: 'date' | 'amount' | 'amount_abs' | 'description' | 'merchant';
   sort_order?: 'asc' | 'desc';
 }
 

@@ -311,8 +311,24 @@ transactions.get('/', async (c) => {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    // Ensure necessary joins for sorting.
+    if (sort_by === 'merchant') {
+      if (!joinClause.includes('transaction_meta')) {
+        joinClause += ' LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id';
+      }
+      const merchantsJoin = ' LEFT JOIN merchants m ON tm.merchant_id = m.id';
+      if (!joinClause.includes('merchants m')) {
+        joinClause += merchantsJoin;
+      }
+    }
+
     // Map sort_by to column
-    const sortColumn = sort_by === 'amount' ? 't.amount' : sort_by === 'description' ? 't.description' : 't.tx_date';
+    const sortColumn =
+      sort_by === 'amount' ? 't.amount' :
+      sort_by === 'amount_abs' ? 'ABS(t.amount)' :
+      sort_by === 'description' ? 't.description' :
+      sort_by === 'merchant' ? "COALESCE(NULLIF(TRIM(m.canonical_name), ''), NULLIF(TRIM(t.merchant), ''), NULLIF(TRIM(t.description), '')) COLLATE NOCASE" :
+      't.tx_date';
     const sortDirection = sort_order === 'asc' ? 'ASC' : 'DESC';
 
     // Get total count

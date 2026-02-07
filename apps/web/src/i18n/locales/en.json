@@ -102,6 +102,15 @@
     "excludeTransfersDefault": "Exclude transfers (default)",
     "showExcluded": "Show excluded",
     "excluded": "Excluded",
+    "sort": {
+      "label": "Sort",
+      "dateDesc": "Date (newest first)",
+      "dateAsc": "Date (oldest first)",
+      "amountAbsDesc": "Amount (largest first)",
+      "amountAbsAsc": "Amount (smallest first)",
+      "merchantAsc": "Store (A-Z)",
+      "merchantDesc": "Store (Z-A)"
+    },
     "flowType": "Flow",
     "flowTypes": {
       "expense": "Expense",

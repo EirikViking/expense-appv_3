@@ -25,6 +25,7 @@ interface TransactionsDrilldownDialogProps {
     dateTo?: string;
     merchantId?: string;
     merchantName?: string;
+    search?: string;
     categoryId?: string;
     status?: TransactionStatus;
     flowType?: FlowType;
@@ -42,6 +43,7 @@ export function TransactionsDrilldownDialog({
     dateTo,
     merchantId,
     merchantName,
+    search,
     categoryId,
     status,
     flowType,
@@ -65,11 +67,17 @@ export function TransactionsDrilldownDialog({
     const loadTransactions = async () => {
         setLoading(true);
         try {
+            // If we only have a merchant name (no merchant_id), use free-text search to
+            // avoid "exact equality" filters missing variants (e.g. KIWI 505 BARCODE vs Varekjøp KIWI...).
+            const effectiveMerchantName = merchantId ? merchantName : undefined;
+            const effectiveSearch = search || (!merchantId && merchantName ? merchantName : undefined);
+
             const response = await api.getTransactions({
                 date_from: dateFrom,
                 date_to: dateTo,
                 merchant_id: merchantId,
-                merchant_name: merchantName,
+                merchant_name: effectiveMerchantName,
+                search: effectiveSearch,
                 category_id: categoryId,
                 status: status,
                 flow_type: flowType,
