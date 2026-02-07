@@ -276,8 +276,17 @@ transactions.get('/', async (c) => {
         joinClause += merchantsJoin;
       }
 
-      conditions.push('COALESCE(m.canonical_name, TRIM(t.description)) = ?');
-      params.push(merchant_name.trim());
+      // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
+      // rather than an exact string match to a single row's description. Use a case-insensitive contains
+      // match so variants like "KIWI 505 BARCODE ..." are included.
+      const mn = merchant_name.trim();
+      const needle = `%${mn}%`;
+      conditions.push(`(
+        COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
+        COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
+        t.description LIKE ? COLLATE NOCASE
+      )`);
+      params.push(needle, needle, needle);
     }
 
     if (search && search.trim()) {
