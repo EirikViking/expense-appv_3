@@ -21,7 +21,10 @@ async function applyCategoryRulesSqlGlobal(
   eligible: number;
   meta_inserts: number;
   meta_defaults: number;
+  // Rows where the category actually changed from defaultCategoryId to some other category.
   meta_updates: number;
+  // Rows touched by the UPDATE statement (should be the same as meta_updates after the EXISTS guard).
+  meta_updates_touched: number;
 }> {
   const now = new Date().toISOString();
 
@@ -85,29 +88,31 @@ async function applyCategoryRulesSqlGlobal(
 
   // 3) Upgrade default categories to best matching rule by priority.
   // This SQL path only supports the "common case" rules:
-  // enabled=1, action_type='set_category', match_type='contains', match_field='description'.
+  // enabled=1, action_type='set_category', match_type='contains', match_field in ('description','merchant').
   // Matching uses the combined merchant+description text to keep PDF/XLSX consistent.
   const metaUpdateRes = await db
     .prepare(
       `
         UPDATE transaction_meta
         SET
-          category_id = COALESCE((
+          category_id = (
             SELECT r.action_value
             FROM rules r
             JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
             WHERE r.enabled = 1
               AND r.action_type = 'set_category'
               AND r.match_type = 'contains'
-              AND r.match_field = 'description'
+              AND COALESCE(r.match_field, 'description') IN ('description', 'merchant')
               AND COALESCE(r.match_value, '') != ''
+              AND COALESCE(r.action_value, '') != ''
+              AND r.action_value != ?
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
               AND t2.flow_type != 'transfer'
               AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
             ORDER BY r.priority ASC
             LIMIT 1
-          ), category_id),
+          ),
           updated_at = ?
         WHERE category_id = ?
           AND transaction_id IN (
@@ -120,16 +125,36 @@ async function applyCategoryRulesSqlGlobal(
                 SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
               )
           )
+          -- Without this guard, D1 will report "updated" rows due to updated_at changing even when no rule matched.
+          AND EXISTS (
+            SELECT 1
+            FROM rules r
+            JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
+            WHERE r.enabled = 1
+              AND r.action_type = 'set_category'
+              AND r.match_type = 'contains'
+              AND COALESCE(r.match_field, 'description') IN ('description', 'merchant')
+              AND COALESCE(r.match_value, '') != ''
+              AND COALESCE(r.action_value, '') != ''
+              AND r.action_value != ?
+              AND COALESCE(t2.is_excluded, 0) = 0
+              AND COALESCE(t2.is_transfer, 0) = 0
+              AND t2.flow_type != 'transfer'
+              AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
+          )
       `
     )
-    .bind(now, defaultCategoryId)
+    .bind(defaultCategoryId, now, defaultCategoryId, defaultCategoryId)
     .run();
+
+  const touched = Number((metaUpdateRes as any)?.meta?.changes || 0);
 
   return {
     eligible: Number(eligibleRes?.c || 0),
     meta_inserts: Number((metaInsertRes as any)?.meta?.changes || 0),
     meta_defaults: Number((metaDefaultRes as any)?.meta?.changes || 0),
-    meta_updates: Number((metaUpdateRes as any)?.meta?.changes || 0),
+    meta_updates: touched,
+    meta_updates_touched: touched,
   };
 }
 
@@ -467,7 +492,7 @@ rules.post('/:id/test', async (c) => {
 });
 
 // Apply rules to transactions
-rules.post('/apply', async (c) => {
+  rules.post('/apply', async (c) => {
   try {
     const body = await c.req.json();
     const parsed = applyRulesSchema.safeParse(body);
@@ -515,7 +540,7 @@ rules.post('/apply', async (c) => {
           r.enabled
           && r.action_type === 'set_category'
           && r.match_type === 'contains'
-          && r.match_field === 'description'
+          && (r.match_field === 'description' || r.match_field === 'merchant' || r.match_field === null)
         )
       );
 

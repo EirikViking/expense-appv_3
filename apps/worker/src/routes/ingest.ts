@@ -325,14 +325,17 @@ async function applyCategoryRulesSqlForFile(
       `
         UPDATE transaction_meta
         SET
-          category_id = COALESCE((
+          category_id = (
             SELECT r.action_value
             FROM rules r
             JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
             WHERE r.enabled = 1
               AND r.action_type = 'set_category'
               AND r.match_type = 'contains'
+              AND COALESCE(r.match_field, 'description') IN ('description', 'merchant')
               AND COALESCE(r.match_value, '') != ''
+              AND COALESCE(r.action_value, '') != ''
+              AND r.action_value != ?
               AND t2.source_file_hash = ?
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
@@ -340,7 +343,7 @@ async function applyCategoryRulesSqlForFile(
               AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
             ORDER BY r.priority ASC
             LIMIT 1
-          ), category_id),
+          ),
           updated_at = ?
         WHERE category_id = ?
           AND transaction_id IN (
@@ -354,9 +357,26 @@ async function applyCategoryRulesSqlForFile(
                 SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
               )
           )
+          AND EXISTS (
+            SELECT 1
+            FROM rules r
+            JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
+            WHERE r.enabled = 1
+              AND r.action_type = 'set_category'
+              AND r.match_type = 'contains'
+              AND COALESCE(r.match_field, 'description') IN ('description', 'merchant')
+              AND COALESCE(r.match_value, '') != ''
+              AND COALESCE(r.action_value, '') != ''
+              AND r.action_value != ?
+              AND t2.source_file_hash = ?
+              AND COALESCE(t2.is_excluded, 0) = 0
+              AND COALESCE(t2.is_transfer, 0) = 0
+              AND t2.flow_type != 'transfer'
+              AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
+          )
       `
     )
-    .bind(fileHash, now, defaultCategoryId, fileHash)
+    .bind(defaultCategoryId, fileHash, now, defaultCategoryId, fileHash, defaultCategoryId, fileHash)
     .run();
 
   const updates =
