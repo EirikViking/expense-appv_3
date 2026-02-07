@@ -432,6 +432,28 @@ transactions.patch('/:id', async (c) => {
       if (is_transfer === true && is_excluded === undefined) {
         updates.push('is_excluded = 1');
       }
+
+      // If user UN-marks transfer and didn't explicitly set excluded, default to included.
+      // Also normalize flow_type back to expense/income based on sign, so analytics & UI are consistent.
+      if (is_transfer === false && is_excluded === undefined) {
+        updates.push('is_excluded = 0');
+      }
+
+      if (is_transfer === false) {
+        // Recompute flow_type from amount sign for non-transfer rows.
+        // This makes "was incorrectly marked transfer" immediately show up in Expenses/Travel etc.
+        const amtRow = await c.env.DB
+          .prepare('SELECT amount FROM transactions WHERE id = ?')
+          .bind(id)
+          .first<{ amount: number }>();
+        const amount = Number(amtRow?.amount ?? 0);
+        const inferred = amount < 0 ? 'expense' : amount > 0 ? 'income' : 'unknown';
+        updates.push('flow_type = ?');
+        params.push(inferred);
+      } else if (is_transfer === true) {
+        // Ensure transfer flow_type is consistent for analytics.
+        updates.push(`flow_type = 'transfer'`);
+      }
     }
 
     if (is_excluded !== undefined) {

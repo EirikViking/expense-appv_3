@@ -57,9 +57,9 @@ function makeHubCards(opts: {
   subscriptions: RecurringItem[];
 }) {
   const { lang, seed, summary, categories, merchants, subscriptions } = opts;
-  const expenses = summary?.expenses ?? 0;
-  const income = summary?.income ?? 0;
-  const net = summary?.net_spend ?? 0;
+  const expenses = summary?.total_expenses ?? 0;
+  const income = summary?.total_income ?? 0;
+  const net = summary?.net ?? 0;
 
   const topCat = getTopCategory(categories);
   const topMerchant = getTopMerchant(merchants);
@@ -189,9 +189,9 @@ export function InsightsPage() {
 
       const [summaryRes, byCatRes, byMerchRes, subsRes] = results;
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
-      if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value);
-      if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value);
-      if (subsRes.status === 'fulfilled') setSubscriptions(subsRes.value);
+      if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value.categories);
+      if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value.merchants);
+      if (subsRes.status === 'fulfilled') setSubscriptions(subsRes.value.subscriptions);
     } finally {
       setLoading(false);
     }
@@ -203,7 +203,7 @@ export function InsightsPage() {
   }, [dateFrom, dateTo]);
 
   const hub = useMemo(() => {
-    const baseSeed = hashString(`${dateFrom}|${dateTo}|${summary?.expenses ?? 0}|${seed}`);
+    const baseSeed = hashString(`${dateFrom}|${dateTo}|${summary?.total_expenses ?? 0}|${seed}`);
     return makeHubCards({ lang, seed: baseSeed, summary, categories, merchants, subscriptions });
   }, [lang, dateFrom, dateTo, summary, categories, merchants, subscriptions, seed]);
 
@@ -368,8 +368,8 @@ export function InsightsPage() {
                 <p className="text-xs font-semibold text-white/70">{hub.copy.subsTitle}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {subscriptions.slice(0, 6).map((s) => (
-                    <Badge key={s.name} variant="outline" className="text-xs">
-                      {s.name}
+                    <Badge key={s.merchant_name} variant="outline" className="text-xs">
+                      {s.merchant_name}
                     </Badge>
                   ))}
                   {subscriptions.length === 0 && (

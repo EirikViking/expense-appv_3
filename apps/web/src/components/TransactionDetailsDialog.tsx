@@ -78,7 +78,8 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
         if (!tx) return;
         setIsUpdating(true);
         try {
-            const updated = await api.patchTransaction(tx.id, { is_transfer: next });
+            // If a user un-marks transfer, default to included (not excluded) so it counts in analytics again.
+            const updated = await api.patchTransaction(tx.id, { is_transfer: next, ...(next ? {} : { is_excluded: false }) });
             setLocalTx(updated);
             onUpdateSuccess?.();
         } catch (err) {
