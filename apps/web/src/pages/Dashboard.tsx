@@ -774,8 +774,8 @@ export function DashboardPage() {
                       if (statusFilter) qs.set('status', statusFilter);
                       if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
                       qs.set('flow_type', 'expense');
-                      if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
-                      else qs.set('merchant_name', merchant.merchant_name);
+                      // Prefer free-text search to include variants of the store name (e.g. "KIWI 505 BARCODE").
+                      qs.set('search', merchant.merchant_name);
                       navigate(`/transactions?${qs.toString()}`);
                     }}
                   >

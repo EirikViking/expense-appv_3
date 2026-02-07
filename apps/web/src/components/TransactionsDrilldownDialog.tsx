@@ -67,16 +67,19 @@ export function TransactionsDrilldownDialog({
     const loadTransactions = async () => {
         setLoading(true);
         try {
-            // If we only have a merchant name (no merchant_id), use free-text search to
-            // avoid "exact equality" filters missing variants (e.g. KIWI 505 BARCODE vs Varekjøp KIWI...).
-            const effectiveMerchantName = merchantId ? merchantName : undefined;
-            const effectiveSearch = search || (!merchantId && merchantName ? merchantName : undefined);
+            // Merchant drilldown should include all variants of a store name.
+            // Exact equality (merchant_name=...) and merchant_id-only filtering often undercounts
+            // because many rows don't have merchant_id yet, or have slightly different text variants.
+            // Prefer free-text search when merchantName is provided.
+            const merchantNeedle = merchantName?.trim() ? merchantName.trim() : undefined;
+            const effectiveSearch = (search && search.trim()) ? search.trim() : merchantNeedle;
+            const useMerchantIdFilter = Boolean(merchantId) && !merchantNeedle && !effectiveSearch;
 
             const response = await api.getTransactions({
                 date_from: dateFrom,
                 date_to: dateTo,
-                merchant_id: merchantId,
-                merchant_name: effectiveMerchantName,
+                merchant_id: useMerchantIdFilter ? merchantId : undefined,
+                merchant_name: undefined,
                 search: effectiveSearch,
                 category_id: categoryId,
                 status: status,

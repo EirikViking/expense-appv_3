@@ -222,25 +222,11 @@ export function InsightsPage() {
   const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
     setDrilldownTitle(`Transactions: ${merchant.merchant_name}`);
     setDrilldownSubtitle(`${merchant.count} transactions totaling ${formatCurrency(merchant.total)}`);
-    setDrilldownMerchantId(merchant.merchant_id ?? undefined);
 
-    // Pass name if ID is missing, or even if it is present to be safe, 
-    // but the backend will prioritize ID if both are sent (or AND them).
-    // Actually, if we have ID, we SHOULD only use ID. 
-    // If we don't have ID, we use Name.
-    // The backend logic I wrote ANDs them if both are present.
-    // So usually we should pass one or the other if we want "either/or" behavior?
-    // Wait, the backend logic I added does:
-    // if (merchant_id) ...
-    // if (merchant_name) ...
-    // So if both are passed, it checks BOTH.
-    // So we should only pass name if id is undefined.
-
-    if (!merchant.merchant_id) {
-      setDrilldownMerchantName(merchant.merchant_name);
-    } else {
-      setDrilldownMerchantName(undefined);
-    }
+    // Use free-text search by merchant name in the drilldown to include variants.
+    // merchant_id-only filtering undercounts if not all rows have merchant_id populated.
+    setDrilldownMerchantId(undefined);
+    setDrilldownMerchantName(merchant.merchant_name);
 
     // Insights merchant breakdown is spend-oriented (expenses).
     setDrilldownFlowType('expense');
