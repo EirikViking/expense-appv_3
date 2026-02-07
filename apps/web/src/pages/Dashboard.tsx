@@ -581,8 +581,9 @@ export function DashboardPage() {
                     formatter={(value) => formatCurrency(Number(value))}
                     labelFormatter={formatDateShort}
                     contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
+                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      color: '#E7EAF3',
                       borderRadius: '8px',
                     }}
                   />
@@ -607,7 +608,7 @@ export function DashboardPage() {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[300px] items-center justify-center text-gray-500">
+              <div className="flex h-[300px] items-center justify-center text-white/60">
                 {t('dashboard.noDataForPeriod')}
               </div>
             )}
@@ -622,12 +623,12 @@ export function DashboardPage() {
               <button
                 type="button"
                 onClick={() => setShowCategoryDetails((prev) => !prev)}
-                className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                className="text-xs font-medium text-cyan-200/90 hover:text-cyan-100"
               >
                 {showCategoryDetails ? t('dashboard.hideDetails') : t('dashboard.showDetails')}
               </button>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-white/60">
               {t('dashboard.categoryDrilldownHint')}
             </p>
           </CardHeader>
@@ -670,15 +671,16 @@ export function DashboardPage() {
                   <Tooltip
                     formatter={(value) => formatCurrency(Number(value))}
                     contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
+                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      color: '#E7EAF3',
                       borderRadius: '8px',
                     }}
                   />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-[300px] items-center justify-center text-gray-500">
+              <div className="flex h-[300px] items-center justify-center text-white/60">
                 {hasCategorization ? t('dashboard.useShowDetailsHint') : t('dashboard.noCategorizedTransactions')}
               </div>
             )}
@@ -697,26 +699,26 @@ export function DashboardPage() {
                   key={m}
                   type="button"
                   onClick={() => setTrendMonths(m as 3 | 6 | 12)}
-                  className={cn(
-                    'px-2 py-1 rounded text-xs font-medium border',
-                    trendMonths === m
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-transparent text-gray-700 border-gray-200 hover:bg-gray-50 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
-                  )}
-                >
-                  {m === 3 ? t('dashboard.last3Months') : m === 6 ? t('dashboard.last6Months') : t('dashboard.last12Months')}
-                </button>
-              ))}
-            </div>
+                className={cn(
+                  'px-2 py-1 rounded text-xs font-medium border',
+                  trendMonths === m
+                      ? 'bg-white/12 text-white border-white/20'
+                      : 'bg-transparent text-white/70 border-white/15 hover:bg-white/10 hover:text-white'
+                )}
+              >
+                {m === 3 ? t('dashboard.last3Months') : m === 6 ? t('dashboard.last6Months') : t('dashboard.last12Months')}
+              </button>
+            ))}
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-xs text-gray-500">{t('dashboard.categoryMonthlyTrendHint')}</p>
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-xs text-white/60">{t('dashboard.categoryMonthlyTrendHint')}</p>
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-xs text-gray-500">{t('common.category')}</span>
+              <span className="text-xs text-white/60">{t('common.category')}</span>
               <select
                 value={trendCategoryId}
                 onChange={(e) => setTrendCategoryId(e.target.value)}
-                className="h-9 px-2 rounded border border-gray-300 bg-white text-sm"
+                className="h-9 px-2 rounded border border-white/15 bg-white/5 text-sm text-white"
               >
                 {selectableCategories.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -745,8 +747,9 @@ export function DashboardPage() {
                     formatter={(value) => formatCurrency(Number(value))}
                     labelFormatter={formatYearMonth}
                     contentStyle={{
-                      backgroundColor: 'white',
-                      border: '1px solid #e5e7eb',
+                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
+                      border: '1px solid rgba(255,255,255,0.14)',
+                      color: '#E7EAF3',
                       borderRadius: '8px',
                     }}
                   />
@@ -762,18 +765,18 @@ export function DashboardPage() {
               </ResponsiveContainer>
 
               {/* Exact monthly table (same data as chart). Click a month to drill down. */}
-              <div className="rounded-lg border border-gray-200 overflow-hidden">
-                <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-50 text-xs font-medium text-gray-600">
+              <div className="rounded-lg border border-white/12 overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-white/5 text-xs font-medium text-white/70">
                   <div className="col-span-6">{t('dashboard.month')}</div>
                   <div className="col-span-4 text-right">{t('dashboard.spent')}</div>
                   <div className="col-span-2 text-right">{t('dashboard.txCountShort')}</div>
                 </div>
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-white/10">
                   {[...trendSeries].slice().reverse().map((p) => (
                     <button
                       key={p.date}
                       type="button"
-                      className="w-full text-left grid grid-cols-12 gap-2 px-3 py-2 hover:bg-gray-50 transition-colors"
+                      className="w-full text-left grid grid-cols-12 gap-2 px-3 py-2 hover:bg-white/5 transition-colors"
                       onClick={() => openMonthDrilldown(p.date)}
                       title={t('dashboard.clickToDrilldown')}
                     >

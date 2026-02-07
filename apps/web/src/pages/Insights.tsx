@@ -523,8 +523,9 @@ export function InsightsPage() {
                   formatter={(value) => formatCurrency(Number(value))}
                   labelFormatter={formatDateShort}
                   contentStyle={{
-                    backgroundColor: 'white',
-                    border: '1px solid #e5e7eb',
+                    backgroundColor: 'rgba(10, 14, 26, 0.92)',
+                    border: '1px solid rgba(255,255,255,0.14)',
+                    color: '#E7EAF3',
                     borderRadius: '8px',
                   }}
                 />
@@ -550,7 +551,7 @@ export function InsightsPage() {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="flex h-[300px] items-center justify-center text-gray-500">
+            <div className="flex h-[300px] items-center justify-center text-white/60">
               No data for this period
             </div>
           )}
@@ -600,8 +601,9 @@ export function InsightsPage() {
                     <Tooltip
                       formatter={(value) => formatCurrency(Number(value))}
                       contentStyle={{
-                        backgroundColor: 'white',
-                        border: '1px solid #e5e7eb',
+                        backgroundColor: 'rgba(10, 14, 26, 0.92)',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        color: '#E7EAF3',
                         borderRadius: '8px',
                       }}
                     />
@@ -627,7 +629,7 @@ export function InsightsPage() {
                 </div>
               </div>
             ) : (
-              <div className="flex h-[250px] items-center justify-center text-gray-500">
+              <div className="flex h-[250px] items-center justify-center text-white/60">
                 {hasCategorization ? 'Bruk "Vis detaljer" for a se oversikt' : 'Ingen kategoriserte transaksjoner enda'}
               </div>
             )}
