@@ -375,25 +375,6 @@ analytics.get('/by-merchant', async (c) => {
         END
       )
     `;
-    const token1Expr = `
-      CASE
-        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
-        ELSE SUBSTR(${cleanedExpr}, 1, INSTR(${cleanedExpr}, ' ') - 1)
-      END
-    `;
-    const restExpr = `
-      CASE
-        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ''
-        ELSE SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1)
-      END
-    `;
-    const token2Expr = `
-      CASE
-        WHEN ${restExpr} = '' THEN ''
-        WHEN INSTR(${restExpr}, ' ') = 0 THEN ${restExpr}
-        ELSE SUBSTR(${restExpr}, 1, INSTR(${restExpr}, ' ') - 1)
-      END
-    `;
     const twoTokensExpr = `
       CASE
         WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
@@ -405,21 +386,10 @@ analytics.get('/by-merchant', async (c) => {
         )
       END
     `;
-    // If the second token is purely numeric (e.g. "KIWI 505", "REMA 1000"), group by the chain name (first token).
-    // This makes "Top merchants" reflect the store chain rather than store-number variants.
-    const groupKeyExpr = `
-      CASE
-        WHEN ${token2Expr} != ''
-          AND ${token2Expr} GLOB '[0-9]*'
-          AND ${token2Expr} NOT GLOB '*[^0-9]*'
-          THEN ${token1Expr}
-        ELSE ${twoTokensExpr}
-      END
-    `;
     const merchantNameExpr = `
       CASE
         WHEN m.id IS NOT NULL AND COALESCE(NULLIF(TRIM(m.canonical_name), ''), '') != '' THEN TRIM(m.canonical_name)
-        ELSE TRIM(${groupKeyExpr})
+        ELSE TRIM(${twoTokensExpr})
       END
     `;
 
@@ -433,6 +403,9 @@ analytics.get('/by-merchant', async (c) => {
       tag_id,
       include_transfers,
     });
+
+    // Pull enough rows to allow safe post-aggregation (e.g. chain merging of "KIWI 505" + "KIWI 123").
+    const scanLimit = Math.min(500, Math.max(limit * 25, 200));
 
     const currentResult = await c.env.DB
       .prepare(`
@@ -450,7 +423,7 @@ analytics.get('/by-merchant', async (c) => {
         ORDER BY total DESC
         LIMIT ?
       `)
-      .bind(...bindings, limit)
+      .bind(...bindings, scanLimit)
       .all<{
         merchant_id: string | null;
         merchant_name: string;
@@ -477,23 +450,56 @@ analytics.get('/by-merchant', async (c) => {
     const prevResult = await c.env.DB
       .prepare(`
         SELECT
+          m.id as merchant_id,
           ${merchantNameExpr} as merchant_name,
           COALESCE(SUM(ABS(t.amount)), 0) as total
         FROM transactions t
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         ${prevClause} ${prevClause ? 'AND' : 'WHERE'} (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
-        GROUP BY merchant_name
+        GROUP BY m.id, merchant_name
       `)
       .bind(...prevBindings)
-      .all<{ merchant_name: string; total: number }>();
+      .all<{ merchant_id: string | null; merchant_name: string; total: number }>();
 
-    const prevMap = new Map((prevResult.results || []).map(r => [r.merchant_name, toNumber(r.total)]));
+    const chainKey = (merchantId: string | null | undefined, merchantName: string): string => {
+      const name = String(merchantName || '').trim();
+      if (!name) return name;
+      if (merchantId) return name; // canonical merchants should not be merged heuristically
+      const parts = name.split(/\s+/);
+      if (parts.length >= 2 && /^\d+$/.test(parts[1])) return parts[0]; // "KIWI 505" -> "KIWI"
+      return name;
+    };
 
-    const merchants: MerchantBreakdown[] = (currentResult.results || []).map(r => {
+    // Aggregate previous totals by chain key.
+    const prevMap = new Map<string, number>();
+    for (const r of prevResult.results || []) {
+      const k = chainKey(r.merchant_id, r.merchant_name);
+      prevMap.set(k, (prevMap.get(k) || 0) + toNumber(r.total));
+    }
+
+    // Aggregate current rows by chain key.
+    const currentAgg = new Map<string, { merchant_id: string | null; merchant_name: string; total: number; count: number }>();
+    for (const r of currentResult.results || []) {
+      const k = chainKey(r.merchant_id, r.merchant_name);
+      const existing = currentAgg.get(k);
+      if (existing) {
+        existing.total += toNumber(r.total);
+        existing.count += toNumber(r.count);
+      } else {
+        currentAgg.set(k, {
+          merchant_id: r.merchant_id ? r.merchant_id : null,
+          merchant_name: k,
+          total: toNumber(r.total),
+          count: toNumber(r.count),
+        });
+      }
+    }
+
+    const merchants: MerchantBreakdown[] = [...currentAgg.values()].map(r => {
       const total = toNumber(r.total);
-      const avg = toNumber(r.avg);
       const count = toNumber(r.count);
+      const avg = count > 0 ? total / count : 0;
       const prevTotal = prevMap.get(r.merchant_name) || 0;
       const trend = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
 
@@ -507,6 +513,7 @@ analytics.get('/by-merchant', async (c) => {
       };
     });
 
+    merchants.sort((a, b) => b.total - a.total);
     return c.json({ merchants });
   } catch (error) {
     console.error('Analytics by-merchant error:', error);
