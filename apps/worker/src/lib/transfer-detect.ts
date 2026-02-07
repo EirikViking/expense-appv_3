@@ -14,6 +14,12 @@ const TRANSFER_PATTERNS: RegExp[] = [
   /\bkredittkortregning\b/i,
   /\bfelleskonto\b/i,
   /\bgebyr\s+overført\b/i,
+  /\bstraksbetaling\b/i,
+  /\bseb\s+kort\b/i,
+  /\bengangsfullmakt\b/i,
+  /\bbetaling\s+med\s+engangsfullmakt\b/i,
+  /\bkjøp\s+kron\b/i,
+  /\bkron\s*-\s*uttak\b/i,
 
   // Transfers to people (common Norwegian names pattern)
   /^til\s+[A-ZÆØÅ][a-zæøå]+$/i,  // "Til Anja", "Til Per", etc.
@@ -34,4 +40,3 @@ export function detectIsTransfer(description: string | null | undefined): boolea
   if (!d) return false;
   return TRANSFER_PATTERNS.some((re) => re.test(d));
 }
-

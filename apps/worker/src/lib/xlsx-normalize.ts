@@ -86,6 +86,18 @@ export function isPaymentLikeRow(description: string | null | undefined, section
   if (d.includes('bankgiro') && d.includes('innbetaling')) return true;
   if (s.includes('innbetaling') && (s.includes('bankgiro') || s.includes('giro'))) return true;
 
+  // Storebrand account exports contain payment-rail rows that should be treated as transfers/excluded.
+  // These are not expenses (even when they are negative) and would otherwise bloat "Other".
+  // Keep this list conservative; users can always un-exclude or recategorize manually.
+  if (d === 'straksbetaling' || d.startsWith('straksbetaling ')) return true;
+  if (d.includes('seb kort')) return true;
+  if (d.includes('engangsfullmakt')) return true;
+  if (d.includes('betaling med engangsfullmakt')) return true;
+
+  // Investment / account payment phrases (best treated as transfers by default).
+  if (d.includes('kjop kron') || d.includes('kron - uttak') || d.includes('kron uttak')) return true;
+  if (d.includes('betaling av kredittkort') || d.includes('kreditkortregning') || d.includes('kredittkortregning')) return true;
+
   return false;
 }
 
