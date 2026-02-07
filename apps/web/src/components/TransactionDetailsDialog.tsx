@@ -26,8 +26,6 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     const [editNotes, setEditNotes] = useState('');
     const [localTx, setLocalTx] = useState<TransactionWithMeta | null>(transaction);
 
-    if (!transaction) return null;
-
     // Keep local copy to reflect edits immediately.
     useEffect(() => {
         setLocalTx(transaction);
@@ -60,10 +58,12 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     }, [categories]);
 
     const handleDelete = async () => {
+        const tx = localTx ?? transaction;
+        if (!tx) return;
         if (!confirm(t('transactions.confirmDeleteOne'))) return;
         setIsDeleting(true);
         try {
-            await api.deleteTransaction(transaction.id);
+            await api.deleteTransaction(tx.id);
             onOpenChange(false);
             onDeleteSuccess?.();
         } catch (err) {
@@ -74,9 +74,11 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     };
 
     const handleToggleTransfer = async (next: boolean) => {
+        const tx = localTx ?? transaction;
+        if (!tx) return;
         setIsUpdating(true);
         try {
-            const updated = await api.patchTransaction(transaction.id, { is_transfer: next });
+            const updated = await api.patchTransaction(tx.id, { is_transfer: next });
             setLocalTx(updated);
             onUpdateSuccess?.();
         } catch (err) {
@@ -105,6 +107,11 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     };
 
     const tx = localTx || transaction;
+
+    // IMPORTANT: keep hooks above unconditional. Only decide rendering after hooks ran.
+    // If both props are empty and the dialog isn't open, render nothing.
+    if (!tx && !open) return null;
+    if (!tx) return null;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
