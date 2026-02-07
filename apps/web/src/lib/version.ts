@@ -1,5 +1,5 @@
 // Version information - auto-updated during build
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 
 // These are replaced at build time by Vite define
 // Using 'as string' to avoid TS narrowing issues
