@@ -20,6 +20,7 @@
     "rebuild:dry": "node scripts/run_rebuild.mjs --dry",
     "rebuild:apply": "node scripts/run_rebuild.mjs --apply",
     "diag:prod": "node scripts/diag_prod.mjs",
+    "diag:other:prod": "node scripts/diag_other_prod.mjs",
     "verify:prod": "node scripts/verify_prod.mjs",
     "ingest:pdf": "node scripts/ingest_pdf.mjs",
     "ingest:pdf:verify": "node scripts/ingest_pdf.mjs --verify",
