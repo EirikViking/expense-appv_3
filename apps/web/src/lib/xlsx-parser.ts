@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { XLSX_COLUMNS } from '@expense/shared';
+import { XLSX_COLUMNS, looksLikeStorebrandFiveColRow, parseStorebrandRow5 } from '@expense/shared';
 
 export interface ParsedXlsxTransaction {
   tx_date: string;
@@ -60,7 +60,7 @@ const COLUMN_VARIATIONS = {
     'Transaksjonstype', 'Merknad', 'Kommentar', 'Detaljer',
   ],
   AMOUNT: [
-    'Beløp', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn',
+    'Beløp', 'Belop', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn',
     'Transaksjonsbeløp', 'NOK', 'Utbetalt', 'Innskudd', 'Belastet',
     'Kreditert', 'Debitert', 'Saldo endring', 'Kr', 'Verdi',
     // Storebrand specific
@@ -776,6 +776,38 @@ function detectColumnsFromData(
 
   console.log(`[XLSX Parser] Attempting headerless detection (rows ${startRow}-${endRow})...`);
 
+  // Storebrand export: 5 columns, frequently no header row:
+  // col0 date, col1 text, col2 amount, col3 balance, col4 currency.
+  // Generic type inference can accidentally pick balance as the "amount" column,
+  // so prefer this explicit mapping when we see it.
+  const colCount = range.e.c - range.s.c + 1;
+  if (colCount === 5) {
+    let matched = 0;
+    let checked = 0;
+    for (let row = startRow; row <= endRow; row++) {
+      const values = getRowValues(sheet, range, row);
+      // Skip empty rows.
+      if (values.every((v) => v === null || v === undefined || String(v).trim() === '')) continue;
+      checked++;
+      if (looksLikeStorebrandFiveColRow(values.slice(0, 5))) matched++;
+      if (checked >= 6) break;
+    }
+
+    if (checked >= 2 && matched >= 2) {
+      console.log(`[XLSX Parser] Storebrand 5-column layout detected (${matched}/${checked} sample rows matched)`);
+      return {
+        dateCol: `__COL_${range.s.c + 0}`,
+        amountCol: `__COL_${range.s.c + 2}`,
+        descriptionCol: `__COL_${range.s.c + 1}`,
+        bookedDateCol: null,
+        currencyCol: `__COL_${range.s.c + 4}`,
+        merchantCol: null,
+        headerRow: -1,
+        foundHeaders: [],
+      };
+    }
+  }
+
   const columnAnalysis: Map<number, {
     dateCount: number;
     amountCount: number;
@@ -916,21 +948,52 @@ function parseHeaderlessFile(
     // Skip empty rows
     if (!dateCell || !amountCell) continue;
 
-    // Parse date - pass the raw value which could be a number (Excel serial)
+    // Storebrand 5-column mapping: parse positionally with shared helper.
+    // Layout: date,text,amount,balance,currency.
+    if (
+      descColIdx === dateColIdx + 1 &&
+      amountColIdx === dateColIdx + 2 &&
+      currencyColIdx === dateColIdx + 4
+    ) {
+      const v0 = sheet[XLSX.utils.encode_cell({ r: row, c: dateColIdx })]?.v ?? null;
+      const v1 = sheet[XLSX.utils.encode_cell({ r: row, c: descColIdx })]?.v ?? null;
+      const v2 = sheet[XLSX.utils.encode_cell({ r: row, c: amountColIdx })]?.v ?? null;
+      const v3 = sheet[XLSX.utils.encode_cell({ r: row, c: amountColIdx + 1 })]?.v ?? null;
+      const v4 = sheet[XLSX.utils.encode_cell({ r: row, c: currencyColIdx })]?.v ?? null;
+
+      const parsed = parseStorebrandRow5({
+        date: v0,
+        text: v1,
+        amount: v2,
+        balance: v3,
+        currency: v4,
+      });
+      if (!parsed) continue;
+
+      transactions.push({
+        tx_date: parsed.tx_date,
+        description: parsed.description,
+        amount: parsed.amount,
+        currency: parsed.currency,
+        raw_json: JSON.stringify({
+          source_hint: 'storebrand_5col',
+          col0: v0,
+          col1: v1,
+          col2: v2,
+          col3: v3,
+          col4: v4,
+        }),
+      });
+      continue;
+    }
+
+    // Generic parsing fallback (non-Storebrand headerless).
     const txDate = parseNorwegianDate(dateCell.v);
-    if (!txDate) {
-      console.log(`[XLSX Parser] Row ${row}: Invalid date value:`, dateCell.v);
-      continue;
-    }
+    if (!txDate) continue;
 
-    // Parse amount
     const amount = parseNorwegianAmount(amountCell.v);
-    if (amount === null || amount === 0) {
-      console.log(`[XLSX Parser] Row ${row}: Invalid amount value:`, amountCell.v);
-      continue;
-    }
+    if (amount === null || amount === 0) continue;
 
-    // Get description
     let descriptionStr = '';
     if (descColIdx >= 0) {
       const descCellRef = XLSX.utils.encode_cell({ r: row, c: descColIdx });
@@ -938,7 +1001,6 @@ function parseHeaderlessFile(
       descriptionStr = descCell ? String(descCell.v || '').trim() : '';
     }
 
-    // Get currency
     let currencyStr = 'NOK';
     if (currencyColIdx >= 0) {
       const currCellRef = XLSX.utils.encode_cell({ r: row, c: currencyColIdx });
@@ -946,10 +1008,7 @@ function parseHeaderlessFile(
       currencyStr = currCell ? String(currCell.v || 'NOK').trim() : 'NOK';
     }
 
-    // If no description, use a placeholder
-    if (!descriptionStr) {
-      descriptionStr = `Transaction ${txDate}`;
-    }
+    if (!descriptionStr) descriptionStr = `Transaction ${txDate}`;
 
     // Build raw JSON for debugging
     const rowData: Record<string, unknown> = {};

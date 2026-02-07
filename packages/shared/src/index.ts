@@ -12,3 +12,6 @@ export * from './hash';
 
 // Export helpers
 export * from './exports';
+
+// Storebrand XLSX helpers
+export * from './storebrand-xlsx';

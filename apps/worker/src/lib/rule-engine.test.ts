@@ -408,5 +408,22 @@ describe('Rule Engine', () => {
       const meta = db.getMeta(tx.id);
       expect(meta?.category_id).toBe('cat_food_groceries');
     });
+
+    it('categorizes based on description text even when merchant is empty (Storebrand style)', async () => {
+      const db = new MockD1();
+      const tx = createTransaction({ merchant: null, description: 'VISA VARE REMA 1000 SORENGA OSLO' });
+      const rules = [
+        createRule({
+          match_value: 'REMA',
+          action_value: 'cat_food_groceries',
+        }),
+      ];
+
+      const result = await applyRulesToTransaction(db as unknown as D1Database, tx, rules);
+
+      expect(result.updated).toBe(true);
+      const meta = db.getMeta(tx.id);
+      expect(meta?.category_id).toBe('cat_food_groceries');
+    });
   });
 });

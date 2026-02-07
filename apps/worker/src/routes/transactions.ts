@@ -1531,6 +1531,20 @@ transactions.post('/admin/diag-categories', async (c) => {
       `
     ).bind(from, to).first<{ categorized: number }>();
 
+    const topMerchantsRes = await c.env.DB.prepare(
+      `
+        SELECT
+          COALESCE(NULLIF(TRIM(t.merchant), ''), NULLIF(TRIM(t.description), ''), 'Unknown') as merchant,
+          COUNT(*) as count
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+        GROUP BY merchant
+        ORDER BY count DESC
+        LIMIT 10
+      `
+    ).bind(from, to).all<{ merchant: string; count: number }>();
+
     const terms = ['REMA', 'KIWI', 'COOP'];
     const likeParams: string[] = [];
     const likeClauses: string[] = [];
@@ -1575,9 +1589,10 @@ transactions.post('/admin/diag-categories', async (c) => {
       success: true,
       period: { from, to },
       counts: {
-        total: Number(totalRes?.total || 0),
-        categorized_active: Number(categorizedRes?.categorized || 0),
+        total_in_range: Number(totalRes?.total || 0),
+        categorized_in_range: Number(categorizedRes?.categorized || 0),
       },
+      top_merchants: topMerchantsRes.results || [],
       samples: sampleRes.results || [],
       note: 'category_id is stored in transaction_meta; this endpoint joins it directly from D1',
     });
