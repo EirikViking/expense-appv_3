@@ -236,6 +236,87 @@ async function fillDefaultExpenseCategoriesForFile(
   };
 }
 
+async function applyCategoryRulesSqlForFile(
+  db: D1Database,
+  fileHash: string,
+  defaultCategoryId: string
+): Promise<{ rules_considered: number; updates: number }> {
+  // Important: This is intentionally SQL-based to avoid Worker CPU/timeouts when files contain thousands of rows.
+  // It only supports string match types that can be expressed safely in SQL.
+  const enabledRules = await getEnabledRules(db);
+  const now = new Date().toISOString();
+
+  const eligible = enabledRules.filter(
+    (r) =>
+      r.enabled &&
+      r.action_type === 'set_category' &&
+      (r.match_type === 'contains' ||
+        r.match_type === 'starts_with' ||
+        r.match_type === 'ends_with' ||
+        r.match_type === 'exact') &&
+      (r.match_field === 'description' || r.match_field === 'merchant')
+  );
+
+  let updates = 0;
+  for (const rule of eligible) {
+    const raw = String(rule.match_value ?? '').trim();
+    if (!raw) continue;
+
+    const baseExpr = `LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, ''))`;
+    const descExpr = `LOWER(COALESCE(t.description, ''))`;
+    const merchExpr = `LOWER(COALESCE(t.merchant, ''))`;
+
+    const needle = raw.toLowerCase();
+
+    let condSql = '';
+    let condBinds: string[] = [];
+
+    if (rule.match_type === 'contains') {
+      const like = `%${needle}%`;
+      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
+      condBinds = [like, like, like];
+    } else if (rule.match_type === 'starts_with') {
+      const like = `${needle}%`;
+      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
+      condBinds = [like, like, like];
+    } else if (rule.match_type === 'ends_with') {
+      const like = `%${needle}`;
+      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
+      condBinds = [like, like, like];
+    } else if (rule.match_type === 'exact') {
+      condSql = `(${baseExpr} = ? OR ${descExpr} = ? OR ${merchExpr} = ?)`;
+      condBinds = [needle, needle, needle];
+    } else {
+      continue;
+    }
+
+    const res = await db
+      .prepare(
+        `
+          UPDATE transaction_meta
+          SET category_id = ?, updated_at = ?
+          WHERE (category_id IS NULL OR category_id = ?)
+            AND transaction_id IN (
+              SELECT t.id
+              FROM transactions t
+              WHERE t.source_file_hash = ?
+                AND COALESCE(t.is_excluded, 0) = 0
+                AND COALESCE(t.is_transfer, 0) = 0
+                AND t.flow_type != 'transfer'
+                AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+                AND ${condSql}
+            )
+        `
+      )
+      .bind(rule.action_value, now, defaultCategoryId, fileHash, ...condBinds)
+      .run();
+
+    updates += Number((res as any)?.meta?.changes || 0);
+  }
+
+  return { rules_considered: eligible.length, updates };
+}
+
 // Insert transaction
 async function insertTransaction(
   db: D1Database,
@@ -252,7 +333,7 @@ async function insertTransaction(
   rawJson: string,
   flowType: string,
   flags?: { is_excluded?: number; is_transfer?: number }
-): Promise<void> {
+): Promise<string> {
   const id = generateId();
   const now = new Date().toISOString();
 
@@ -281,6 +362,8 @@ async function insertTransaction(
       flags?.is_transfer ?? 0
     )
     .run();
+
+  return id;
 }
 
 // XLSX ingestion endpoint
@@ -307,8 +390,8 @@ ingest.post('/xlsx', async (c) => {
       // This is critical when historical ingests happened before rules/normalization fixes.
       let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
       try {
-        await applyRulesForFile(c.env.DB, file_hash);
         await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[XLSX Ingest] Reprocessed duplicate ${filename}: ` +
@@ -443,13 +526,12 @@ ingest.post('/xlsx', async (c) => {
     }
 
     let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
-    // If the user re-imports the same file after deleting metadata (or if only some rows were duplicates),
-    // we still want to re-apply rules + fill default categories for existing rows in that file hash.
+    // Apply categorization in SQL (fast, avoids Worker CPU timeouts on large files).
     if (inserted > 0 || skipped_duplicates > 0) {
       try {
-        await applyRulesForFile(c.env.DB, file_hash);
         // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
         await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[XLSX Ingest] Categorization counts for ${filename}: ` +
@@ -504,8 +586,8 @@ ingest.post('/pdf', async (c) => {
       // This is critical when historical ingests happened before rules/normalization fixes.
       let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
       try {
-        await applyRulesForFile(c.env.DB, file_hash);
         await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[PDF Ingest] Reprocessed duplicate ${filename}: ` +
@@ -659,9 +741,9 @@ ingest.post('/pdf', async (c) => {
     // Same as XLSX: even when all rows are transaction-level duplicates, re-apply rules for the file hash.
     if (inserted > 0 || skipped_duplicates > 0) {
       try {
-        await applyRulesForFile(c.env.DB, file_hash);
         // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
         await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[PDF Ingest] Categorization counts for ${filename}: ` +
