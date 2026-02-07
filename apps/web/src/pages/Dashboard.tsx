@@ -33,9 +33,11 @@ import {
   formatCompactCurrency,
   formatPercentage,
   formatDateShort,
+  formatDateLocal,
   getMonthRange,
   getPreviousMonthRange,
   getYearToDateRange,
+  cn,
 } from '@/lib/utils';
 import type {
   CategoryBreakdown,
@@ -58,6 +60,8 @@ export function DashboardPage() {
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
+  const [groceriesTrend, setGroceriesTrend] = useState<TimeSeriesPoint[]>([]);
+  const [groceriesTrendMonths, setGroceriesTrendMonths] = useState<3 | 6 | 12>(12);
   // Default ON: this is the main value of the dashboard for most users.
   const [showCategoryDetails, setShowCategoryDetails] = useState(true);
 
@@ -76,6 +80,14 @@ export function DashboardPage() {
     const v = searchParams.get('include_transfers');
     return !(v === '1' || v === 'true');
   })();
+
+  const trailingMonthsRange = (months: number) => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    const date_from = formatDateLocal(start);
+    const date_to = formatDateLocal(now);
+    return { date_from, date_to };
+  };
 
   const updateSearch = (fn: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(searchParams);
@@ -118,7 +130,7 @@ export function DashboardPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const [overviewRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes] =
+        const [overviewRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes, groceriesTrendRes] =
           await Promise.all([
             api.getAnalyticsOverview({
               date_from: dateFrom,
@@ -153,6 +165,13 @@ export function DashboardPage() {
               status: statusFilter || undefined,
               include_transfers: !excludeTransfers,
             }),
+            api.getAnalyticsTimeseries({
+              ...trailingMonthsRange(groceriesTrendMonths),
+              status: statusFilter || undefined,
+              granularity: 'month',
+              include_transfers: false,
+              category_id: CATEGORY_IDS.groceries,
+            }),
           ]);
 
         setOverview(overviewRes);
@@ -160,6 +179,7 @@ export function DashboardPage() {
         setMerchants(merchantsRes.merchants);
         setTimeseries(timeseriesRes.series);
         setAnomalies(anomaliesRes.anomalies.slice(0, 5));
+        setGroceriesTrend(groceriesTrendRes.series);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       } finally {
@@ -168,7 +188,7 @@ export function DashboardPage() {
     }
 
     loadData();
-  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter]);
+  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, groceriesTrendMonths]);
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
@@ -180,6 +200,14 @@ export function DashboardPage() {
 
   const groceries = categories.find((c) => c.category_id === CATEGORY_IDS.groceries) || null;
   const groceriesSpend = groceries ? Math.abs(groceries.total) : 0;
+
+  const formatYearMonth = (ym: string) => {
+    if (!/^\d{4}-\d{2}$/.test(ym)) return ym;
+    const [y, m] = ym.split('-').map(Number);
+    const d = new Date(y, (m || 1) - 1, 1);
+    // Keep it short and locale-aware (nb-NO will render Norwegian month names).
+    return d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
+  };
 
   if (loading) {
     return (
@@ -594,6 +622,67 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Groceries trend */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle>{t('dashboard.groceriesMonthlyTrend')}</CardTitle>
+            <div className="flex items-center gap-2">
+              {[3, 6, 12].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setGroceriesTrendMonths(m as 3 | 6 | 12)}
+                  className={cn(
+                    'px-2 py-1 rounded text-xs font-medium border',
+                    groceriesTrendMonths === m
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-transparent text-gray-700 border-gray-200 hover:bg-gray-50 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800'
+                  )}
+                >
+                  {m === 3 ? t('dashboard.last3Months') : m === 6 ? t('dashboard.last6Months') : t('dashboard.last12Months')}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">{t('dashboard.groceriesMonthlyTrendHint')}</p>
+        </CardHeader>
+        <CardContent>
+          {groceriesTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <LineChart
+                data={groceriesTrend.map((p) => ({ month: p.date, spend: p.expenses, count: p.count }))}
+              >
+                <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                <XAxis dataKey="month" tickFormatter={formatYearMonth} className="text-xs" />
+                <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
+                <Tooltip
+                  formatter={(value) => formatCurrency(Number(value))}
+                  labelFormatter={formatYearMonth}
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="spend"
+                  stroke="#f87171"
+                  strokeWidth={2}
+                  dot={false}
+                  name={t('dashboard.groceries')}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-[260px] items-center justify-center text-gray-500">
+              {t('dashboard.noGroceriesData')}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Bottom row */}
       <div className="grid gap-4 md:grid-cols-2">

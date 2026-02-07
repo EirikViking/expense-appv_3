@@ -79,6 +79,13 @@
     "noMerchantData": "Ingen kjøpmannsdata",
     "groceriesSpend": "Dagligvarer",
     "groceriesDrilldownHint": "Ett klikk til transaksjoner",
+    "groceries": "Dagligvarer",
+    "groceriesMonthlyTrend": "Dagligvarer måned for måned",
+    "groceriesMonthlyTrendHint": "Følg utviklingen i dagligvarer per måned.",
+    "last3Months": "Siste 3 måneder",
+    "last6Months": "Siste 6 måneder",
+    "last12Months": "Siste 12 måneder",
+    "noGroceriesData": "Ingen dagligvaredata",
     "transactionsOnDate": "Transaksjoner: {{date}}"
   },
   "transactions": {

@@ -78,7 +78,14 @@
     "noDataForPeriod": "No data for this period",
     "noMerchantData": "No merchant data",
     "groceriesSpend": "Groceries spend",
-    "groceriesDrilldownHint": "One click drilldown to transactions"
+    "groceriesDrilldownHint": "One click drilldown to transactions",
+    "groceries": "Groceries",
+    "groceriesMonthlyTrend": "Groceries month-by-month",
+    "groceriesMonthlyTrendHint": "Track your groceries spending per month.",
+    "last3Months": "Last 3 months",
+    "last6Months": "Last 6 months",
+    "last12Months": "Last 12 months",
+    "noGroceriesData": "No groceries data"
     ,
     "transactionsOnDate": "Transactions: {{date}}"
   },
