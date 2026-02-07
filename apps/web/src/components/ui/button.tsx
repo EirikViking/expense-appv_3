@@ -14,18 +14,18 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(
-          'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-400 disabled:pointer-events-none disabled:opacity-50',
+          'inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:pointer-events-none disabled:opacity-50',
           {
-            'bg-gray-900 text-gray-50 shadow hover:bg-gray-800 dark:bg-gray-50 dark:text-gray-900 dark:hover:bg-gray-200':
+            'bg-gradient-to-br from-cyan-300 via-fuchsia-400 to-amber-300 text-black shadow-lg shadow-fuchsia-500/20 hover:brightness-110 active:brightness-95':
               variant === 'default',
-            'bg-red-500 text-gray-50 shadow-sm hover:bg-red-600 dark:bg-red-900 dark:hover:bg-red-800':
+            'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg shadow-rose-600/20 hover:brightness-110 active:brightness-95':
               variant === 'destructive',
-            'border border-gray-200 bg-white shadow-sm hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-950 dark:hover:bg-gray-800':
+            'border border-white/15 bg-white/5 text-white shadow-sm hover:bg-white/10':
               variant === 'outline',
-            'bg-gray-100 text-gray-900 shadow-sm hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-50 dark:hover:bg-gray-700':
+            'bg-white/10 text-white shadow-sm hover:bg-white/15':
               variant === 'secondary',
-            'hover:bg-gray-100 dark:hover:bg-gray-800': variant === 'ghost',
-            'text-gray-900 underline-offset-4 hover:underline dark:text-gray-50': variant === 'link',
+            'hover:bg-white/10 text-white/80 hover:text-white': variant === 'ghost',
+            'text-white underline-offset-4 hover:underline': variant === 'link',
           },
           {
             'h-9 px-4 py-2': size === 'default',

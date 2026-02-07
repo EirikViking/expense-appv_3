@@ -19,6 +19,7 @@ import { getVersionString, getApiBaseUrl } from '@/lib/version';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { Atmosphere } from '@/components/Atmosphere';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -48,7 +49,8 @@ export function Layout({ children }: LayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+    <div className="min-h-screen flex flex-col">
+      <Atmosphere />
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -60,24 +62,24 @@ export function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 transform bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-transform duration-200 ease-in-out lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 w-64 transform glass border-r border-white/10 transition-transform duration-200 ease-in-out lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-16 items-center justify-between px-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex h-16 items-center justify-between px-4 border-b border-white/10">
           <Link to="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 via-fuchsia-400 to-amber-300 text-black font-extrabold shadow-lg shadow-fuchsia-500/20">
               E
             </div>
-            <span className="text-lg font-semibold text-gray-900 dark:text-white">
+            <span className="text-lg font-semibold text-white text-display">
               {t('appName')}
             </span>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="lg:hidden p-1 rounded-md hover:bg-white/10"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-white/70" />
           </button>
         </div>
 
@@ -95,8 +97,8 @@ export function Layout({ children }: LayoutProps) {
                     className={cn(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                       active
-                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400'
-                        : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
+                        ? 'bg-white/10 text-white'
+                        : 'text-white/75 hover:bg-white/10 hover:text-white'
                     )}
                   >
                     <Icon className="h-5 w-5" />
@@ -106,14 +108,14 @@ export function Layout({ children }: LayoutProps) {
               })}
             </div>
 
-            <div className="px-3 py-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="px-3 py-4 border-t border-white/10">
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-500">{t('lang.language')}</span>
+                <span className="text-xs font-medium text-white/60">{t('lang.language')}</span>
                 <LanguageSwitcher compact />
               </div>
               <button
                 onClick={() => logout()}
-                className="flex w-full items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 transition-colors"
+                className="flex w-full items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <LogOut className="h-5 w-5" />
                 {t('common.logout')}
@@ -126,14 +128,14 @@ export function Layout({ children }: LayoutProps) {
       {/* Main content */}
       <div className="lg:pl-64 flex-1 flex flex-col">
         {/* Mobile header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-4 lg:hidden">
+        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-white/10 glass px-4 lg:hidden">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="p-2 rounded-md hover:bg-white/10"
           >
-            <Menu className="h-5 w-5 text-gray-500" />
+            <Menu className="h-5 w-5 text-white/80" />
           </button>
-          <span className="text-lg font-semibold text-gray-900 dark:text-white">
+          <span className="text-lg font-semibold text-white text-display">
             {t('appName')}
           </span>
           <div className="ml-auto">
@@ -148,11 +150,11 @@ export function Layout({ children }: LayoutProps) {
         </main>
 
         {/* Version Footer */}
-        <footer className="border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 py-3 px-4 text-center">
-          <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+        <footer className="border-t border-white/10 glass py-3 px-4 text-center">
+          <div className="text-xs text-white/60 space-y-1">
             <p>{getVersionString()}</p>
             <p className="truncate" title={getApiBaseUrl()}>
-              API: <code className="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">{getApiBaseUrl() || '(proxy)'}</code>
+              API: <code className="bg-white/10 px-1 py-0.5 rounded">{getApiBaseUrl() || '(proxy)'}</code>
             </p>
           </div>
         </footer>

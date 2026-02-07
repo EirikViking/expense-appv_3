@@ -6,7 +6,8 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
     <div
       ref={ref}
       className={cn(
-        'rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-950',
+        // Default: glassy, colorful, slightly 3D on hover (but still readable).
+        'glass card-3d rounded-2xl shadow-[0_18px_50px_rgba(0,0,0,0.35)] transition-transform duration-200 ease-out hover:-translate-y-0.5 hover:[transform:perspective(900px)_rotateX(1.5deg)_rotateY(-1.5deg)]',
         className
       )}
       {...props}
