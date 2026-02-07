@@ -375,6 +375,25 @@ analytics.get('/by-merchant', async (c) => {
         END
       )
     `;
+    const token1Expr = `
+      CASE
+        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
+        ELSE SUBSTR(${cleanedExpr}, 1, INSTR(${cleanedExpr}, ' ') - 1)
+      END
+    `;
+    const restExpr = `
+      CASE
+        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ''
+        ELSE SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1)
+      END
+    `;
+    const token2Expr = `
+      CASE
+        WHEN ${restExpr} = '' THEN ''
+        WHEN INSTR(${restExpr}, ' ') = 0 THEN ${restExpr}
+        ELSE SUBSTR(${restExpr}, 1, INSTR(${restExpr}, ' ') - 1)
+      END
+    `;
     const twoTokensExpr = `
       CASE
         WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
@@ -386,10 +405,21 @@ analytics.get('/by-merchant', async (c) => {
         )
       END
     `;
+    // If the second token is purely numeric (e.g. "KIWI 505", "REMA 1000"), group by the chain name (first token).
+    // This makes "Top merchants" reflect the store chain rather than store-number variants.
+    const groupKeyExpr = `
+      CASE
+        WHEN ${token2Expr} != ''
+          AND ${token2Expr} GLOB '[0-9]*'
+          AND ${token2Expr} NOT GLOB '*[^0-9]*'
+          THEN ${token1Expr}
+        ELSE ${twoTokensExpr}
+      END
+    `;
     const merchantNameExpr = `
       CASE
         WHEN m.id IS NOT NULL AND COALESCE(NULLIF(TRIM(m.canonical_name), ''), '') != '' THEN TRIM(m.canonical_name)
-        ELSE TRIM(${twoTokensExpr})
+        ELSE TRIM(${groupKeyExpr})
       END
     `;
 
