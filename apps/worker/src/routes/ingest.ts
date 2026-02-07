@@ -443,7 +443,9 @@ ingest.post('/xlsx', async (c) => {
     }
 
     let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
-    if (inserted > 0) {
+    // If the user re-imports the same file after deleting metadata (or if only some rows were duplicates),
+    // we still want to re-apply rules + fill default categories for existing rows in that file hash.
+    if (inserted > 0 || skipped_duplicates > 0) {
       try {
         await applyRulesForFile(c.env.DB, file_hash);
         // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
@@ -498,13 +500,32 @@ ingest.post('/pdf', async (c) => {
     // Check file-level duplicate
     const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
     if (isFileDuplicate) {
+      // Even when the *file* is a duplicate, we still want to be able to re-run categorization.
+      // This is critical when historical ingests happened before rules/normalization fixes.
+      let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
+      try {
+        await applyRulesForFile(c.env.DB, file_hash);
+        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        console.log(
+          `[PDF Ingest] Reprocessed duplicate ${filename}: ` +
+            JSON.stringify(categorization_counts)
+        );
+      } catch (error) {
+        console.error('Apply rules error (pdf duplicate reprocess):', error);
+      }
+
       const response: IngestResponse = {
         inserted: 0,
         skipped_duplicates: 0,
         skipped_invalid: 0,
         file_duplicate: true,
       };
-      return c.json(response);
+
+      return c.json({
+        ...response,
+        ...(categorization_counts ? { categorization_counts } : {}),
+      });
     }
 
     // Parse PDF text into transactions
@@ -635,9 +656,12 @@ ingest.post('/pdf', async (c) => {
     }
 
     let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
-    if (inserted > 0) {
+    // Same as XLSX: even when all rows are transaction-level duplicates, re-apply rules for the file hash.
+    if (inserted > 0 || skipped_duplicates > 0) {
       try {
         await applyRulesForFile(c.env.DB, file_hash);
+        // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
+        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[PDF Ingest] Categorization counts for ${filename}: ` +
