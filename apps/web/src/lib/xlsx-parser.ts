@@ -252,12 +252,50 @@ function deriveMerchantFromSpesifikasjon(description: string): string | undefine
   if (/\bSPAR\b/.test(upper)) return 'SPAR';
   if (/\bJOKER\b/.test(upper)) return 'JOKER';
 
+  // Common merchants from nettbank exports
+  if (/\bSATS\b/.test(upper)) return 'SATS';
+  if (/\bANTHROPIC\b/.test(upper)) return 'ANTHROPIC';
+  if (/\bCLAUDE\.AI\b/.test(upper)) return 'CLAUDE.AI';
+  if (/\bOPENROUTER\b/.test(upper)) return 'OPENROUTER';
+  if (/\bREPLIT\b/.test(upper)) return 'REPLIT';
+  if (/\bPAYPAL\b/.test(upper)) return 'PAYPAL';
+  if (/\bFLYTOGET\b/.test(upper)) return 'FLYTOGET';
+  if (/\bLOVABLE\b/.test(upper)) return 'LOVABLE';
+  if (/\bGOOGLE\s+PLAY\b/.test(upper)) return 'GOOGLE PLAY';
+  if (/\bAPPLE\.COM\b/.test(upper)) return 'APPLE';
+  if (/\bTV\s*2\b/.test(upper)) return 'TV 2';
+
+  // Vipps transactions - extract merchant after "Vipps*"
+  const vippsMatch = s.match(/Vipps\*([^\s]+(?:\s+[^\s]+)?)/i);
+  if (vippsMatch) {
+    return vippsMatch[1].toUpperCase();
+  }
+
+  // Varekjøp - extract merchant name
+  const varekjopMatch = s.match(/Varekjøp\s+([A-ZÆØÅ0-9]+(?:\s+[A-ZÆØÅ0-9]+)?)/i);
+  if (varekjopMatch) {
+    const merchantName = varekjopMatch[1].toUpperCase();
+    // Map common abbreviations
+    if (merchantName.includes('REMA')) return 'REMA 1000';
+    if (merchantName.includes('KIWI')) return 'KIWI';
+    return merchantName;
+  }
+
+  // Strip "Notanr" suffix (common in Norwegian bank exports)
+  let cleaned = s.replace(/\s+Notanr\s+\d+$/i, '').trim();
+
   // Strip common prefixes from bank exports.
-  const stripped = s
-    .replace(/^(VISA|BANKAXEPT|BANKAXEPT\/VISA|KORTKJØP|KORTKJOP|KJØP|KJOP)\s+/i, '')
+  cleaned = cleaned
+    .replace(/^(VISA|BANKAXEPT|BANKAXEPT\/VISA|KORTKJØP|KORTKJOP|KJØP|KJOP|VISA\s+VARE)\s+/i, '')
     .trim();
 
-  const tokens = stripped.split(' ').filter(Boolean);
+  // Strip currency and exchange rate info (e.g., "USD 5,80 Kurs 986,72")
+  cleaned = cleaned.replace(/\s+(USD|EUR|GBP|SEK|DKK)\s+[\d,]+\s+Kurs\s+[\d,]+.*$/i, '').trim();
+
+  // Strip card number patterns (e.g., "427279XXXXXX6829 02.02  0,00")
+  cleaned = cleaned.replace(/\s+\d+X+\d+\s+.*$/i, '').trim();
+
+  const tokens = cleaned.split(' ').filter(Boolean);
   if (tokens.length === 0) return undefined;
 
   // If we have a common "NAME 1234 ..." pattern, keep the first two tokens.
@@ -1063,8 +1101,8 @@ function parseFileWithHeaders(
     const currency = mapping.currencyCol ? row[mapping.currencyCol] : row[XLSX_COLUMNS.CURRENCY];
     const merchant =
       mapping.merchantCol &&
-      normalizeHeaderValue(mapping.merchantCol) !== 'sted' &&
-      normalizeHeaderValue(mapping.merchantCol) !== 'location'
+        normalizeHeaderValue(mapping.merchantCol) !== 'sted' &&
+        normalizeHeaderValue(mapping.merchantCol) !== 'location'
         ? row[mapping.merchantCol]
         : undefined;
 

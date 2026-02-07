@@ -10,6 +10,17 @@ const TRANSFER_PATTERNS: RegExp[] = [
   /\bmellom\s+egne\s+konti\b/i,
   /\binnskudd\b/i,
   /\butbetaling\s+til\s+egen\s+konto\b/i,
+  /\bbetaling\s+av\s+kredittkort/i,
+  /\bkredittkortregning\b/i,
+  /\bfelleskonto\b/i,
+  /\bgebyr\s+overført\b/i,
+
+  // Transfers to people (common Norwegian names pattern)
+  /^til\s+[A-ZÆØÅ][a-zæøå]+$/i,  // "Til Anja", "Til Per", etc.
+
+  // Account number patterns (Norwegian format: XXXX.XX.XXXXX)
+  /\b\d{4,5}\.\d{2}\.\d{5}\b/,
+  /\b\d{10,11}\b/,  // Account numbers without dots
 
   // English
   /\btransfer\b/i,
