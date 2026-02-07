@@ -20,6 +20,7 @@ import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Atmosphere } from '@/components/Atmosphere';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -113,6 +114,10 @@ export function Layout({ children }: LayoutProps) {
                 <span className="text-xs font-medium text-white/60">{t('lang.language')}</span>
                 <LanguageSwitcher compact />
               </div>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium text-white/60">{t('theme.label')}</span>
+                <ThemeSwitcher compact />
+              </div>
               <button
                 onClick={() => logout()}
                 className="flex w-full items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-white/75 hover:bg-white/10 hover:text-white transition-colors"
@@ -139,7 +144,10 @@ export function Layout({ children }: LayoutProps) {
             {t('appName')}
           </span>
           <div className="ml-auto">
-            <LanguageSwitcher compact />
+            <div className="flex items-center gap-2">
+              <ThemeSwitcher compact />
+              <LanguageSwitcher compact />
+            </div>
           </div>
         </header>
 

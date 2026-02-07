@@ -146,6 +146,12 @@
       "amountInvalid": "Amount must be a valid number"
     }
   },
+  "theme": {
+    "label": "Theme",
+    "toggle": "Toggle theme",
+    "day": "Day mode",
+    "night": "Night mode"
+  },
   "lang": {
     "language": "Language",
     "english": "English",

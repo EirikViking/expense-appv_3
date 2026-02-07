@@ -1,4 +1,4 @@
-﻿{
+{
   "appName": "Utgiftsanalyse",
   "nav": {
     "dashboard": "Dashbord",
@@ -144,6 +144,12 @@
       "descriptionRequired": "Beskrivelse er påkrevd",
       "amountInvalid": "Beløp må være et gyldig tall"
     }
+  },
+  "theme": {
+    "label": "Tema",
+    "toggle": "Bytt tema",
+    "day": "Dagmodus",
+    "night": "Nattmodus"
   },
   "lang": {
     "language": "Språk",

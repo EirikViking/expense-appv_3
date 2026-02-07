@@ -1,756 +1,418 @@
-import { useState, useEffect } from 'react';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  Legend,
-  AreaChart,
-  Area,
-} from 'recharts';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import type {
-  AnalyticsSummary,
-  CategoryBreakdown,
-  MerchantBreakdown,
-  TimeSeriesPoint,
-  RecurringItem,
-  AnalyticsCompareResponse,
-  FlowType,
-  TransactionStatus,
-} from '@expense/shared';
+import type { AnalyticsSummary, CategoryBreakdown, MerchantBreakdown, RecurringItem } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
-import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
-import {
-  formatCurrency,
-  formatCompactCurrency,
-  formatDateShort,
-  formatDateLocal,
-  getMonthRange,
-  getPreviousMonthRange,
-  cn,
-} from '@/lib/utils';
-import {
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  RefreshCw,
-  CreditCard,
-  ArrowUpRight,
-  ArrowDownRight,
-  ChevronRight,
-} from 'lucide-react';
-import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/lib/utils';
+import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
+type Lang = 'en' | 'nb';
+
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
+
+function pick<T>(arr: T[], seed: number): T {
+  const idx = Math.abs(seed) % Math.max(1, arr.length);
+  return arr[idx] ?? arr[0]!;
+}
+
+function hashString(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h | 0;
+}
+
+function getLang(resolved: string | undefined): Lang {
+  return resolved === 'nb' ? 'nb' : 'en';
+}
+
+function fmtPct(p: number): string {
+  return `${Math.round(p * 100)}%`;
+}
+
+function getTopCategory(categories: CategoryBreakdown[]) {
+  const c = [...categories].sort((a, b) => (b.total || 0) - (a.total || 0))[0];
+  return c ? { id: c.category_id, name: c.category_name || 'Uncategorized', total: c.total || 0 } : null;
+}
+
+function getTopMerchant(merchants: MerchantBreakdown[]) {
+  const m = [...merchants].sort((a, b) => (b.total || 0) - (a.total || 0))[0];
+  return m ? { name: m.merchant_name || 'Unknown', total: m.total || 0, count: m.count || 0 } : null;
+}
+
+function makeHubCards(opts: {
+  lang: Lang;
+  seed: number;
+  summary: AnalyticsSummary | null;
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  subscriptions: RecurringItem[];
+}) {
+  const { lang, seed, summary, categories, merchants, subscriptions } = opts;
+  const expenses = summary?.expenses ?? 0;
+  const income = summary?.income ?? 0;
+  const net = summary?.net_spend ?? 0;
+
+  const topCat = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+
+  const groceries = categories.find((c) => c.category_id === 'cat_food_groceries');
+  const groceriesShare = expenses > 0 ? clamp01((groceries?.total ?? 0) / expenses) : 0;
+
+  const copy = {
+    nb: {
+      title: 'Innsikt: AI-hub',
+      subtitle: 'Et lite underholdningssenter for forbruket ditt. Delvis klokt. Delvis kaos.',
+      fortuneTitle: 'Forbruks-horoskop',
+      patternsTitle: 'Mønster-radar',
+      dramaTitle: 'Dagens drama',
+      subsTitle: 'Abonnements-gremlins',
+      refresh: 'Nytt påfunn',
+      customRange: 'Egendefinert periode',
+      applyRange: 'Bruk periode',
+      cancel: 'Avbryt',
+      from: 'Fra',
+      to: 'Til',
+      ok: 'OK',
+    },
+    en: {
+      title: 'Insights: AI hub',
+      subtitle: 'A tiny entertainment center for your spending. Part wise. Part chaos.',
+      fortuneTitle: 'Spending horoscope',
+      patternsTitle: 'Pattern radar',
+      dramaTitle: 'Today’s drama',
+      subsTitle: 'Subscription gremlins',
+      refresh: 'New nonsense',
+      customRange: 'Custom range',
+      applyRange: 'Apply range',
+      cancel: 'Cancel',
+      from: 'From',
+      to: 'To',
+      ok: 'OK',
+    },
+  }[lang];
+
+  const fortuneTemplates =
+    lang === 'nb'
+      ? [
+          `Stjernene sier: netto forbruk er ${formatCompactCurrency(net)}. Du kan fortsatt skylde på “inflasjon”.`,
+          `Dagens spådom: ${topCat ? `${topCat.name} prøver å bli en livsstil` : 'kategoriene er i skjul'}.`,
+          `Orakelet ser en sterk energi rundt ${topMerchant ? topMerchant.name : 'ukjente kjøpmenn'}… og den energien koster penger.`,
+          groceriesShare > 0.22
+            ? `Dagligvarer tar ${fmtPct(groceriesShare)} av utgiftene. Du lever enten sunt eller veldig optimistisk.`
+            : `Dagligvarer er ${fmtPct(groceriesShare)} av utgiftene. Enten er du effektiv, eller så spiser du minner.`,
+        ]
+      : [
+          `The stars say: net spend is ${formatCompactCurrency(net)}. You may still blame “inflation”.`,
+          `Today’s prophecy: ${topCat ? `${topCat.name} is trying to become a lifestyle` : 'your categories are hiding'}.`,
+          `The oracle sees a strong aura around ${topMerchant ? topMerchant.name : 'unknown merchants'}… and that aura is expensive.`,
+          groceriesShare > 0.22
+            ? `Groceries are ${fmtPct(groceriesShare)} of expenses. Either very healthy or very hopeful.`
+            : `Groceries are ${fmtPct(groceriesShare)} of expenses. Either efficient or living on vibes.`,
+        ];
+
+  const dramaTemplates =
+    lang === 'nb'
+      ? [
+          topMerchant
+            ? `${topMerchant.name} dukker opp ${topMerchant.count} ganger. Dette er ikke et mønster. Dette er en saga.`
+            : `En mystisk kjøpmann har gjort et innhogg i økonomien. Identiteten er ukjent, men intensiteten er ekte.`,
+          subscriptions.length > 0
+            ? `Du har ${subscriptions.length} abonnement(er). Små beløp som samarbeider i hemmelighet.`
+            : `Ingen abonnementer oppdaget. Enten er du fri… eller så er de forkledd.`,
+          income > 0 && expenses > 0
+            ? `Inntekt eksisterer. Utgifter eksisterer. Balansen? Vi ser den ikke akkurat nå.`
+            : `Dagens drama: “Tall”. De kommer i mange former.`,
+        ]
+      : [
+          topMerchant
+            ? `${topMerchant.name} shows up ${topMerchant.count} times. This is not a pattern. This is a saga.`
+            : `A mysterious merchant has made a dent. Identity unknown, intensity real.`,
+          subscriptions.length > 0
+            ? `You have ${subscriptions.length} subscription(s). Small numbers collaborating in secret.`
+            : `No subscriptions detected. Either you’re free… or they’re disguised.`,
+          income > 0 && expenses > 0
+            ? `Income exists. Expenses exist. Balance? We’re searching.`
+            : `Today’s drama: “numbers”. They come in many shapes.`,
+        ];
+
+  const patterns: Array<{ label: string; value?: string; tone?: 'good' | 'warn' | 'info' }> = [];
+  if (topCat) patterns.push({ label: lang === 'nb' ? 'Største kategori' : 'Top category', value: `${topCat.name} • ${formatCompactCurrency(topCat.total)}`, tone: 'info' });
+  if (topMerchant) patterns.push({ label: lang === 'nb' ? 'Største kjøpmann' : 'Top merchant', value: `${topMerchant.name} • ${formatCompactCurrency(topMerchant.total)}`, tone: 'info' });
+  if (expenses > 0) patterns.push({ label: lang === 'nb' ? 'Dagligvarer-andel' : 'Groceries share', value: fmtPct(groceriesShare), tone: groceriesShare > 0.25 ? 'warn' : 'good' });
+  patterns.push({ label: lang === 'nb' ? 'Utgifter' : 'Expenses', value: formatCompactCurrency(expenses), tone: 'info' });
+  patterns.push({ label: lang === 'nb' ? 'Inntekter' : 'Income', value: formatCompactCurrency(income), tone: 'info' });
+
+  return {
+    copy,
+    fortune: pick(fortuneTemplates, seed),
+    drama: pick(dramaTemplates, seed + 7),
+    patterns,
+  };
+}
 
 export function InsightsPage() {
-  const { showBudgets } = useFeatureFlags();
+  const { i18n } = useTranslation();
+  const lang = getLang(i18n.resolvedLanguage);
+
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
-  const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [subscriptions, setSubscriptions] = useState<RecurringItem[]>([]);
-  const [comparison, setComparison] = useState<AnalyticsCompareResponse | null>(null);
-  const [showCategoryDetails, setShowCategoryDetails] = useState(false);
 
-  // Date range selection
   const [dateFrom, setDateFrom] = useState(getMonthRange().start);
   const [dateTo, setDateTo] = useState(getMonthRange().end);
-  const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
   const [showCustomRange, setShowCustomRange] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
 
-  // Drilldown dialog state
-  const [drilldownOpen, setDrilldownOpen] = useState(false);
-  const [drilldownTitle, setDrilldownTitle] = useState('');
-  const [drilldownSubtitle, setDrilldownSubtitle] = useState('');
-  const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
-  const [drilldownCategoryId, setDrilldownCategoryId] = useState<string | undefined>();
-  const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
-  const [drilldownFlowType, setDrilldownFlowType] = useState<FlowType | undefined>();
-  const [drilldownMinAmount, setDrilldownMinAmount] = useState<number | undefined>();
-  const [drilldownMaxAmount, setDrilldownMaxAmount] = useState<number | undefined>();
-
-  const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, flowType?: FlowType } = {}) => {
-    setDrilldownTitle(title);
-    setDrilldownSubtitle(`${dateFrom} - ${dateTo}`);
-    setDrilldownStatus(opts.status);
-    setDrilldownFlowType(opts.flowType);
-    setDrilldownMinAmount(undefined);
-    setDrilldownMaxAmount(undefined);
-    setDrilldownMerchantId(undefined);
-    setDrilldownMerchantName(undefined);
-    setDrilldownCategoryId(undefined);
-    setDrilldownOpen(true);
-  };
+  const [seed, setSeed] = useState(0);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const prevRange = getPreviousMonthRange();
-
-      const endpointNames = ['summary', 'by-category', 'by-merchant', 'timeseries', 'subscriptions', 'compare'];
-
       const results = await Promise.allSettled([
         api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
         api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
-        api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 10 }),
-        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity }),
+        api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 }),
         api.getAnalyticsSubscriptions(),
-        api.getAnalyticsCompare({
-          previous_start: prevRange.start,
-          previous_end: prevRange.end,
-          current_start: dateFrom,
-          current_end: dateTo,
-        }),
       ]);
 
-      const [summaryRes, categoriesRes, merchantsRes, timeseriesRes, subsRes, compareRes] = results;
-
-      if (import.meta.env.DEV) {
-        console.debug('[Insights] summary status:', summaryRes.status);
-        console.debug('[Insights] compare status:', compareRes.status);
-      }
-
-      // Set state only for fulfilled results, normalizing response shapes
-      if (summaryRes.status === 'fulfilled') {
-        // Handle both { summary: obj } and direct obj response shapes
-        const raw = summaryRes.value as any;
-        const normalized = raw?.summary ?? raw;
-        setSummary(normalized);
-      }
-      if (categoriesRes.status === 'fulfilled') {
-        const cats = (categoriesRes.value as any)?.categories;
-        setCategories(Array.isArray(cats) ? cats : []);
-      }
-      if (merchantsRes.status === 'fulfilled') {
-        const merchs = (merchantsRes.value as any)?.merchants;
-        setMerchants(Array.isArray(merchs) ? merchs : []);
-      }
-      if (timeseriesRes.status === 'fulfilled') {
-        const series = (timeseriesRes.value as any)?.series;
-        setTimeseries(Array.isArray(series) ? series : []);
-      }
-      if (subsRes.status === 'fulfilled') {
-        const subs = (subsRes.value as any)?.subscriptions;
-        setSubscriptions(Array.isArray(subs) ? subs : []);
-      }
-      if (compareRes.status === 'fulfilled') {
-        setComparison(compareRes.value);
-      }
-
-      // Log failed endpoints (non-blocking)
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          console.error(
-            `[Insights] /analytics/${endpointNames[index]} failed:`,
-            result.reason?.message || result.reason
-          );
-        }
-      });
-    } catch (err) {
-      console.error('Failed to load insights:', err);
+      const [summaryRes, byCatRes, byMerchRes, subsRes] = results;
+      if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
+      if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value);
+      if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value);
+      if (subsRes.status === 'fulfilled') setSubscriptions(subsRes.value);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData();
-  }, [dateFrom, dateTo, granularity]);
+    void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
-  const setPresetRange = (preset: 'thisMonth' | 'lastMonth' | 'last3Months' | 'thisYear') => {
-    const now = new Date();
-    let start: string, end: string;
+  const hub = useMemo(() => {
+    const baseSeed = hashString(`${dateFrom}|${dateTo}|${summary?.expenses ?? 0}|${seed}`);
+    return makeHubCards({ lang, seed: baseSeed, summary, categories, merchants, subscriptions });
+  }, [lang, dateFrom, dateTo, summary, categories, merchants, subscriptions, seed]);
 
-    switch (preset) {
-      case 'thisMonth':
-        ({ start, end } = getMonthRange());
-        setGranularity('day');
-        break;
-      case 'lastMonth':
-        ({ start, end } = getPreviousMonthRange());
-        setGranularity('day');
-        break;
-      case 'last3Months':
-        start = formatDateLocal(new Date(now.getFullYear(), now.getMonth() - 2, 1));
-        end = formatDateLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-        setGranularity('week');
-        break;
-      case 'thisYear':
-        start = `${now.getFullYear()}-01-01`;
-        end = `${now.getFullYear()}-12-31`;
-        setGranularity('month');
-        break;
-    }
-
-    setDateFrom(start!);
-    setDateTo(end!);
+  const applyCustomRange = () => {
+    if (!customDateFrom || !customDateTo) return;
+    setDateFrom(customDateFrom);
+    setDateTo(customDateTo);
     setShowCustomRange(false);
   };
 
-  const applyCustomRange = () => {
-    if (customDateFrom && customDateTo) {
-      setDateFrom(customDateFrom);
-      setDateTo(customDateTo);
-      setShowCustomRange(false);
-      // Auto-select granularity based on range
-      const days = Math.ceil((new Date(customDateTo).getTime() - new Date(customDateFrom).getTime()) / (1000 * 60 * 60 * 24));
-      if (days > 90) {
-        setGranularity('month');
-      } else if (days > 31) {
-        setGranularity('week');
-      } else {
-        setGranularity('day');
-      }
-    }
-  };
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-display">{hub.copy.title}</h1>
+          <p className="mt-1 text-sm text-white/70">{hub.copy.subtitle}</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setSeed((s) => s + 1)}
+          className="gap-2"
+          title={hub.copy.refresh}
+        >
+          <Wand2 className="h-4 w-4" />
+          {hub.copy.refresh}
+        </Button>
+      </div>
 
-  const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const r = getMonthRange();
+                setDateFrom(r.start);
+                setDateTo(r.end);
+              }}
+              className="gap-2"
+            >
+              <Calendar className="h-4 w-4" />
+              {lang === 'nb' ? 'Denne måneden' : 'This month'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const r = getPreviousMonthRange();
+                setDateFrom(r.start);
+                setDateTo(r.end);
+              }}
+              className="gap-2"
+            >
+              <RefreshCw className="h-4 w-4" />
+              {lang === 'nb' ? 'Forrige måned' : 'Last month'}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCustomRange((v) => !v)}
+            >
+              {hub.copy.customRange}
+            </Button>
 
-  const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
-    setDrilldownTitle(`Transactions: ${merchant.merchant_name}`);
-    setDrilldownSubtitle(`${merchant.count} transactions totaling ${formatCurrency(merchant.total)}`);
+            <div className="ml-auto text-xs text-white/60">
+              {dateFrom} → {dateTo}
+            </div>
+          </div>
 
-    // Use free-text search by merchant name in the drilldown to include variants.
-    // merchant_id-only filtering undercounts if not all rows have merchant_id populated.
-    setDrilldownMerchantId(undefined);
-    setDrilldownMerchantName(merchant.merchant_name);
+          {showCustomRange && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-1">{hub.copy.from}</label>
+                <Input type="date" value={customDateFrom} onChange={(e) => setCustomDateFrom(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-white/70 mb-1">{hub.copy.to}</label>
+                <Input type="date" value={customDateTo} onChange={(e) => setCustomDateTo(e.target.value)} />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button onClick={applyCustomRange} disabled={!customDateFrom || !customDateTo}>
+                  {hub.copy.applyRange}
+                </Button>
+                <Button variant="outline" onClick={() => setShowCustomRange(false)}>
+                  {hub.copy.cancel}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-    // Insights merchant breakdown is spend-oriented (expenses).
-    setDrilldownFlowType('expense');
-    setDrilldownMinAmount(undefined);
-    setDrilldownMaxAmount(undefined);
-    setDrilldownCategoryId(undefined);
-    setDrilldownOpen(true);
-  };
-
-  const openCategoryDrilldown = (category: CategoryBreakdown) => {
-    setDrilldownTitle(`Transactions: ${category.category_name}`);
-    setDrilldownSubtitle(`${category.count} transactions totaling ${formatCurrency(category.total)}`);
-    setDrilldownCategoryId(category.category_id ?? undefined);
-    setDrilldownMerchantId(undefined);
-    setDrilldownMerchantName(undefined);
-    // Insights category breakdown is spend-oriented (expenses).
-    setDrilldownFlowType('expense');
-    setDrilldownMinAmount(undefined);
-    setDrilldownMaxAmount(undefined);
-    setDrilldownOpen(true);
-  };
-
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Insights</h1>
-        <div className="grid gap-4 md:grid-cols-3">
+      {loading ? (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
             <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-24 w-full" />
+              <CardHeader>
+                <Skeleton className="h-5 w-40" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-2/3" />
               </CardContent>
             </Card>
           ))}
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardContent className="pt-6">
-              <Skeleton className="h-[300px]" />
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <Skeleton className="h-[300px]" />
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Safely compute monthly subscription total
-  const safeSubscriptions = Array.isArray(subscriptions) ? subscriptions : [];
-  const monthlySubTotal = safeSubscriptions.reduce((sum, s) => {
-    if (s?.frequency === 'monthly') return sum + (s?.amount ?? 0);
-    if (s?.frequency === 'yearly') return sum + ((s?.amount ?? 0) / 12);
-    return sum;
-  }, 0);
-
-  // Safe arrays for rendering
-  const safeCategories = Array.isArray(categories) ? categories : [];
-  const safeMerchants = Array.isArray(merchants) ? merchants : [];
-  const safeTimeseries = Array.isArray(timeseries) ? timeseries : [];
-  const categorizedCount = safeCategories.filter((cat) => cat.category_id).length;
-  const hasCategorization = categorizedCount > 0;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <h1 className="text-2xl font-bold">Insights</h1>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1">
-            <Button
-              variant={dateFrom === getMonthRange().start && !showCustomRange ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setPresetRange('thisMonth')}
-            >
-              This Month
-            </Button>
-            <Button
-              variant={dateFrom === getPreviousMonthRange().start && !showCustomRange ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setPresetRange('lastMonth')}
-            >
-              Last Month
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPresetRange('last3Months')}
-            >
-              3 Months
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPresetRange('thisYear')}
-            >
-              This Year
-            </Button>
-            <Button
-              variant={showCustomRange ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setShowCustomRange(!showCustomRange);
-                if (!customDateFrom) setCustomDateFrom(dateFrom);
-                if (!customDateTo) setCustomDateTo(dateTo);
-              }}
-            >
-              <Calendar className="h-4 w-4 mr-1" />
-              Custom
-            </Button>
-          </div>
-          <Button variant="ghost" size="sm" onClick={loadData}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Custom Date Range Panel */}
-      {showCustomRange && (
-        <Card className="bg-white/5 border-white/15">
-          <CardContent className="pt-4 pb-4">
-            <div className="flex flex-wrap items-end gap-4">
-              <div className="flex-1 min-w-[150px]">
-                <label className="text-sm font-medium text-white/80 mb-1 block">From</label>
-                <Input
-                  type="date"
-                  value={customDateFrom}
-                  onChange={(e) => setCustomDateFrom(e.target.value)}
-                  className="bg-white/5"
-                />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card className="card-3d">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-amber-200" />
+                {hub.copy.fortuneTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-white/85 leading-relaxed">{hub.fortune}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge variant="secondary">{lang === 'nb' ? 'Delvis presis' : 'Semi-accurate'}</Badge>
+                <Badge variant="secondary">{lang === 'nb' ? 'Helt uskyldig' : 'Harmless'}</Badge>
               </div>
-              <div className="flex-1 min-w-[150px]">
-                <label className="text-sm font-medium text-white/80 mb-1 block">To</label>
-                <Input
-                  type="date"
-                  value={customDateTo}
-                  onChange={(e) => setCustomDateTo(e.target.value)}
-                  className="bg-white/5"
-                />
-              </div>
-              <Button onClick={applyCustomRange} disabled={!customDateFrom || !customDateTo}>
-                Apply Range
-              </Button>
-              <Button variant="ghost" onClick={() => setShowCustomRange(false)}>
-                Cancel
-              </Button>
-            </div>
-            <p className="text-xs text-white/60 mt-2">
-              Current range: {dateFrom} to {dateTo}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Period Comparison */}
-      {comparison && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card
-            className="cursor-pointer hover:bg-white/5 transition-colors"
-            onClick={() => openKPIDrilldown('Total Expenses', { flowType: 'expense' })}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60">Total Expenses</p>
-                  <p className="text-2xl font-bold">
-                    {formatCurrency(comparison?.current?.total_expenses ?? 0)}
-                  </p>
-                </div>
-                <div className={cn(
-                  'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  (comparison?.change_percentage?.expenses ?? 0) > 0
-                    ? 'bg-red-100 text-red-700'
-                    : 'bg-green-100 text-green-700'
-                )}>
-                  {(comparison?.change_percentage?.expenses ?? 0) > 0 ? (
-                    <ArrowUpRight className="h-4 w-4" />
-                  ) : (
-                    <ArrowDownRight className="h-4 w-4" />
-                  )}
-                  {Math.abs(comparison?.change_percentage?.expenses ?? 0).toFixed(1)}%
-                </div>
-              </div>
-              <p className="text-xs text-white/45 mt-2">
-                vs {formatCurrency(comparison?.previous?.total_expenses ?? 0)} last period
-              </p>
             </CardContent>
           </Card>
 
-          {showBudgets && (
-            <Card
-              className="cursor-pointer hover:bg-white/5 transition-colors"
-              onClick={() => openKPIDrilldown('Total Income', { flowType: 'income' })}
-            >
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-white/60">Total Income</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {formatCurrency(comparison?.current?.total_income ?? 0)}
-                    </p>
-                  </div>
-                  <div className={cn(
-                    'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                    (comparison?.change_percentage?.income ?? 0) > 0
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-red-100 text-red-700'
-                  )}>
-                    {(comparison?.change_percentage?.income ?? 0) > 0 ? (
-                      <ArrowUpRight className="h-4 w-4" />
-                    ) : (
-                      <ArrowDownRight className="h-4 w-4" />
-                    )}
-                    {Math.abs(comparison?.change_percentage?.income ?? 0).toFixed(1)}%
-                  </div>
+          <Card className="card-3d">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-cyan-200" />
+                {hub.copy.patternsTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {hub.patterns.map((p) => (
+                <div key={p.label} className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-white/75">{p.label}</span>
+                  <span className="text-sm font-semibold text-white">{p.value}</span>
                 </div>
-                <p className="text-xs text-white/45 mt-2">
-                  vs {formatCurrency(comparison?.previous?.total_income ?? 0)} last period
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card
-            className="cursor-pointer hover:bg-white/5 transition-colors"
-            onClick={() => openKPIDrilldown('Net Savings')}
-          >
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-white/60">Net Savings</p>
-                  <p className={cn(
-                    'text-2xl font-bold',
-                    (comparison?.current?.net ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                  )}>
-                    {formatCurrency(comparison?.current?.net ?? 0, true)}
-                  </p>
-                </div>
-                <div className={cn(
-                  'flex items-center gap-1 px-2 py-1 rounded-full text-sm',
-                  (comparison?.change_percentage?.net ?? 0) > 0
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-red-100 text-red-700'
-                )}>
-                  {(comparison?.change_percentage?.net ?? 0) > 0 ? (
-                    <ArrowUpRight className="h-4 w-4" />
-                  ) : (
-                    <ArrowDownRight className="h-4 w-4" />
-                  )}
-                  {Math.abs(comparison?.change_percentage?.net ?? 0).toFixed(1)}%
-                </div>
-              </div>
-              <p className="text-xs text-white/45 mt-2">
-                vs {formatCurrency(comparison?.previous?.net ?? 0, true)} last period
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Spending Over Time */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Spending Over Time</CardTitle>
-            <div className="flex gap-1">
-              {(['day', 'week', 'month'] as const).map((g) => (
-                <Button
-                  key={g}
-                  variant={granularity === g ? 'default' : 'ghost'}
-                  size="sm"
-                  onClick={() => setGranularity(g)}
-                >
-                  {g.charAt(0).toUpperCase() + g.slice(1)}
-                </Button>
               ))}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {safeTimeseries.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={safeTimeseries}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200" />
-                <XAxis dataKey="date" tickFormatter={formatDateShort} className="text-xs" />
-                <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
-                <Tooltip
-                  formatter={(value) => formatCurrency(Number(value))}
-                  labelFormatter={formatDateShort}
-                  contentStyle={{
-                    backgroundColor: 'rgba(10, 14, 26, 0.92)',
-                    border: '1px solid rgba(255,255,255,0.14)',
-                    color: '#E7EAF3',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Legend />
-                <Area
-                  type="monotone"
-                  dataKey="expenses"
-                  stackId="1"
-                  stroke="#ef4444"
-                  fill="#fecaca"
-                  name="Expenses"
-                />
-                {showBudgets && (
-                  <Area
-                    type="monotone"
-                    dataKey="income"
-                    stackId="2"
-                    stroke="#22c55e"
-                    fill="#bbf7d0"
-                    name="Income"
-                  />
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[300px] items-center justify-center text-white/60">
-              No data for this period
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              <p className="mt-3 text-xs text-white/55">
+                {lang === 'nb'
+                  ? 'Tips: Klikk “Nytt påfunn” for å få en annen tolkning av de samme tallene.'
+                  : 'Tip: Click “New nonsense” for a different interpretation of the same numbers.'}
+              </p>
+            </CardContent>
+          </Card>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Category Breakdown */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle>Spending by Category</CardTitle>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowCategoryDetails((prev) => !prev)}
-              >
-                {showCategoryDetails ? 'Skjul detaljer' : 'Vis detaljer'}
-              </Button>
-            </div>
-            <p className="text-xs text-white/60">
-              Vises n�r kategorisering er tilgjengelig.
-            </p>
-          </CardHeader>
-          <CardContent>
-            {showCategoryDetails && hasCategorization ? (
-              <div className="flex flex-col lg:flex-row items-center gap-4">
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie
-                      data={safeCategories.filter(c => c.category_id).slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      paddingAngle={2}
-                      dataKey="total"
-                      nameKey="name"
-                    >
-                      {safeCategories.filter(c => c.category_id).slice(0, 8).map((entry, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={entry.category_color || COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => formatCurrency(Number(value))}
-                      contentStyle={{
-                        backgroundColor: 'rgba(10, 14, 26, 0.92)',
-                        border: '1px solid rgba(255,255,255,0.14)',
-                        color: '#E7EAF3',
-                        borderRadius: '8px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2 w-full lg:w-auto">
-                  {safeCategories.filter(c => c.category_id).slice(0, 6).map((cat, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/10 p-2 rounded-lg transition-colors -mx-2"
-                      onClick={() => openCategoryDrilldown(cat)}
-                    >
-                      <div
-                        className="h-3 w-3 rounded-full shrink-0"
-                        style={{ backgroundColor: cat.category_color || COLORS[i % COLORS.length] }}
-                      />
-                      <span className="flex-1 truncate">{cat.category_name}</span>
-                      <span className="font-medium">{formatCurrency(cat.total)}</span>
-                      <span className="text-white/45 text-xs">{cat.percentage.toFixed(0)}%</span>
-                      <ChevronRight className="h-4 w-4 text-white/45" />
-                    </div>
+          <Card className="card-3d">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-fuchsia-200" />
+                {hub.copy.dramaTitle}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-white/85 leading-relaxed">{hub.drama}</p>
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-white/70">{hub.copy.subsTitle}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {subscriptions.slice(0, 6).map((s) => (
+                    <Badge key={s.name} variant="outline" className="text-xs">
+                      {s.name}
+                    </Badge>
                   ))}
+                  {subscriptions.length === 0 && (
+                    <span className="text-xs text-white/55">
+                      {lang === 'nb' ? 'Ingen oppdaget (eller de gjemmer seg).' : 'None detected (or they hide well).'}
+                    </span>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className="flex h-[250px] items-center justify-center text-white/60">
-                {hasCategorization ? 'Bruk "Vis detaljer" for a se oversikt' : 'Ingen kategoriserte transaksjoner enda'}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-        {/* Top Merchants */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Merchants</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {safeMerchants.length > 0 ? (
-              <div className="space-y-2">
-                {safeMerchants.slice(0, 8).map((merchant, i) => {
-                  const maxTotal = safeMerchants[0]?.total || 1;
-                  const barWidth = (merchant.total / maxTotal) * 100;
-                  return (
-                    <div
-                      key={i}
-                      className="cursor-pointer hover:bg-white/10 p-2 rounded-lg transition-colors -mx-2"
-                      onClick={() => openMerchantDrilldown(merchant)}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium truncate flex-1">{merchant.merchant_name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-white/70">{formatCurrency(merchant.total)}</span>
-                          <Badge variant="outline" className="text-xs">{merchant.count}x</Badge>
-                          <ChevronRight className="h-4 w-4 text-white/45" />
-                        </div>
-                      </div>
-                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-blue-500 rounded-full transition-all"
-                          style={{ width: `${barWidth}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex h-[250px] items-center justify-center text-white/60">
-                No merchant data
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Subscriptions */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <RefreshCw className="h-5 w-5" />
-              Detected Subscriptions
-            </CardTitle>
-            <Badge variant="secondary">
-              ~{formatCurrency(monthlySubTotal)}/month
-            </Badge>
-          </div>
+          <CardTitle>{lang === 'nb' ? 'Leaderboard (helt uoffisielt)' : 'Leaderboard (unofficial)'}</CardTitle>
         </CardHeader>
-        <CardContent>
-          {safeSubscriptions.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {safeSubscriptions.map((sub, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-white/15 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
-                  onClick={() => openMerchantDrilldown({
-                    merchant_id: sub.merchant_id,
-                    merchant_name: sub.merchant_name,
-                    total: sub.amount * sub.transaction_ids.length, // Approx total
-                    count: sub.transaction_ids.length,
-                    avg: sub.amount,
-                    trend: 0
-                  })}
-                >
-                  <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                    <CreditCard className="h-5 w-5 text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{sub.merchant_name}</p>
-                    <div className="flex items-center gap-2 text-sm text-white/60">
-                      <span>{formatCurrency(sub.amount)}</span>
-                      <span className="text-white/45">|</span>
-                      <span>{sub.frequency}</span>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {sub.transaction_ids.length}x
-                  </Badge>
+        <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs font-semibold text-white/70 mb-2">{lang === 'nb' ? 'Topp kategorier' : 'Top categories'}</p>
+            <div className="space-y-2">
+              {categories.slice(0, 8).map((c) => (
+                <div key={c.category_id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-sm text-white/80">{c.category_name || 'Uncategorized'}</span>
+                  <span className="text-sm font-semibold text-white">{formatCompactCurrency(c.total || 0)}</span>
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="text-white/60 text-center py-8">
-              No recurring transactions detected yet
-            </p>
-          )}
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-white/70 mb-2">{lang === 'nb' ? 'Topp kjøpmenn' : 'Top merchants'}</p>
+            <div className="space-y-2">
+              {merchants.slice(0, 8).map((m) => (
+                <div key={(m.merchant_id || 'null') + (m.merchant_name || '')} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-sm text-white/80">{m.merchant_name || 'Unknown'}</span>
+                  <span className="text-sm font-semibold text-white">{formatCompactCurrency(m.total || 0)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
-
-      {/* Transactions Drilldown Dialog */}
-      <TransactionsDrilldownDialog
-        open={drilldownOpen}
-        onOpenChange={setDrilldownOpen}
-        title={drilldownTitle}
-        subtitle={drilldownSubtitle}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        merchantId={drilldownMerchantId}
-        merchantName={drilldownMerchantName}
-        categoryId={drilldownCategoryId}
-        status={drilldownStatus}
-        flowType={drilldownFlowType}
-        minAmount={drilldownMinAmount}
-        maxAmount={drilldownMaxAmount}
-      />
     </div>
   );
 }
-
