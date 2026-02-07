@@ -14,6 +14,125 @@ import { getEnabledRules, applyRulesToBatch } from '../lib/rule-engine';
 
 const rules = new Hono<{ Bindings: Env }>();
 
+async function applyCategoryRulesSqlGlobal(
+  db: D1Database,
+  defaultCategoryId: string
+): Promise<{
+  eligible: number;
+  meta_inserts: number;
+  meta_defaults: number;
+  meta_updates: number;
+}> {
+  const now = new Date().toISOString();
+
+  // Eligible = active non-transfer rows without splits.
+  const eligibleRes = await db
+    .prepare(
+      `
+        SELECT COUNT(*) as c
+        FROM transactions t
+        WHERE COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND NOT EXISTS (
+            SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+          )
+      `
+    )
+    .first<{ c: number }>();
+
+  // 1) Ensure every eligible row has a meta row (default category).
+  const metaInsertRes = await db
+    .prepare(
+      `
+        INSERT INTO transaction_meta (transaction_id, category_id, updated_at)
+        SELECT t.id, ?, ?
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND tm.transaction_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+          )
+      `
+    )
+    .bind(defaultCategoryId, now)
+    .run();
+
+  // 2) Ensure meta rows are never left NULL/empty (default them).
+  const metaDefaultRes = await db
+    .prepare(
+      `
+        UPDATE transaction_meta
+        SET category_id = ?, updated_at = ?
+        WHERE (category_id IS NULL OR category_id = '')
+          AND transaction_id IN (
+            SELECT t.id
+            FROM transactions t
+            WHERE COALESCE(t.is_excluded, 0) = 0
+              AND COALESCE(t.is_transfer, 0) = 0
+              AND t.flow_type != 'transfer'
+              AND NOT EXISTS (
+                SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+              )
+          )
+      `
+    )
+    .bind(defaultCategoryId, now)
+    .run();
+
+  // 3) Upgrade default categories to best matching rule by priority.
+  // This SQL path only supports the "common case" rules:
+  // enabled=1, action_type='set_category', match_type='contains', match_field='description'.
+  // Matching uses the combined merchant+description text to keep PDF/XLSX consistent.
+  const metaUpdateRes = await db
+    .prepare(
+      `
+        UPDATE transaction_meta
+        SET
+          category_id = COALESCE((
+            SELECT r.action_value
+            FROM rules r
+            JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
+            WHERE r.enabled = 1
+              AND r.action_type = 'set_category'
+              AND r.match_type = 'contains'
+              AND r.match_field = 'description'
+              AND COALESCE(r.match_value, '') != ''
+              AND COALESCE(t2.is_excluded, 0) = 0
+              AND COALESCE(t2.is_transfer, 0) = 0
+              AND t2.flow_type != 'transfer'
+              AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
+            ORDER BY r.priority ASC
+            LIMIT 1
+          ), category_id),
+          updated_at = ?
+        WHERE category_id = ?
+          AND transaction_id IN (
+            SELECT t.id
+            FROM transactions t
+            WHERE COALESCE(t.is_excluded, 0) = 0
+              AND COALESCE(t.is_transfer, 0) = 0
+              AND t.flow_type != 'transfer'
+              AND NOT EXISTS (
+                SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+              )
+          )
+      `
+    )
+    .bind(now, defaultCategoryId)
+    .run();
+
+  return {
+    eligible: Number(eligibleRes?.c || 0),
+    meta_inserts: Number((metaInsertRes as any)?.meta?.changes || 0),
+    meta_defaults: Number((metaDefaultRes as any)?.meta?.changes || 0),
+    meta_updates: Number((metaUpdateRes as any)?.meta?.changes || 0),
+  };
+}
+
 // Get all rules
 rules.get('/', async (c) => {
   try {
@@ -389,33 +508,27 @@ rules.post('/apply', async (c) => {
       totalCategoryCandidates = batch.category_candidates;
       totalErrors = batch.errors;
     } else if (all) {
-      // Apply to all transactions in batches
-      let offset = 0;
+      // Fast path: SQL-only apply for the common case (set_category + contains + description).
+      // This avoids Worker CPU/timeouts when users have thousands of rows.
+      const hasComplexRules = enabledRules.some((r) =>
+        !(
+          r.enabled
+          && r.action_type === 'set_category'
+          && r.match_type === 'contains'
+          && r.match_field === 'description'
+        )
+      );
 
-      while (true) {
-        const result = await c.env.DB
-          .prepare('SELECT * FROM transactions ORDER BY tx_date DESC LIMIT ? OFFSET ?')
-          .bind(batch_size, offset)
-          .all<Transaction>();
+      const sqlRes = await applyCategoryRulesSqlGlobal(c.env.DB, 'cat_other');
+      totalProcessed = sqlRes.eligible;
+      totalUpdatedReal = sqlRes.meta_updates;
+      totalUpdatedAny = sqlRes.meta_updates;
+      totalMatched = 0;
+      totalCategoryCandidates = 0;
+      totalErrors = 0;
 
-        const transactions = result.results || [];
-        if (transactions.length === 0) break;
-
-        const batch = await applyRulesToBatch(c.env.DB, transactions, enabledRules);
-        totalProcessed += batch.processed;
-        totalMatched += batch.matched;
-        totalUpdatedAny += batch.updated;
-        totalUpdatedReal += batch.updated_real;
-        totalCategoryCandidates += batch.category_candidates;
-        totalErrors += batch.errors;
-
-        offset += batch_size;
-
-        // Safety limit
-        if (offset > 100000) {
-          console.warn('Apply rules hit safety limit');
-          break;
-        }
+      if (hasComplexRules) {
+        console.warn('[rules/apply] Complex rules present; SQL fast path only applies simple set_category contains rules.');
       }
     }
 
