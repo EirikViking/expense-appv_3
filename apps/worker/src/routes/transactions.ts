@@ -33,61 +33,86 @@ async function enrichTransactions(
 ): Promise<TransactionWithMeta[]> {
   if (txs.length === 0) return [];
 
+  // D1/SQLite variable limits can be lower than local SQLite defaults.
+  // Chunk IN(...) queries to avoid "too many SQL variables" 500s when limit is large (e.g. 200+).
+  const CHUNK_SIZE = 80;
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+
   const txIds = txs.map(t => t.id);
-  const placeholders = txIds.map(() => '?').join(',');
+  const metaMap = new Map<
+    string,
+    {
+      transaction_id: string;
+      category_id: string | null;
+      merchant_id: string | null;
+      notes: string | null;
+      is_recurring: number;
+      category_name: string | null;
+      category_color: string | null;
+      merchant_name: string | null;
+    }
+  >();
 
-  // Get metadata for all transactions
-  const metaQuery = `
-    SELECT
-      tm.transaction_id,
-      tm.category_id,
-      tm.merchant_id,
-      tm.notes,
-      tm.is_recurring,
-      c.name as category_name,
-      c.color as category_color,
-      m.canonical_name as merchant_name
-    FROM transaction_meta tm
-    LEFT JOIN categories c ON tm.category_id = c.id
-    LEFT JOIN merchants m ON tm.merchant_id = m.id
-    WHERE tm.transaction_id IN (${placeholders})
-  `;
+  for (const ids of chunk(txIds, CHUNK_SIZE)) {
+    const placeholders = ids.map(() => '?').join(',');
+    const metaQuery = `
+      SELECT
+        tm.transaction_id,
+        tm.category_id,
+        tm.merchant_id,
+        tm.notes,
+        tm.is_recurring,
+        c.name as category_name,
+        c.color as category_color,
+        m.canonical_name as merchant_name
+      FROM transaction_meta tm
+      LEFT JOIN categories c ON tm.category_id = c.id
+      LEFT JOIN merchants m ON tm.merchant_id = m.id
+      WHERE tm.transaction_id IN (${placeholders})
+    `;
 
-  const metaResults = await db.prepare(metaQuery).bind(...txIds).all<{
-    transaction_id: string;
-    category_id: string | null;
-    merchant_id: string | null;
-    notes: string | null;
-    is_recurring: number;
-    category_name: string | null;
-    category_color: string | null;
-    merchant_name: string | null;
-  }>();
+    const metaResults = await db.prepare(metaQuery).bind(...ids).all<{
+      transaction_id: string;
+      category_id: string | null;
+      merchant_id: string | null;
+      notes: string | null;
+      is_recurring: number;
+      category_name: string | null;
+      category_color: string | null;
+      merchant_name: string | null;
+    }>();
 
-  const metaMap = new Map(
-    (metaResults.results || []).map(m => [m.transaction_id, m])
-  );
+    for (const m of metaResults.results || []) {
+      metaMap.set(m.transaction_id, m);
+    }
+  }
 
   // Get tags for all transactions
-  const tagsQuery = `
-    SELECT tt.transaction_id, t.id, t.name, t.color
-    FROM transaction_tags tt
-    JOIN tags t ON tt.tag_id = t.id
-    WHERE tt.transaction_id IN (${placeholders})
-  `;
-
-  const tagsResults = await db.prepare(tagsQuery).bind(...txIds).all<{
-    transaction_id: string;
-    id: string;
-    name: string;
-    color: string | null;
-  }>();
-
   const tagsMap = new Map<string, Array<{ id: string; name: string; color: string | null }>>();
-  for (const tag of tagsResults.results || []) {
-    const existing = tagsMap.get(tag.transaction_id) || [];
-    existing.push({ id: tag.id, name: tag.name, color: tag.color });
-    tagsMap.set(tag.transaction_id, existing);
+  for (const ids of chunk(txIds, CHUNK_SIZE)) {
+    const placeholders = ids.map(() => '?').join(',');
+    const tagsQuery = `
+      SELECT tt.transaction_id, t.id, t.name, t.color
+      FROM transaction_tags tt
+      JOIN tags t ON tt.tag_id = t.id
+      WHERE tt.transaction_id IN (${placeholders})
+    `;
+    const tagsResults = await db.prepare(tagsQuery).bind(...ids).all<{
+      transaction_id: string;
+      id: string;
+      name: string;
+      color: string | null;
+    }>();
+
+    for (const tag of tagsResults.results || []) {
+      const existing = tagsMap.get(tag.transaction_id) || [];
+      existing.push({ id: tag.id, name: tag.name, color: tag.color });
+      tagsMap.set(tag.transaction_id, existing);
+    }
   }
 
   // Get source filenames
@@ -95,10 +120,14 @@ async function enrichTransactions(
   let filesMap = new Map<string, string>();
 
   if (fileHashes.length > 0) {
-    const filePlaceholders = fileHashes.map(() => '?').join(',');
-    const filesQuery = `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
-    const filesResult = await db.prepare(filesQuery).bind(...fileHashes).all<{ file_hash: string; original_filename: string }>();
-    filesMap = new Map((filesResult.results || []).map(f => [f.file_hash, f.original_filename]));
+    for (const hashes of chunk(fileHashes, CHUNK_SIZE)) {
+      const filePlaceholders = hashes.map(() => '?').join(',');
+      const filesQuery = `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
+      const filesResult = await db.prepare(filesQuery).bind(...hashes).all<{ file_hash: string; original_filename: string }>();
+      for (const f of filesResult.results || []) {
+        filesMap.set(f.file_hash, f.original_filename);
+      }
+    }
   }
 
   // Enrich transactions
