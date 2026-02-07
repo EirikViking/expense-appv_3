@@ -154,6 +154,88 @@ async function getCategorizationCountsForFile(
   return { total, categorized, uncategorized: Math.max(0, total - categorized) };
 }
 
+async function fillDefaultExpenseCategoriesForFile(
+  db: D1Database,
+  fileHash: string,
+  defaultCategoryId: string
+): Promise<{ meta_inserts: number; meta_updates: number; split_updates: number }> {
+  const now = new Date().toISOString();
+
+  // 1) Fill missing split categories first. If a transaction has splits, analytics uses split categories.
+  const splitRes = await db
+    .prepare(
+      `
+        UPDATE transaction_splits
+        SET category_id = ?
+        WHERE category_id IS NULL
+          AND parent_transaction_id IN (
+            SELECT t.id
+            FROM transactions t
+            WHERE t.source_file_hash = ?
+              AND COALESCE(t.is_excluded, 0) = 0
+              AND COALESCE(t.is_transfer, 0) = 0
+              AND t.flow_type != 'transfer'
+              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+          )
+      `
+    )
+    .bind(defaultCategoryId, fileHash)
+    .run();
+
+  // 2) Insert transaction_meta for uncategorized expense rows (no splits).
+  const insertRes = await db
+    .prepare(
+      `
+        INSERT INTO transaction_meta (transaction_id, category_id, updated_at)
+        SELECT t.id, ?, ?
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE t.source_file_hash = ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+          AND tm.transaction_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+          )
+      `
+    )
+    .bind(defaultCategoryId, now, fileHash)
+    .run();
+
+  // 3) Update existing meta rows that are still uncategorized (no splits).
+  const updateRes = await db
+    .prepare(
+      `
+        UPDATE transaction_meta
+        SET category_id = ?, updated_at = ?
+        WHERE transaction_id IN (
+          SELECT t.id
+          FROM transactions t
+          LEFT JOIN transaction_meta tm2 ON tm2.transaction_id = t.id
+          WHERE t.source_file_hash = ?
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            AND tm2.category_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
+            )
+        )
+      `
+    )
+    .bind(defaultCategoryId, now, fileHash)
+    .run();
+
+  return {
+    split_updates: Number((splitRes as any)?.meta?.changes || 0),
+    meta_inserts: Number((insertRes as any)?.meta?.changes || 0),
+    meta_updates: Number((updateRes as any)?.meta?.changes || 0),
+  };
+}
+
 // Insert transaction
 async function insertTransaction(
   db: D1Database,
@@ -345,6 +427,8 @@ ingest.post('/xlsx', async (c) => {
     if (inserted > 0) {
       try {
         await applyRulesForFile(c.env.DB, file_hash);
+        // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
+        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
           `[XLSX Ingest] Categorization counts for ${filename}: ` +

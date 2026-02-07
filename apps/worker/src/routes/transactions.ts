@@ -1602,6 +1602,149 @@ transactions.post('/admin/diag-categories', async (c) => {
   }
 });
 
+// Fill a default category for uncategorized *expense* rows in a date range.
+// This is intended as a safe "make analytics usable" backfill, not a replacement for rules.
+// - Only affects active (not excluded) expense-like rows.
+// - Does NOT touch transfers.
+// - Fills missing split categories first, then fills transaction_meta.category_id for non-split transactions.
+transactions.post('/admin/fill-default-category', async (c) => {
+  try {
+    const body = await c.req.json().catch(() => null) as {
+      from?: unknown;
+      to?: unknown;
+      category_id?: unknown;
+      dry_run?: unknown;
+    } | null;
+
+    const from = body?.from;
+    const to = body?.to;
+    const categoryId = typeof body?.category_id === 'string' && body.category_id ? body.category_id : 'cat_other';
+    const dryRun = body?.dry_run === true;
+
+    const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+    if (!isIsoDate(from) || !isIsoDate(to)) {
+      return c.json({ error: 'from and to are required (YYYY-MM-DD)' }, 400);
+    }
+
+    // Count candidates (expense-like, active, not transfer, uncategorized either via splits or meta).
+    const candidateRes = await c.env.DB.prepare(
+      `
+        WITH expense_rows AS (
+          SELECT t.id
+          FROM transactions t
+          LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+          WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+        )
+        SELECT
+          (SELECT COUNT(*) FROM expense_rows) as expense_total,
+          (SELECT COUNT(*)
+            FROM expense_rows er
+            WHERE EXISTS (
+              SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = er.id AND ts.category_id IS NULL
+            )
+          ) as split_uncategorized_parents,
+          (SELECT COUNT(*)
+            FROM expense_rows er
+            LEFT JOIN transaction_meta tm2 ON tm2.transaction_id = er.id
+            WHERE NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = er.id)
+              AND tm2.category_id IS NULL
+          ) as meta_uncategorized
+      `
+    ).bind(from, to).first<{
+      expense_total: number;
+      split_uncategorized_parents: number;
+      meta_uncategorized: number;
+    }>();
+
+    if (dryRun) {
+      return c.json({
+        success: true,
+        dry_run: true,
+        period: { from, to },
+        category_id: categoryId,
+        candidates: {
+          expense_total: Number(candidateRes?.expense_total || 0),
+          split_uncategorized_parents: Number(candidateRes?.split_uncategorized_parents || 0),
+          meta_uncategorized: Number(candidateRes?.meta_uncategorized || 0),
+        },
+      });
+    }
+
+    const now = new Date().toISOString();
+
+    const splitRes = await c.env.DB.prepare(
+      `
+        UPDATE transaction_splits
+        SET category_id = ?
+        WHERE category_id IS NULL
+          AND parent_transaction_id IN (
+            SELECT t.id
+            FROM transactions t
+            WHERE t.tx_date >= ? AND t.tx_date <= ?
+              AND COALESCE(t.is_excluded, 0) = 0
+              AND COALESCE(t.is_transfer, 0) = 0
+              AND t.flow_type != 'transfer'
+              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+          )
+      `
+    ).bind(categoryId, from, to).run();
+
+    const insertRes = await c.env.DB.prepare(
+      `
+        INSERT INTO transaction_meta (transaction_id, category_id, updated_at)
+        SELECT t.id, ?, ?
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+          AND tm.transaction_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id)
+      `
+    ).bind(categoryId, now, from, to).run();
+
+    const updateRes = await c.env.DB.prepare(
+      `
+        UPDATE transaction_meta
+        SET category_id = ?, updated_at = ?
+        WHERE transaction_id IN (
+          SELECT t.id
+          FROM transactions t
+          LEFT JOIN transaction_meta tm2 ON tm2.transaction_id = t.id
+          WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            AND tm2.category_id IS NULL
+            AND NOT EXISTS (SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id)
+        )
+      `
+    ).bind(categoryId, now, from, to).run();
+
+    return c.json({
+      success: true,
+      dry_run: false,
+      period: { from, to },
+      category_id: categoryId,
+      changed: {
+        split_updates: Number((splitRes as any)?.meta?.changes || 0),
+        meta_inserts: Number((insertRes as any)?.meta?.changes || 0),
+        meta_updates: Number((updateRes as any)?.meta?.changes || 0),
+      },
+    });
+  } catch (error) {
+    console.error('Fill default category error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Rebuild flow_type and normalize amount signs for existing rows (idempotent; supports dry_run).
 transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
   try {
