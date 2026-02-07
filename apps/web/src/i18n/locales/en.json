@@ -87,7 +87,11 @@
     "last3Months": "Last 3 months",
     "last6Months": "Last 6 months",
     "last12Months": "Last 12 months",
-    "noGroceriesData": "No groceries data"
+    "noGroceriesData": "No groceries data",
+    "month": "Month",
+    "spent": "Spent",
+    "txCountShort": "Tx",
+    "clickToDrilldown": "Click to drill down"
     ,
     "transactionsOnDate": "Transactions: {{date}}"
   },

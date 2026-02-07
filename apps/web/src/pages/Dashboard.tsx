@@ -34,6 +34,7 @@ import {
   formatPercentage,
   formatDateShort,
   formatDateLocal,
+  formatMonth,
   getMonthRange,
   getPreviousMonthRange,
   getYearToDateRange,
@@ -200,7 +201,7 @@ export function DashboardPage() {
             api.getAnalyticsByMerchant({
               date_from: dateFrom,
               date_to: dateTo,
-              limit: 8,
+              limit: 20,
               status: statusFilter || undefined,
               include_transfers: !excludeTransfers,
               category_id: selectedCategoryId || undefined,
@@ -711,36 +712,62 @@ export function DashboardPage() {
         </CardHeader>
         <CardContent>
           {trendSeries.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart
-                data={trendSeries.map((p) => ({ month: p.date, spend: p.expenses, count: p.count }))}
-                onClick={(e: any) => {
-                  const label = e?.activeLabel;
-                  if (typeof label === 'string') openMonthDrilldown(label);
-                }}
-              >
-                <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
-                <XAxis dataKey="month" tickFormatter={formatYearMonth} className="text-xs" />
-                <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
-                <Tooltip
-                  formatter={(value) => formatCurrency(Number(value))}
-                  labelFormatter={formatYearMonth}
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
+            <div className="space-y-4">
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart
+                  data={trendSeries.map((p) => ({ month: p.date, spend: p.expenses, count: p.count }))}
+                  onClick={(e: any) => {
+                    const label = e?.activeLabel;
+                    if (typeof label === 'string') openMonthDrilldown(label);
                   }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="spend"
-                  stroke="#f87171"
-                  strokeWidth={2}
-                  dot={false}
-                  name={trendCategoryName}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                  <XAxis dataKey="month" tickFormatter={formatYearMonth} className="text-xs" />
+                  <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    labelFormatter={formatYearMonth}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="spend"
+                    stroke="#f87171"
+                    strokeWidth={2}
+                    dot={false}
+                    name={trendCategoryName}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+
+              {/* Exact monthly table (same data as chart). Click a month to drill down. */}
+              <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-gray-50 text-xs font-medium text-gray-600">
+                  <div className="col-span-6">{t('dashboard.month')}</div>
+                  <div className="col-span-4 text-right">{t('dashboard.spent')}</div>
+                  <div className="col-span-2 text-right">{t('dashboard.txCountShort')}</div>
+                </div>
+                <div className="divide-y divide-gray-200">
+                  {[...trendSeries].slice().reverse().map((p) => (
+                    <button
+                      key={p.date}
+                      type="button"
+                      className="w-full text-left grid grid-cols-12 gap-2 px-3 py-2 hover:bg-gray-50 transition-colors"
+                      onClick={() => openMonthDrilldown(p.date)}
+                      title={t('dashboard.clickToDrilldown')}
+                    >
+                      <div className="col-span-6 text-sm">{formatMonth(p.date)}</div>
+                      <div className="col-span-4 text-sm text-right font-medium">{formatCurrency(p.expenses)}</div>
+                      <div className="col-span-2 text-sm text-right text-gray-500">{p.count}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="flex h-[260px] items-center justify-center text-gray-500">
               {t('dashboard.noGroceriesData')}

@@ -514,7 +514,7 @@ analytics.get('/by-merchant', async (c) => {
     });
 
     merchants.sort((a, b) => b.total - a.total);
-    return c.json({ merchants });
+    return c.json({ merchants: merchants.slice(0, limit) });
   } catch (error) {
     console.error('Analytics by-merchant error:', error);
     return c.json({ error: 'Internal server error' }, 500);

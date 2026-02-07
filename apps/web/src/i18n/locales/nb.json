@@ -88,6 +88,10 @@
     "last6Months": "Siste 6 måneder",
     "last12Months": "Siste 12 måneder",
     "noGroceriesData": "Ingen dagligvaredata",
+    "month": "MÃ¥ned",
+    "spent": "Brukt",
+    "txCountShort": "Tx",
+    "clickToDrilldown": "Klikk for drilldown",
     "transactionsOnDate": "Transaksjoner: {{date}}"
   },
   "transactions": {
