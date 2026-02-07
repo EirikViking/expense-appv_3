@@ -254,8 +254,16 @@ export function DashboardPage() {
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
 
-  const groceries = categories.find((c) => c.category_id === CATEGORY_IDS.groceries) || null;
-  const groceriesSpend = groceries ? Math.abs(groceries.total) : 0;
+  const topExpenseCategoryTiles = useMemo(() => {
+    const rows = categories
+      .filter((c) => Boolean(c.category_id))
+      .filter((c) => c.category_id !== CATEGORY_IDS.transfers)
+      .filter((c) => !String(c.category_id || '').startsWith('cat_income'));
+
+    return [...rows]
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+      .slice(0, 4);
+  }, [categories]);
 
   if (loading) {
     return (
@@ -501,31 +509,34 @@ export function DashboardPage() {
       </div>
 
       {/* Quick shortcuts */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card
-          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-          onClick={() => {
-            const qs = new URLSearchParams();
-            qs.set('date_from', dateFrom);
-            qs.set('date_to', dateTo);
-            qs.set('include_transfers', excludeTransfers ? '0' : '1');
-            if (statusFilter) qs.set('status', statusFilter);
-            qs.set('category_id', CATEGORY_IDS.groceries);
-            qs.set('flow_type', 'expense');
-            navigate(`/transactions?${qs.toString()}`);
-          }}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.groceriesSpend')}</CardTitle>
-            <Tag className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(groceriesSpend)}</div>
-            <p className="text-xs text-gray-500 mt-1">
-              {t('dashboard.groceriesDrilldownHint')}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {topExpenseCategoryTiles.map((cat) => (
+          <Card
+            key={String(cat.category_id)}
+            className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            onClick={() => {
+              const qs = new URLSearchParams();
+              qs.set('date_from', dateFrom);
+              qs.set('date_to', dateTo);
+              if (!excludeTransfers) qs.set('include_transfers', '1');
+              if (statusFilter) qs.set('status', statusFilter);
+              if (cat.category_id) qs.set('category_id', String(cat.category_id));
+              qs.set('flow_type', 'expense');
+              navigate(`/transactions?${qs.toString()}`);
+            }}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium truncate">{cat.category_name}</CardTitle>
+              <Tag className="h-4 w-4 text-gray-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{formatCurrency(Math.abs(cat.total))}</div>
+              <p className="text-xs text-gray-500 mt-1">
+                {cat.count} {t('dashboard.txCountShort')}
+              </p>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Charts */}
