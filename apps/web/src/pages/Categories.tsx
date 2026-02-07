@@ -148,18 +148,18 @@ export function CategoriesPage() {
     return (
       <div key={node.id}>
         <div
-          className="flex items-center gap-2 py-2 px-3 hover:bg-gray-50 rounded-lg transition-colors"
+          className="flex items-center gap-2 py-2 px-3 hover:bg-white/5 rounded-lg transition-colors"
           style={{ paddingLeft: `${level * 24 + 12}px` }}
         >
           {hasChildren ? (
             <button
               onClick={() => toggleExpand(node.id)}
-              className="p-1 hover:bg-gray-200 rounded"
+              className="p-1 hover:bg-white/10 rounded"
             >
               {isExpanded ? (
-                <ChevronDown className="h-4 w-4 text-gray-400" />
+                <ChevronDown className="h-4 w-4 text-white/45" />
               ) : (
-                <ChevronRight className="h-4 w-4 text-gray-400" />
+                <ChevronRight className="h-4 w-4 text-white/45" />
               )}
             </button>
           ) : (
@@ -214,16 +214,16 @@ export function CategoriesPage() {
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => startCreate(node.id)}
-                  className="p-1 hover:bg-gray-200 rounded"
+                  className="p-1 hover:bg-white/10 rounded"
                   title="Add subcategory"
                 >
-                  <Plus className="h-4 w-4 text-gray-400" />
+                  <Plus className="h-4 w-4 text-white/45" />
                 </button>
                 <button
                   onClick={() => startEdit(node)}
-                  className="p-1 hover:bg-gray-200 rounded"
+                  className="p-1 hover:bg-white/10 rounded"
                 >
-                  <Pencil className="h-4 w-4 text-gray-400" />
+                  <Pencil className="h-4 w-4 text-white/45" />
                 </button>
                 <button
                   onClick={() => handleDelete(node.id)}
@@ -290,7 +290,7 @@ export function CategoriesPage() {
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="sm:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   Name
                 </label>
                 <Input
@@ -304,7 +304,7 @@ export function CategoriesPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   Color
                 </label>
                 <input
@@ -315,13 +315,13 @@ export function CategoriesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   Parent Category
                 </label>
                 <select
                   value={formParentId}
                   onChange={(e) => setFormParentId(e.target.value)}
-                  className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
                 >
                   <option value="">None (top level)</option>
                   {categories
@@ -365,7 +365,7 @@ export function CategoriesPage() {
               {tree.map((node) => renderCategoryItem(node))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-8">
+            <p className="text-white/60 text-center py-8">
               No categories yet. Create one to get started!
             </p>
           )}

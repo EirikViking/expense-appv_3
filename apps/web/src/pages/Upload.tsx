@@ -51,8 +51,8 @@ export function UploadPage() {
     if (summaryItems.length === 0) return null;
 
     return (
-      <div className="mt-2 text-xs text-gray-500">
-        <p className="font-medium text-gray-700">{t('upload.skippedReasons')}</p>
+      <div className="mt-2 text-xs text-white/60">
+        <p className="font-medium text-white/80">{t('upload.skippedReasons')}</p>
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
           {summaryItems.map(([key, labelKey]) => (
             <span key={key}>
@@ -270,7 +270,7 @@ export function UploadPage() {
 
   return (
     <div className="px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t('upload.title')}</h1>
+      <h1 className="text-2xl font-bold text-white mb-6">{t('upload.title')}</h1>
 
       {/* Drop zone */}
       <div
@@ -279,11 +279,11 @@ export function UploadPage() {
         onDragLeave={handleDragLeave}
         className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${isDragging
             ? 'border-blue-500 bg-blue-50'
-            : 'border-gray-300 hover:border-gray-400'
+            : 'border-white/20 hover:border-white/35'
           }`}
       >
         <div className="space-y-4">
-          <div className="text-gray-600">
+          <div className="text-white/70">
             <p className="text-lg">{t('upload.dragDrop')}</p>
             <p className="text-sm">{t('upload.or')}</p>
           </div>
@@ -299,7 +299,7 @@ export function UploadPage() {
               {t('upload.browse')}
             </span>
           </label>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-white/60">
             {t('upload.supportedFormats')}
           </p>
         </div>
@@ -308,7 +308,7 @@ export function UploadPage() {
       {/* Results */}
       {results.length > 0 && (
         <div className="mt-8 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900">{t('upload.results')}</h2>
+          <h2 className="text-lg font-semibold text-white">{t('upload.results')}</h2>
           {results.map((result, index) => {
             const resultKey = `${result.filename}-${index}`;
             const showDetails = Boolean(detailsOpen[resultKey]);
@@ -323,16 +323,16 @@ export function UploadPage() {
               <div
                 key={resultKey}
                 className={`p-4 rounded-lg border ${result.status === 'processing'
-                    ? 'bg-gray-50 border-gray-200'
+                    ? 'bg-white/5 border-white/10'
                     : result.status === 'success'
                       ? 'bg-green-50 border-green-200'
                       : 'bg-red-50 border-red-200'
                   }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-gray-900">{result.filename}</span>
+                  <span className="font-medium text-white">{result.filename}</span>
                   {result.status === 'processing' && (
-                    <span className="text-gray-500">{t('upload.processing')}</span>
+                    <span className="text-white/60">{t('upload.processing')}</span>
                   )}
                 </div>
 
@@ -343,7 +343,7 @@ export function UploadPage() {
                         {t('upload.duplicate')}
                       </p>
                     ) : (
-                      <div className="space-y-1 text-gray-600">
+                      <div className="space-y-1 text-white/70">
                         <p>
                           <span className="text-green-600 font-medium">
                             {result.result.inserted}
@@ -396,7 +396,7 @@ export function UploadPage() {
                                       include_excluded: 'true',
                                     }).toString()
                                   }
-                                  className="shrink-0 rounded-md bg-white/70 px-3 py-2 text-xs font-medium hover:bg-white"
+                                  className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
                                 >
                                   {t('upload.validation.viewTransactions')}
                                 </Link>
@@ -404,7 +404,7 @@ export function UploadPage() {
                             </div>
                           </div>
                         ) : result.validation_range ? (
-                          <p className="text-xs text-gray-600">{t('upload.validation.running')}</p>
+                          <p className="text-xs text-white/70">{t('upload.validation.running')}</p>
                         ) : null}
                       </div>
                     )}
@@ -413,14 +413,14 @@ export function UploadPage() {
                       <button
                         type="button"
                         onClick={() => toggleDetails(resultKey)}
-                        className="mt-2 text-xs font-medium text-gray-600 hover:text-gray-800"
+                        className="mt-2 text-xs font-medium text-white/70 hover:text-white"
                       >
                         {showDetails ? t('dashboard.hideDetails') : t('dashboard.showDetails')}
                       </button>
                     )}
 
                     {showDetails && result.result.skipped_invalid > 0 && (
-                      <p className="mt-2 text-xs text-gray-600">
+                      <p className="mt-2 text-xs text-white/70">
                         {t('upload.invalidRowsSkipped', { count: result.result.skipped_invalid })}
                       </p>
                     )}
@@ -459,7 +459,7 @@ export function UploadPage() {
               setResults([]);
               setDetailsOpen({});
             }}
-            className="text-sm text-gray-500 hover:text-gray-700"
+            className="text-sm text-white/60 hover:text-white/80"
           >
             {t('upload.clearResults')}
           </button>

@@ -9,7 +9,7 @@ export function BudgetsPage() {
           <CardTitle>Kommer snart</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-white/70">
             Budgets er ikke aktivert enda. Aktiver funksjonen i Settings nar
             budsjettflyten er klar.
           </p>

@@ -11,7 +11,12 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
   };
 
   return (
-    <div className={cn('inline-flex items-center rounded-md border border-gray-200 bg-white', compact ? 'h-8' : 'h-9')}>
+    <div
+      className={cn(
+        'inline-flex items-center rounded-md border border-white/15 bg-white/5 text-white shadow-sm',
+        compact ? 'h-8' : 'h-9'
+      )}
+    >
       <button
         type="button"
         onClick={() => set('en')}
@@ -19,7 +24,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         className={cn(
           'px-2 text-xs font-semibold rounded-l-md',
           compact ? 'h-8' : 'h-9',
-          current === 'en' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-50'
+          current === 'en' ? 'bg-white/15 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
         )}
         title="EN"
       >
@@ -32,7 +37,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         className={cn(
           'px-2 text-xs font-semibold rounded-r-md',
           compact ? 'h-8' : 'h-9',
-          current === 'nb' ? 'bg-gray-900 text-white' : 'text-gray-700 hover:bg-gray-50'
+          current === 'nb' ? 'bg-white/15 text-white' : 'text-white/80 hover:bg-white/10 hover:text-white'
         )}
         title="NO"
       >
@@ -41,4 +46,3 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
-

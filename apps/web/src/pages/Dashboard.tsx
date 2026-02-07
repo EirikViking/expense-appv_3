@@ -302,7 +302,7 @@ export function DashboardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm text-white/60">
             {overview?.period.start} - {overview?.period.end}
           </div>
           {selectedCategory && (
@@ -316,7 +316,7 @@ export function DashboardPage() {
               >
                 {t('dashboard.allCategories')}
               </button>
-              <span className="text-gray-400 mx-2">/</span>
+              <span className="text-white/25 mx-2">/</span>
               <span className="font-medium">{selectedCategory.category_name}</span>
             </div>
           )}
@@ -326,7 +326,7 @@ export function DashboardPage() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
               onClick={() => {
                 const r = getMonthRange();
                 updateSearch((next) => {
@@ -339,7 +339,7 @@ export function DashboardPage() {
             </button>
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
               onClick={() => {
                 const r = getPreviousMonthRange();
                 updateSearch((next) => {
@@ -352,7 +352,7 @@ export function DashboardPage() {
             </button>
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-50"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
               onClick={() => {
                 const r = getYearToDateRange();
                 updateSearch((next) => {
@@ -366,8 +366,8 @@ export function DashboardPage() {
           </div>
 
             <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <span className="text-gray-500">{t('common.fromDate')}</span>
+            <div className="flex items-center gap-2 text-sm text-white/80">
+              <span className="text-white/60">{t('common.fromDate')}</span>
               <input
                 type="date"
                 value={dateFrom}
@@ -377,9 +377,9 @@ export function DashboardPage() {
                     else next.delete('date_from');
                   });
                 }}
-                className="h-9 px-2 rounded border border-gray-300"
+                className="h-9 px-2 rounded border border-white/15"
               />
-              <span className="text-gray-500">{t('common.toDate')}</span>
+              <span className="text-white/60">{t('common.toDate')}</span>
               <input
                 type="date"
                 value={dateTo}
@@ -389,12 +389,12 @@ export function DashboardPage() {
                     else next.delete('date_to');
                   });
                 }}
-                className="h-9 px-2 rounded border border-gray-300"
+                className="h-9 px-2 rounded border border-white/15"
               />
             </div>
 
-            <div className="flex items-center gap-2 text-sm text-gray-700">
-              <span className="text-gray-500">{t('common.status')}</span>
+            <div className="flex items-center gap-2 text-sm text-white/80">
+              <span className="text-white/60">{t('common.status')}</span>
               <select
                 value={statusFilter}
                 onChange={(e) => {
@@ -404,7 +404,7 @@ export function DashboardPage() {
                     else next.delete('status');
                   });
                 }}
-                className="h-9 px-2 rounded border border-gray-300"
+                className="h-9 px-2 rounded border border-white/15"
               >
                 <option value="">{t('common.all')}</option>
                 <option value="booked">{t('common.booked')}</option>
@@ -412,7 +412,7 @@ export function DashboardPage() {
               </select>
             </div>
 
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 text-sm text-white/80">
               <input
                 type="checkbox"
                 checked={excludeTransfers}
@@ -423,7 +423,7 @@ export function DashboardPage() {
                     else next.set('include_transfers', '1');
                   });
                 }}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-white/15 text-cyan-300 focus:ring-cyan-300/60"
               />
               {t('common.excludeTransfers')}
             </label>
@@ -434,12 +434,12 @@ export function DashboardPage() {
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card
-          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          className="cursor-pointer hover:bg-white/5 transition-colors"
           onClick={() => openKPIDrilldown(excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow'), {})}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow')}</CardTitle>
-            <CreditCard className="h-4 w-4 text-gray-500" />
+            <CreditCard className="h-4 w-4 text-white/60" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -447,14 +447,14 @@ export function DashboardPage() {
                 ? formatCurrency(overview?.net_spend || 0, true)
                 : formatCurrency(overview?.net_cashflow || 0, true)}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-white/60 mt-1">
               {excludeTransfers ? t('dashboard.transfersExcluded') : t('dashboard.cashflowView')}
             </p>
           </CardContent>
         </Card>
 
         <Card
-          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          className="cursor-pointer hover:bg-white/5 transition-colors"
           onClick={() => openKPIDrilldown(t('dashboard.expenses'), { flowType: 'expense' })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -463,13 +463,13 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(overview?.expenses || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">{t('dashboard.absoluteSumOfSpending')}</p>
+            <p className="text-xs text-white/60 mt-1">{t('dashboard.absoluteSumOfSpending')}</p>
           </CardContent>
         </Card>
 
         {showBudgets && (
           <Card
-            className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="cursor-pointer hover:bg-white/5 transition-colors"
             onClick={() => openKPIDrilldown(t('dashboard.income'), { flowType: 'income' })}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -478,13 +478,13 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
-              <p className="text-xs text-gray-500 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
+              <p className="text-xs text-white/60 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
             </CardContent>
           </Card>
         )}
 
         <Card
-          className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+          className="cursor-pointer hover:bg-white/5 transition-colors"
           onClick={() => {
             const qs = new URLSearchParams();
             qs.set('date_from', dateFrom);
@@ -497,11 +497,11 @@ export function DashboardPage() {
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.transfers')}</CardTitle>
-            <ArrowRight className="h-4 w-4 text-gray-500" />
+            <ArrowRight className="h-4 w-4 text-white/60" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(overview?.transfers.total || 0)}</div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-white/60 mt-1">
               {t('dashboard.transfersIn')} {formatCurrency(overview?.transfers.in || 0)} / {t('dashboard.transfersOut')} {formatCurrency(overview?.transfers.out || 0)}
             </p>
           </CardContent>
@@ -513,7 +513,7 @@ export function DashboardPage() {
         {topExpenseCategoryTiles.map((cat) => (
           <Card
             key={String(cat.category_id)}
-            className="cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="cursor-pointer hover:bg-white/5 transition-colors"
             onClick={() => {
               const qs = new URLSearchParams();
               qs.set('date_from', dateFrom);
@@ -527,11 +527,11 @@ export function DashboardPage() {
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium truncate">{cat.category_name}</CardTitle>
-              <Tag className="h-4 w-4 text-gray-500" />
+              <Tag className="h-4 w-4 text-white/60" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{formatCurrency(Math.abs(cat.total))}</div>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-white/60 mt-1">
                 {cat.count} {t('dashboard.txCountShort')}
               </p>
             </CardContent>
@@ -570,7 +570,7 @@ export function DashboardPage() {
                   }}
                   style={{ cursor: 'pointer' }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-white/10" />
                   <XAxis
                     dataKey="date"
                     tickFormatter={formatDateShort}
@@ -740,7 +740,7 @@ export function DashboardPage() {
                     if (typeof label === 'string') openMonthDrilldown(label);
                   }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-white/10" />
                   <XAxis dataKey="month" tickFormatter={formatYearMonth} className="text-xs" />
                   <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
                   <Tooltip
@@ -782,14 +782,14 @@ export function DashboardPage() {
                     >
                       <div className="col-span-6 text-sm">{formatMonth(p.date)}</div>
                       <div className="col-span-4 text-sm text-right font-medium">{formatCurrency(p.expenses)}</div>
-                      <div className="col-span-2 text-sm text-right text-gray-500">{p.count}</div>
+                      <div className="col-span-2 text-sm text-right text-white/60">{p.count}</div>
                     </button>
                   ))}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="flex h-[260px] items-center justify-center text-gray-500">
+            <div className="flex h-[260px] items-center justify-center text-white/60">
               {t('dashboard.noGroceriesData')}
             </div>
           )}
@@ -812,7 +812,7 @@ export function DashboardPage() {
                 {merchants.map((merchant, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 p-2 rounded-lg transition-colors"
+                    className="flex items-center justify-between cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-colors"
                     onClick={() => {
                       const qs = new URLSearchParams();
                       qs.set('date_from', dateFrom);
@@ -827,12 +827,12 @@ export function DashboardPage() {
                     }}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-xs font-medium dark:bg-gray-800">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xs font-medium ">
                         {i + 1}
                       </div>
                       <div>
                         <p className="font-medium">{merchant.merchant_name}</p>
-                        <p className="text-xs text-gray-500">{merchant.count} transactions</p>
+                        <p className="text-xs text-white/60">{merchant.count} transactions</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -847,7 +847,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">{t('dashboard.noMerchantData')}</p>
+              <p className="text-white/60 text-center py-8">{t('dashboard.noMerchantData')}</p>
             )}
           </CardContent>
         </Card>
@@ -864,10 +864,10 @@ export function DashboardPage() {
             {anomalies.length > 0 ? (
               <div className="space-y-3">
                 {anomalies.map((anomaly, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-gray-900">
+                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{anomaly.description}</p>
-                      <p className="text-xs text-gray-500">{anomaly.reason}</p>
+                      <p className="text-xs text-white/60">{anomaly.reason}</p>
                     </div>
                     <div className="text-right ml-4">
                       <p className="font-medium text-red-500">{formatCurrency(anomaly.amount)}</p>
@@ -884,7 +884,7 @@ export function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-gray-500 text-center py-8">{t('dashboard.noUnusualSpending')}</p>
+              <p className="text-white/60 text-center py-8">{t('dashboard.noUnusualSpending')}</p>
             )}
           </CardContent>
         </Card>

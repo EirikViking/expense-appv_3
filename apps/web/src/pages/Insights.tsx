@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   BarChart,
   Bar,
@@ -352,25 +352,25 @@ export function InsightsPage() {
 
       {/* Custom Date Range Panel */}
       {showCustomRange && (
-        <Card className="bg-blue-50 border-blue-200">
+        <Card className="bg-white/5 border-white/15">
           <CardContent className="pt-4 pb-4">
             <div className="flex flex-wrap items-end gap-4">
               <div className="flex-1 min-w-[150px]">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">From</label>
+                <label className="text-sm font-medium text-white/80 mb-1 block">From</label>
                 <Input
                   type="date"
                   value={customDateFrom}
                   onChange={(e) => setCustomDateFrom(e.target.value)}
-                  className="bg-white"
+                  className="bg-white/5"
                 />
               </div>
               <div className="flex-1 min-w-[150px]">
-                <label className="text-sm font-medium text-gray-700 mb-1 block">To</label>
+                <label className="text-sm font-medium text-white/80 mb-1 block">To</label>
                 <Input
                   type="date"
                   value={customDateTo}
                   onChange={(e) => setCustomDateTo(e.target.value)}
-                  className="bg-white"
+                  className="bg-white/5"
                 />
               </div>
               <Button onClick={applyCustomRange} disabled={!customDateFrom || !customDateTo}>
@@ -380,7 +380,7 @@ export function InsightsPage() {
                 Cancel
               </Button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
+            <p className="text-xs text-white/60 mt-2">
               Current range: {dateFrom} to {dateTo}
             </p>
           </CardContent>
@@ -391,13 +391,13 @@ export function InsightsPage() {
       {comparison && (
         <div className="grid gap-4 md:grid-cols-3">
           <Card
-            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            className="cursor-pointer hover:bg-white/5 transition-colors"
             onClick={() => openKPIDrilldown('Total Expenses', { flowType: 'expense' })}
           >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">Total Expenses</p>
+                  <p className="text-sm text-white/60">Total Expenses</p>
                   <p className="text-2xl font-bold">
                     {formatCurrency(comparison?.current?.total_expenses ?? 0)}
                   </p>
@@ -416,7 +416,7 @@ export function InsightsPage() {
                   {Math.abs(comparison?.change_percentage?.expenses ?? 0).toFixed(1)}%
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-white/45 mt-2">
                 vs {formatCurrency(comparison?.previous?.total_expenses ?? 0)} last period
               </p>
             </CardContent>
@@ -424,13 +424,13 @@ export function InsightsPage() {
 
           {showBudgets && (
             <Card
-              className="cursor-pointer hover:bg-gray-50 transition-colors"
+              className="cursor-pointer hover:bg-white/5 transition-colors"
               onClick={() => openKPIDrilldown('Total Income', { flowType: 'income' })}
             >
               <CardContent className="pt-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-gray-500">Total Income</p>
+                    <p className="text-sm text-white/60">Total Income</p>
                     <p className="text-2xl font-bold text-green-600">
                       {formatCurrency(comparison?.current?.total_income ?? 0)}
                     </p>
@@ -449,7 +449,7 @@ export function InsightsPage() {
                     {Math.abs(comparison?.change_percentage?.income ?? 0).toFixed(1)}%
                   </div>
                 </div>
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-white/45 mt-2">
                   vs {formatCurrency(comparison?.previous?.total_income ?? 0)} last period
                 </p>
               </CardContent>
@@ -457,13 +457,13 @@ export function InsightsPage() {
           )}
 
           <Card
-            className="cursor-pointer hover:bg-gray-50 transition-colors"
+            className="cursor-pointer hover:bg-white/5 transition-colors"
             onClick={() => openKPIDrilldown('Net Savings')}
           >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">Net Savings</p>
+                  <p className="text-sm text-white/60">Net Savings</p>
                   <p className={cn(
                     'text-2xl font-bold',
                     (comparison?.current?.net ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'
@@ -485,7 +485,7 @@ export function InsightsPage() {
                   {Math.abs(comparison?.change_percentage?.net ?? 0).toFixed(1)}%
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-white/45 mt-2">
                 vs {formatCurrency(comparison?.previous?.net ?? 0, true)} last period
               </p>
             </CardContent>
@@ -572,8 +572,8 @@ export function InsightsPage() {
                 {showCategoryDetails ? 'Skjul detaljer' : 'Vis detaljer'}
               </Button>
             </div>
-            <p className="text-xs text-gray-500">
-              Vises når kategorisering er tilgjengelig.
+            <p className="text-xs text-white/60">
+              Vises n�r kategorisering er tilgjengelig.
             </p>
           </CardHeader>
           <CardContent>
@@ -613,7 +613,7 @@ export function InsightsPage() {
                   {safeCategories.filter(c => c.category_id).slice(0, 6).map((cat, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors -mx-2"
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-white/10 p-2 rounded-lg transition-colors -mx-2"
                       onClick={() => openCategoryDrilldown(cat)}
                     >
                       <div
@@ -622,8 +622,8 @@ export function InsightsPage() {
                       />
                       <span className="flex-1 truncate">{cat.category_name}</span>
                       <span className="font-medium">{formatCurrency(cat.total)}</span>
-                      <span className="text-gray-400 text-xs">{cat.percentage.toFixed(0)}%</span>
-                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                      <span className="text-white/45 text-xs">{cat.percentage.toFixed(0)}%</span>
+                      <ChevronRight className="h-4 w-4 text-white/45" />
                     </div>
                   ))}
                 </div>
@@ -650,18 +650,18 @@ export function InsightsPage() {
                   return (
                     <div
                       key={i}
-                      className="cursor-pointer hover:bg-gray-100 p-2 rounded-lg transition-colors -mx-2"
+                      className="cursor-pointer hover:bg-white/10 p-2 rounded-lg transition-colors -mx-2"
                       onClick={() => openMerchantDrilldown(merchant)}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium truncate flex-1">{merchant.merchant_name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-600">{formatCurrency(merchant.total)}</span>
+                          <span className="text-sm text-white/70">{formatCurrency(merchant.total)}</span>
                           <Badge variant="outline" className="text-xs">{merchant.count}x</Badge>
-                          <ChevronRight className="h-4 w-4 text-gray-400" />
+                          <ChevronRight className="h-4 w-4 text-white/45" />
                         </div>
                       </div>
-                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-blue-500 rounded-full transition-all"
                           style={{ width: `${barWidth}%` }}
@@ -672,7 +672,7 @@ export function InsightsPage() {
                 })}
               </div>
             ) : (
-              <div className="flex h-[250px] items-center justify-center text-gray-500">
+              <div className="flex h-[250px] items-center justify-center text-white/60">
                 No merchant data
               </div>
             )}
@@ -699,7 +699,7 @@ export function InsightsPage() {
               {safeSubscriptions.map((sub, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="flex items-center gap-3 p-3 rounded-lg border border-white/15 bg-white/5 cursor-pointer hover:bg-white/10 transition-colors"
                   onClick={() => openMerchantDrilldown({
                     merchant_id: sub.merchant_id,
                     merchant_name: sub.merchant_name,
@@ -714,9 +714,9 @@ export function InsightsPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{sub.merchant_name}</p>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <div className="flex items-center gap-2 text-sm text-white/60">
                       <span>{formatCurrency(sub.amount)}</span>
-                      <span className="text-gray-400">|</span>
+                      <span className="text-white/45">|</span>
                       <span>{sub.frequency}</span>
                     </div>
                   </div>
@@ -727,7 +727,7 @@ export function InsightsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-8">
+            <p className="text-white/60 text-center py-8">
               No recurring transactions detected yet
             </p>
           )}

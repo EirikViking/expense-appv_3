@@ -304,9 +304,9 @@ export function TransactionsPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="relative md:col-span-2">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="relative md:col-span-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/45" />
           <Input
             type="text"
             placeholder={t('common.searchTransactionsPlaceholder')}
@@ -319,7 +319,7 @@ export function TransactionsPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-white/80 mb-1">
             {t('transactions.sort.label')}
           </label>
           <select
@@ -328,7 +328,7 @@ export function TransactionsPage() {
               setSortKey(e.target.value as typeof sortKey);
               setPage(0);
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
           >
             <option value="date_desc">{t('transactions.sort.dateDesc')}</option>
             <option value="date_asc">{t('transactions.sort.dateAsc')}</option>
@@ -341,11 +341,11 @@ export function TransactionsPage() {
       </div>
 
       {/* Filters Panel */}
-      {showFilters && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+        {showFilters && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-4">
+              <label className="block text-sm font-medium text-white/80 mb-2">
                 {t('transactions.quickDatePresets')}
               </label>
               <div className="flex flex-wrap gap-2">
@@ -404,7 +404,7 @@ export function TransactionsPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.fromDate')}
                 </label>
                 <Input
@@ -417,7 +417,7 @@ export function TransactionsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.toDate')}
                 </label>
                 <Input
@@ -430,7 +430,7 @@ export function TransactionsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.status')}
                 </label>
                 <select
@@ -439,7 +439,7 @@ export function TransactionsPage() {
                     setStatus(e.target.value as TransactionStatus | '');
                     setPage(0);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                 >
                   <option value="">{t('common.all')}</option>
                   <option value="booked">{t('common.booked')}</option>
@@ -447,7 +447,7 @@ export function TransactionsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.source')}
                 </label>
                 <select
@@ -456,7 +456,7 @@ export function TransactionsPage() {
                     setSourceType(e.target.value as SourceType | '');
                     setPage(0);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                 >
                   <option value="">{t('common.all')}</option>
                   <option value="xlsx">{t('common.creditCardXlsx')}</option>
@@ -464,7 +464,7 @@ export function TransactionsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('transactions.flowType')}
                 </label>
                 <select
@@ -473,7 +473,7 @@ export function TransactionsPage() {
                     setFlowType(e.target.value as FlowType | '');
                     setPage(0);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                 >
                   <option value="">{t('common.all')}</option>
                   <option value="expense">{t('transactions.flowTypes.expense')}</option>
@@ -483,7 +483,7 @@ export function TransactionsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.category')}
                 </label>
                 <select
@@ -492,7 +492,7 @@ export function TransactionsPage() {
                     setCategoryId(e.target.value);
                     setPage(0);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                 >
                   <option value="">{t('common.allCategories')}</option>
                   {categories.map((cat) => (
@@ -506,7 +506,7 @@ export function TransactionsPage() {
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.minAmount')}
                 </label>
                 <Input
@@ -521,7 +521,7 @@ export function TransactionsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.maxAmount')}
                 </label>
                 <Input
@@ -539,7 +539,7 @@ export function TransactionsPage() {
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('transactions.merchantExact')}
                 </label>
                 <Input
@@ -554,7 +554,7 @@ export function TransactionsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('transactions.merchantId')}
                 </label>
                 <Input
@@ -579,9 +579,9 @@ export function TransactionsPage() {
                   setExcludeTransfers(e.target.checked);
                   setPage(0);
                 }}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="h-4 w-4 rounded border-white/25 bg-white/5 text-cyan-300 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
               />
-              <label htmlFor="exclude-transfers" className="text-sm text-gray-700">
+              <label htmlFor="exclude-transfers" className="text-sm text-white/80">
                 {t('transactions.excludeTransfersDefault')}
               </label>
 
@@ -594,9 +594,9 @@ export function TransactionsPage() {
                     setShowExcluded(e.target.checked);
                     setPage(0);
                   }}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded border-white/25 bg-white/5 text-cyan-300 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                 />
-                <label htmlFor="show-excluded" className="text-sm text-gray-700">
+                <label htmlFor="show-excluded" className="text-sm text-white/80">
                   {t('transactions.showExcluded')}
                 </label>
               </div>
@@ -618,7 +618,7 @@ export function TransactionsPage() {
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+        <div className="rounded-lg border border-red-300/30 bg-red-500/10 px-4 py-3 text-red-100">
           {error}
         </div>
       )}
@@ -644,18 +644,18 @@ export function TransactionsPage() {
       ) : (
         <>
           {/* Results count */}
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-white/70">
             {t('transactions.showingCount', { shown: transactions.length, total })}
           </p>
 
           {/* Transactions List */}
           <Card>
             <CardContent className="p-0">
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-white/10">
                 {transactions.map((tx) => (
                   <div
                     key={tx.id}
-                    className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
                     onClick={() => !editingId && setSelectedTransaction(tx)}
                   >
                     {editingId === tx.id ? (
@@ -664,7 +664,7 @@ export function TransactionsPage() {
                         <div className="flex items-start justify-between">
                           <div>
                             <p className="font-medium">{tx.description}</p>
-                            <p className="text-sm text-gray-500">{formatDate(tx.tx_date)}</p>
+                            <p className="text-sm text-white/60">{formatDate(tx.tx_date)}</p>
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" onClick={() => handleSaveEdit(tx.id)}>
@@ -677,13 +677,13 @@ export function TransactionsPage() {
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-white/80 mb-1">
                               {t('common.category')}
                             </label>
                             <select
                               value={editCategory}
                               onChange={(e) => setEditCategory(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-3 py-2 border border-white/15 bg-white/5 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent"
                             >
                               <option value="">{t('common.uncategorized')}</option>
                               {categories.map((cat) => (
@@ -694,7 +694,7 @@ export function TransactionsPage() {
                             </select>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                            <label className="block text-sm font-medium text-white/80 mb-1">
                               {t('transactions.notes')}
                             </label>
                             <Input
@@ -717,7 +717,7 @@ export function TransactionsPage() {
                             if (e.target.checked) setSelectedIds([...selectedIds, tx.id]);
                             else setSelectedIds(selectedIds.filter(id => id !== tx.id));
                           }}
-                          className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          className="h-4 w-4 rounded border-white/25 bg-white/5 text-cyan-300 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent cursor-pointer"
                         />
                         <div
                           className="h-10 w-10 rounded-lg flex items-center justify-center text-white text-sm font-medium"
@@ -751,17 +751,17 @@ export function TransactionsPage() {
                               </Badge>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-500">
+                          <div className="flex items-center gap-2 text-sm text-white/60">
                             <span>{formatDate(tx.tx_date)}</span>
                             {tx.merchant_name && (
                               <>
-                                <span className="text-gray-400">|</span>
+                                <span className="text-white/25">|</span>
                                 <span>{tx.merchant_name}</span>
                               </>
                             )}
                             {tx.category_name && (
                               <>
-                                <span className="text-gray-400">|</span>
+                                <span className="text-white/25">|</span>
                                 <span
                                   className="px-1.5 py-0.5 rounded text-xs"
                                   style={tx.category_color ? {
@@ -776,7 +776,7 @@ export function TransactionsPage() {
                           </div>
                           {tx.tags && tx.tags.length > 0 && (
                             <div className="flex items-center gap-1 mt-1">
-                              <Tag className="h-3 w-3 text-gray-400" />
+                              <Tag className="h-3 w-3 text-white/45" />
                               {tx.tags.map((tag) => (
                                 <Badge
                                   key={tag.id}
@@ -793,7 +793,7 @@ export function TransactionsPage() {
                             </div>
                           )}
                           {tx.notes && (
-                            <p className="text-xs text-gray-400 mt-1 italic">
+                            <p className="text-xs text-white/50 mt-1 italic">
                               {tx.notes}
                             </p>
                           )}
@@ -818,9 +818,9 @@ export function TransactionsPage() {
                                 e.stopPropagation();
                                 startEdit(tx);
                               }}
-                              className="p-1 hover:bg-gray-200 rounded"
+                              className="p-1 hover:bg-white/10 rounded"
                             >
-                              <Pencil className="h-3 w-3 text-gray-400" />
+                              <Pencil className="h-3 w-3 text-white/45" />
                             </button>
                           </div>
                         </div>
@@ -829,7 +829,7 @@ export function TransactionsPage() {
                   </div>
                 ))}
                 {transactions.length === 0 && (
-                  <div className="p-12 text-center text-gray-500">
+                  <div className="p-12 text-center text-white/60">
                     {t('transactions.noTransactionsFound')}
                   </div>
                 )}
@@ -849,7 +849,7 @@ export function TransactionsPage() {
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 {t('common.previous')}
               </Button>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-white/70">
                 {t('transactions.pageOf', { page: page + 1, total: totalPages })}
               </span>
               <Button
@@ -901,7 +901,7 @@ export function TransactionsPage() {
             <div className="grid grid-cols-4 items-center gap-4">
               <Label className="text-right">{t('common.category')}</Label>
               <select
-                className="col-span-3 flex h-10 w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+                className="col-span-3 flex h-10 w-full rounded-md border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 focus:ring-offset-transparent disabled:cursor-not-allowed disabled:opacity-50"
                 value={newTx.category_id}
                 onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
               >

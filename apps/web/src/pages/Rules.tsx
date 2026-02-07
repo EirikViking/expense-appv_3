@@ -313,7 +313,7 @@ export function RulesPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   Rule Name
                 </label>
                 <Input
@@ -327,7 +327,7 @@ export function RulesPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-white/80 mb-1">
                   Priority
                 </label>
                 <Input
@@ -343,14 +343,14 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-3">Match Condition</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">Match Condition</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">Field</label>
+                  <label className="block text-sm text-white/60 mb-1">Field</label>
                   <select
                     value={formField}
                     onChange={(e) => setFormField(e.target.value)}
-                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {RULE_MATCH_FIELDS.map((f) => (
                       <option key={f} value={f}>
@@ -360,11 +360,11 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">Match Type</label>
+                  <label className="block text-sm text-white/60 mb-1">Match Type</label>
                   <select
                     value={formMatchType}
                     onChange={(e) => setFormMatchType(e.target.value)}
-                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {RULE_MATCH_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -374,7 +374,7 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">Pattern</label>
+                  <label className="block text-sm text-white/60 mb-1">Pattern</label>
                   <Input
                     type="text"
                     value={formPattern}
@@ -389,17 +389,17 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-3">Action</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">Action</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">Action Type</label>
+                  <label className="block text-sm text-white/60 mb-1">Action Type</label>
                   <select
                     value={formActionType}
                     onChange={(e) => {
                       setFormActionType(e.target.value);
                       setFormActionValue('');
                     }}
-                    className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {RULE_ACTION_TYPES.map((t) => (
                       <option key={t} value={t}>
@@ -409,12 +409,12 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">Value</label>
+                  <label className="block text-sm text-white/60 mb-1">Value</label>
                   {formActionType === 'set_category' ? (
                     <select
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
-                      className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select category</option>
                       {categories.map((cat) => (
@@ -427,7 +427,7 @@ export function RulesPage() {
                     <select
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
-                      className="w-full h-10 px-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select tag</option>
                       {tags.map((tag) => (
@@ -457,9 +457,9 @@ export function RulesPage() {
                 id="enabled"
                 checked={formEnabled}
                 onChange={(e) => setFormEnabled(e.target.checked)}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-4 w-4 rounded border-white/15"
               />
-              <label htmlFor="enabled" className="text-sm text-gray-700">
+              <label htmlFor="enabled" className="text-sm text-white/80">
                 Rule enabled
               </label>
             </div>
@@ -504,7 +504,7 @@ export function RulesPage() {
               className={`mt-3 p-3 rounded-lg ${
                 testResult.matches
                   ? 'bg-green-50 text-green-700'
-                  : 'bg-gray-50 text-gray-700'
+                  : 'bg-white/5 text-white/80'
               }`}
             >
               {testResult.matches ? (
@@ -539,11 +539,11 @@ export function RulesPage() {
                   key={rule.id}
                   className={`flex items-center gap-3 p-3 rounded-lg border ${
                     rule.enabled
-                      ? 'bg-white border-gray-200'
-                      : 'bg-gray-50 border-gray-100 opacity-60'
+                      ? 'bg-white/5 border-white/15'
+                      : 'bg-white/5 border-white/10 opacity-60'
                   }`}
                 >
-                  <GripVertical className="h-4 w-4 text-gray-300" />
+                  <GripVertical className="h-4 w-4 text-white/25" />
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -557,10 +557,10 @@ export function RulesPage() {
                         </Badge>
                       )}
                     </div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      When <span className="font-mono text-xs bg-gray-100 px-1 rounded">{rule.match_field}</span>
+                    <div className="text-sm text-white/60 mt-1">
+                      When <span className="font-mono text-xs bg-white/10 px-1 rounded">{rule.match_field}</span>
                       {' '}{rule.match_type.replace('_', ' ')}{' '}
-                      <span className="font-mono text-xs bg-gray-100 px-1 rounded">"{rule.match_value}"</span>
+                      <span className="font-mono text-xs bg-white/10 px-1 rounded">"{rule.match_value}"</span>
                       {' then '}
                       <span className="text-blue-600">{rule.action_type.replace('_', ' ')}</span>
                       {': '}
@@ -586,7 +586,7 @@ export function RulesPage() {
                       {rule.enabled ? (
                         <CheckCircle className="h-4 w-4 text-green-500" />
                       ) : (
-                        <XCircle className="h-4 w-4 text-gray-400" />
+                        <XCircle className="h-4 w-4 text-white/45" />
                       )}
                     </Button>
                     <Button
@@ -594,7 +594,7 @@ export function RulesPage() {
                       variant="ghost"
                       onClick={() => startEdit(rule)}
                     >
-                      <Pencil className="h-4 w-4 text-gray-400" />
+                      <Pencil className="h-4 w-4 text-white/45" />
                     </Button>
                     <Button
                       size="sm"
@@ -608,7 +608,7 @@ export function RulesPage() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 text-center py-8">
+            <p className="text-white/60 text-center py-8">
               No rules yet. Create one to automatically categorize transactions!
             </p>
           )}
