@@ -11,6 +11,7 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { buildCategoryBreakdown, toNumber } from '../lib/analytics';
+import { merchantChainKey } from '../lib/merchant-chain';
 
 const analytics = new Hono<{ Bindings: Env }>();
 
@@ -462,26 +463,17 @@ analytics.get('/by-merchant', async (c) => {
       .bind(...prevBindings)
       .all<{ merchant_id: string | null; merchant_name: string; total: number }>();
 
-    const chainKey = (merchantId: string | null | undefined, merchantName: string): string => {
-      const name = String(merchantName || '').trim();
-      if (!name) return name;
-      if (merchantId) return name; // canonical merchants should not be merged heuristically
-      const parts = name.split(/\s+/);
-      if (parts.length >= 2 && /^\d+$/.test(parts[1])) return parts[0]; // "KIWI 505" -> "KIWI"
-      return name;
-    };
-
     // Aggregate previous totals by chain key.
     const prevMap = new Map<string, number>();
     for (const r of prevResult.results || []) {
-      const k = chainKey(r.merchant_id, r.merchant_name);
+      const k = merchantChainKey(r.merchant_id, r.merchant_name);
       prevMap.set(k, (prevMap.get(k) || 0) + toNumber(r.total));
     }
 
     // Aggregate current rows by chain key.
     const currentAgg = new Map<string, { merchant_id: string | null; merchant_name: string; total: number; count: number }>();
     for (const r of currentResult.results || []) {
-      const k = chainKey(r.merchant_id, r.merchant_name);
+      const k = merchantChainKey(r.merchant_id, r.merchant_name);
       const existing = currentAgg.get(k);
       if (existing) {
         existing.total += toNumber(r.total);
