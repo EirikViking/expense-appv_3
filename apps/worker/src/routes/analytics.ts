@@ -348,7 +348,50 @@ analytics.get('/by-merchant', async (c) => {
     }
 
     const { date_from, date_to, status, source_type, category_id, tag_id, include_transfers } = parsed.data;
-    const limit = parseInt(c.req.query('limit') || '20');
+    const limitRaw = Number.parseInt(c.req.query('limit') || '20', 10);
+    const limit = Number.isFinite(limitRaw) ? Math.min(200, Math.max(1, limitRaw)) : 20;
+
+    // Many Storebrand exports embed noise into description (e.g. "Notanr ...", "betal dato ..."),
+    // which fragments the same store into many merchant groups. Normalize into a stable key when
+    // no canonical merchant exists.
+    const baseTextExpr = `COALESCE(NULLIF(TRIM(t.merchant), ''), TRIM(t.description))`;
+    const prefixStrippedExpr = `
+      CASE
+        WHEN LOWER(${baseTextExpr}) LIKE 'vipps*%' AND INSTR(${baseTextExpr}, '*') > 0
+          THEN SUBSTR(${baseTextExpr}, INSTR(${baseTextExpr}, '*') + 1)
+        WHEN INSTR(${baseTextExpr}, ' ') > 0 AND LOWER(SUBSTR(${baseTextExpr}, 1, INSTR(${baseTextExpr}, ' ') - 1)) LIKE 'varekj%p'
+          THEN SUBSTR(${baseTextExpr}, INSTR(${baseTextExpr}, ' ') + 1)
+        ELSE ${baseTextExpr}
+      END
+    `;
+    const cleanedExpr = `
+      TRIM(
+        CASE
+          WHEN INSTR(LOWER(${prefixStrippedExpr}), ' notanr ') > 0
+            THEN SUBSTR(${prefixStrippedExpr}, 1, INSTR(LOWER(${prefixStrippedExpr}), ' notanr ') - 1)
+          WHEN INSTR(LOWER(${prefixStrippedExpr}), ' betal dato ') > 0
+            THEN SUBSTR(${prefixStrippedExpr}, 1, INSTR(LOWER(${prefixStrippedExpr}), ' betal dato ') - 1)
+          ELSE ${prefixStrippedExpr}
+        END
+      )
+    `;
+    const twoTokensExpr = `
+      CASE
+        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
+        WHEN INSTR(SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1), ' ') = 0 THEN ${cleanedExpr}
+        ELSE SUBSTR(
+          ${cleanedExpr},
+          1,
+          INSTR(${cleanedExpr}, ' ') + INSTR(SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1), ' ')
+        )
+      END
+    `;
+    const merchantNameExpr = `
+      CASE
+        WHEN m.id IS NOT NULL AND COALESCE(NULLIF(TRIM(m.canonical_name), ''), '') != '' THEN TRIM(m.canonical_name)
+        ELSE TRIM(${twoTokensExpr})
+      END
+    `;
 
     // Current period
     const { clause, bindings } = buildWhereClause({
@@ -365,7 +408,7 @@ analytics.get('/by-merchant', async (c) => {
       .prepare(`
         SELECT
           m.id as merchant_id,
-          COALESCE(m.canonical_name, t.description) as merchant_name,
+          ${merchantNameExpr} as merchant_name,
           COALESCE(SUM(ABS(t.amount)), 0) as total,
           COUNT(*) as count,
           COALESCE(AVG(ABS(t.amount)), 0) as avg
@@ -373,7 +416,7 @@ analytics.get('/by-merchant', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         ${clause} ${clause ? 'AND' : 'WHERE'} (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
-        GROUP BY m.id, COALESCE(m.canonical_name, t.description)
+        GROUP BY m.id, merchant_name
         ORDER BY total DESC
         LIMIT ?
       `)
@@ -404,13 +447,13 @@ analytics.get('/by-merchant', async (c) => {
     const prevResult = await c.env.DB
       .prepare(`
         SELECT
-          COALESCE(m.canonical_name, t.description) as merchant_name,
+          ${merchantNameExpr} as merchant_name,
           COALESCE(SUM(ABS(t.amount)), 0) as total
         FROM transactions t
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         ${prevClause} ${prevClause ? 'AND' : 'WHERE'} (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
-        GROUP BY COALESCE(m.canonical_name, t.description)
+        GROUP BY merchant_name
       `)
       .bind(...prevBindings)
       .all<{ merchant_name: string; total: number }>();
