@@ -303,13 +303,32 @@ ingest.post('/xlsx', async (c) => {
     // Check file-level duplicate
     const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
     if (isFileDuplicate) {
+      // Even when the *file* is a duplicate, we still want to be able to re-run categorization.
+      // This is critical when historical ingests happened before rules/normalization fixes.
+      let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
+      try {
+        await applyRulesForFile(c.env.DB, file_hash);
+        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        console.log(
+          `[XLSX Ingest] Reprocessed duplicate ${filename}: ` +
+            JSON.stringify(categorization_counts)
+        );
+      } catch (error) {
+        console.error('Apply rules error (xlsx duplicate reprocess):', error);
+      }
+
       const response: IngestResponse = {
         inserted: 0,
         skipped_duplicates: 0,
         skipped_invalid: 0,
         file_duplicate: true,
       };
-      return c.json(response);
+
+      return c.json({
+        ...response,
+        ...(categorization_counts ? { categorization_counts } : {}),
+      });
     }
 
     // Insert file record
