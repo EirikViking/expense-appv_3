@@ -417,66 +417,49 @@ async function insertTransaction(
   return id;
 }
 
-// XLSX ingestion endpoint
-ingest.post('/xlsx', async (c) => {
-  try {
-    const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
-    if (!bodyResult.ok) {
-      return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
-    }
+type XlsxIngestTx = {
+  tx_date: string;
+  booked_date?: string;
+  description: string;
+  merchant?: string;
+  amount: number;
+  currency: string;
+  raw_json: string;
+};
 
-    const parsed = xlsxIngestRequestSchema.safeParse(bodyResult.data);
+async function insertXlsxTransactionsBatch(
+  db: D1Database,
+  fileHash: string,
+  filename: string,
+  txs: XlsxIngestTx[]
+): Promise<{ inserted: number; skipped_duplicates: number; skipped_invalid: number }> {
+  // Batch insert is critical for large Storebrand exports (thousands of rows).
+  // The previous per-row SELECT + INSERT loop could hit Worker CPU/time limits and leave partial imports.
+  const BATCH_SIZE = 50; // conservative; D1 batch has practical limits.
 
-    if (!parsed.success) {
-      const errorMessage = parsed.error.errors[0]?.message || 'Invalid request';
-      return c.json({ error: errorMessage, code: 'invalid_request', details: parsed.error.message }, 400);
-    }
+  let inserted = 0;
+  let skipped_duplicates = 0;
+  let skipped_invalid = 0;
 
-    const { file_hash, filename, transactions } = parsed.data;
+  for (let i = 0; i < txs.length; i += BATCH_SIZE) {
+    const chunk = txs.slice(i, i + BATCH_SIZE);
 
-    // Check file-level duplicate
-    const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
-    if (isFileDuplicate) {
-      // Even when the *file* is a duplicate, we still want to be able to re-run categorization.
-      // This is critical when historical ingests happened before rules/normalization fixes.
-      let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
+    const prepared: Array<{
+      id: string;
+      tx_hash_promise: Promise<string>;
+      tx_date: string;
+      booked_date: string | null;
+      description: string;
+      merchant: string | null;
+      amount: number;
+      currency: string;
+      raw_json: string;
+      flow_type: string;
+      flags?: { is_excluded?: number; is_transfer?: number };
+    }> = [];
+
+    for (const tx of chunk) {
       try {
-        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
-        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
-        console.log(
-          `[XLSX Ingest] Reprocessed duplicate ${filename}: ` +
-            JSON.stringify(categorization_counts)
-        );
-      } catch (error) {
-        console.error('Apply rules error (xlsx duplicate reprocess):', error);
-      }
-
-      const response: IngestResponse = {
-        inserted: 0,
-        skipped_duplicates: 0,
-        skipped_invalid: 0,
-        file_duplicate: true,
-      };
-
-      return c.json({
-        ...response,
-        ...(categorization_counts ? { categorization_counts } : {}),
-      });
-    }
-
-    // Insert file record
-    await insertFileRecord(c.env.DB, file_hash, 'xlsx', filename, {
-      transaction_count: transactions.length,
-    });
-
-    // Process transactions
-    let inserted = 0;
-    let skipped_duplicates = 0;
-    let skipped_invalid = 0;
-
-      for (const tx of transactions) {
-      try {
-        // Classify flow + normalize sign so purchases never land in income.
         const flow = classifyFlowType({
           source_type: 'xlsx',
           description: tx.description,
@@ -484,7 +467,6 @@ ingest.post('/xlsx', async (c) => {
           raw_json: tx.raw_json,
         });
 
-        // Keep XLSX-specific safety guards (section-based purchase normalization + refunds).
         const xlsxNormalized = normalizeXlsxAmountForIngest({
           amount: tx.amount,
           description: tx.description,
@@ -510,8 +492,8 @@ ingest.post('/xlsx', async (c) => {
               (obj as any).source_type = 'xlsx';
               (obj as any).source_file = filename;
               (obj as any).source_filename = filename;
-              (obj as any).source_file_hash = file_hash;
-              (obj as any).source_fingerprint = file_hash;
+              (obj as any).source_file_hash = fileHash;
+              (obj as any).source_fingerprint = fileHash;
               (obj as any).original_amount = tx.amount;
               (obj as any).pre_normalized_amount = xlsxNormalized.amount;
               (obj as any).normalized_amount = amount;
@@ -529,8 +511,8 @@ ingest.post('/xlsx', async (c) => {
             source_type: 'xlsx',
             source_file: filename,
             source_filename: filename,
-            source_file_hash: file_hash,
-            source_fingerprint: file_hash,
+            source_file_hash: fileHash,
+            source_fingerprint: fileHash,
             raw_json_original: tx.raw_json,
             original_amount: tx.amount,
             pre_normalized_amount: xlsxNormalized.amount,
@@ -543,51 +525,118 @@ ingest.post('/xlsx', async (c) => {
           });
         })();
 
-        const txHash = await computeTxHash(tx.tx_date, tx.description, amount, 'xlsx');
-        // Check transaction-level duplicate
-        const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
-        if (isTxDuplicate) {
-          skipped_duplicates++;
-          continue;
-        }
-
-        // Insert transaction (XLSX transactions are always "booked")
-        await insertTransaction(
-          c.env.DB,
-          txHash,
-          tx.tx_date,
-          tx.booked_date || null,
-          tx.description,
-          tx.merchant || null,
+        prepared.push({
+          id: generateId(),
+          tx_hash_promise: computeTxHash(tx.tx_date, tx.description, amount, 'xlsx'),
+          tx_date: tx.tx_date,
+          booked_date: tx.booked_date || null,
+          description: tx.description,
+          merchant: tx.merchant || null,
           amount,
-          tx.currency,
-          'booked',
-          'xlsx',
-          file_hash,
-          rawJson,
-          flowType,
-          flags
-        );
-
-        inserted++;
+          currency: tx.currency,
+          raw_json: rawJson,
+          flow_type: flowType,
+          flags,
+        });
       } catch {
         skipped_invalid++;
       }
     }
 
+    const hashes = await Promise.all(prepared.map((p) => p.tx_hash_promise));
+    const now = new Date().toISOString();
+
+    const statements: D1PreparedStatement[] = [];
+    for (let idx = 0; idx < prepared.length; idx++) {
+      const p = prepared[idx]!;
+      const txHash = hashes[idx]!;
+      statements.push(
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO transactions
+             (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+          .bind(
+            p.id,
+            txHash,
+            p.tx_date,
+            p.booked_date,
+            p.description,
+            p.merchant,
+            p.amount,
+            p.currency,
+            'booked',
+            'xlsx',
+            fileHash,
+            p.raw_json,
+            now,
+            p.flow_type,
+            p.flags?.is_excluded ?? 0,
+            p.flags?.is_transfer ?? 0
+          )
+      );
+    }
+
+    const results = statements.length > 0 ? await db.batch(statements) : [];
+    for (const res of results as any[]) {
+      const changes = Number(res?.meta?.changes || 0);
+      if (changes > 0) inserted += changes;
+      else skipped_duplicates++;
+    }
+  }
+
+  return { inserted, skipped_duplicates, skipped_invalid };
+}
+
+// XLSX ingestion endpoint
+ingest.post('/xlsx', async (c) => {
+  try {
+    const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
+    if (!bodyResult.ok) {
+      return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
+    }
+
+    const parsed = xlsxIngestRequestSchema.safeParse(bodyResult.data);
+
+    if (!parsed.success) {
+      const errorMessage = parsed.error.errors[0]?.message || 'Invalid request';
+      return c.json({ error: errorMessage, code: 'invalid_request', details: parsed.error.message }, 400);
+    }
+
+    const { file_hash, filename, transactions } = parsed.data;
+
+    // Check file-level duplicate
+    const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
+    if (!isFileDuplicate) {
+      // Insert file record once (FK target for transactions.source_file_hash).
+      await insertFileRecord(c.env.DB, file_hash, 'xlsx', filename, {
+        transaction_count: transactions.length,
+      });
+    }
+
+    // Process transactions (always attempt inserts, even if file is a duplicate).
+    // This lets users re-upload the same file to "complete" a partial import if a prior ingest timed out.
+    const { inserted, skipped_duplicates, skipped_invalid } = await insertXlsxTransactionsBatch(
+      c.env.DB,
+      file_hash,
+      filename,
+      transactions
+    );
+
     let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
     // Apply categorization in SQL (fast, avoids Worker CPU timeouts on large files).
-    if (inserted > 0 || skipped_duplicates > 0) {
-      try {
-        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
-        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
-        console.log(
-          `[XLSX Ingest] Categorization counts for ${filename}: ` +
-            JSON.stringify(categorization_counts)
-        );
-      } catch (error) {
-        console.error('Apply rules error (xlsx):', error);
-      }
+    try {
+      await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
+      categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+      console.log(
+        `[XLSX Ingest] Categorization counts for ${filename}: ` +
+          JSON.stringify(categorization_counts)
+      );
+    } catch (error) {
+      // Do not silently accept an import that cannot be categorized.
+      console.error('Apply rules error (xlsx):', error);
+      return c.json({ error: 'Failed to apply categorization rules', code: 'rules_apply_failed' }, 500);
     }
 
     // Store in R2 if available
@@ -597,7 +646,7 @@ ingest.post('/xlsx', async (c) => {
       inserted,
       skipped_duplicates,
       skipped_invalid,
-      file_duplicate: false,
+      file_duplicate: isFileDuplicate,
     };
 
     return c.json({
