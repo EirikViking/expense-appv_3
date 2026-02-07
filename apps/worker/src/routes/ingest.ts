@@ -241,80 +241,90 @@ async function applyCategoryRulesSqlForFile(
   fileHash: string,
   defaultCategoryId: string
 ): Promise<{ rules_considered: number; updates: number }> {
-  // Important: This is intentionally SQL-based to avoid Worker CPU/timeouts when files contain thousands of rows.
-  // It only supports string match types that can be expressed safely in SQL.
-  const enabledRules = await getEnabledRules(db);
   const now = new Date().toISOString();
+  // Important: This is intentionally SQL-based to avoid Worker CPU/timeouts when files contain thousands of rows.
+  // It categorizes *expense-like* rows for a given file hash by:
+  // 1) applying the best matching enabled set_category rule by priority, and
+  // 2) falling back to a default category when no rule matches.
+  //
+  // This avoids iterating thousands of rows in JS and guarantees a category_id is persisted to D1.
 
-  const eligible = enabledRules.filter(
-    (r) =>
-      r.enabled &&
-      r.action_type === 'set_category' &&
-      (r.match_type === 'contains' ||
-        r.match_type === 'starts_with' ||
-        r.match_type === 'ends_with' ||
-        r.match_type === 'exact') &&
-      (r.match_field === 'description' || r.match_field === 'merchant')
-  );
+  // 1) Fill missing split categories first. If a transaction has splits, analytics uses split categories.
+  const splitRes = await db
+    .prepare(
+      `
+        UPDATE transaction_splits
+        SET category_id = ?
+        WHERE category_id IS NULL
+          AND parent_transaction_id IN (
+            SELECT t.id
+            FROM transactions t
+            WHERE t.source_file_hash = ?
+              AND COALESCE(t.is_excluded, 0) = 0
+              AND COALESCE(t.is_transfer, 0) = 0
+              AND t.flow_type != 'transfer'
+              AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+          )
+      `
+    )
+    .bind(defaultCategoryId, fileHash)
+    .run();
 
-  let updates = 0;
-  for (const rule of eligible) {
-    const raw = String(rule.match_value ?? '').trim();
-    if (!raw) continue;
-
-    const baseExpr = `LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, ''))`;
-    const descExpr = `LOWER(COALESCE(t.description, ''))`;
-    const merchExpr = `LOWER(COALESCE(t.merchant, ''))`;
-
-    const needle = raw.toLowerCase();
-
-    let condSql = '';
-    let condBinds: string[] = [];
-
-    if (rule.match_type === 'contains') {
-      const like = `%${needle}%`;
-      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
-      condBinds = [like, like, like];
-    } else if (rule.match_type === 'starts_with') {
-      const like = `${needle}%`;
-      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
-      condBinds = [like, like, like];
-    } else if (rule.match_type === 'ends_with') {
-      const like = `%${needle}`;
-      condSql = `(${baseExpr} LIKE ? OR ${descExpr} LIKE ? OR ${merchExpr} LIKE ?)`;
-      condBinds = [like, like, like];
-    } else if (rule.match_type === 'exact') {
-      condSql = `(${baseExpr} = ? OR ${descExpr} = ? OR ${merchExpr} = ?)`;
-      condBinds = [needle, needle, needle];
-    } else {
-      continue;
-    }
-
-    const res = await db
-      .prepare(
-        `
-          UPDATE transaction_meta
-          SET category_id = ?, updated_at = ?
-          WHERE (category_id IS NULL OR category_id = ?)
-            AND transaction_id IN (
-              SELECT t.id
-              FROM transactions t
-              WHERE t.source_file_hash = ?
-                AND COALESCE(t.is_excluded, 0) = 0
-                AND COALESCE(t.is_transfer, 0) = 0
-                AND t.flow_type != 'transfer'
-                AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
-                AND ${condSql}
+  // 2) Upsert transaction_meta for non-split transactions.
+  // Choose the first matching set_category rule by priority; else default category.
+  const metaRes = await db
+    .prepare(
+      `
+        WITH desired AS (
+          SELECT
+            t.id AS transaction_id,
+            COALESCE(
+              (
+                SELECT r.action_value
+                FROM rules r
+                WHERE r.enabled = 1
+                  AND r.action_type = 'set_category'
+                  AND r.match_field IN ('description', 'merchant')
+                  AND r.match_type IN ('contains', 'starts_with', 'ends_with', 'exact')
+                  AND COALESCE(r.match_value, '') != ''
+                  AND (
+                    (r.match_type = 'contains' AND LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, '')) LIKE '%' || LOWER(r.match_value) || '%')
+                    OR (r.match_type = 'starts_with' AND LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, '')) LIKE LOWER(r.match_value) || '%')
+                    OR (r.match_type = 'ends_with' AND LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, '')) LIKE '%' || LOWER(r.match_value))
+                    OR (r.match_type = 'exact' AND LOWER(COALESCE(t.merchant, '') || ' ' || COALESCE(t.description, '')) = LOWER(r.match_value))
+                  )
+                ORDER BY r.priority ASC
+                LIMIT 1
+              ),
+              ?
+            ) AS category_id
+          FROM transactions t
+          WHERE t.source_file_hash = ?
+            AND COALESCE(t.is_excluded, 0) = 0
+            AND COALESCE(t.is_transfer, 0) = 0
+            AND t.flow_type != 'transfer'
+            AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
+            AND NOT EXISTS (
+              SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
             )
-        `
-      )
-      .bind(rule.action_value, now, defaultCategoryId, fileHash, ...condBinds)
-      .run();
+        )
+        INSERT INTO transaction_meta (transaction_id, category_id, updated_at)
+        SELECT transaction_id, category_id, ?
+        FROM desired
+        ON CONFLICT(transaction_id) DO UPDATE SET
+          category_id = CASE
+            WHEN transaction_meta.category_id IS NULL OR transaction_meta.category_id = ? THEN excluded.category_id
+            ELSE transaction_meta.category_id
+          END,
+          updated_at = excluded.updated_at
+      `
+    )
+    .bind(defaultCategoryId, fileHash, now, defaultCategoryId)
+    .run();
 
-    updates += Number((res as any)?.meta?.changes || 0);
-  }
-
-  return { rules_considered: eligible.length, updates };
+  const updates =
+    Number((splitRes as any)?.meta?.changes || 0) + Number((metaRes as any)?.meta?.changes || 0);
+  return { rules_considered: 0, updates };
 }
 
 // Insert transaction
@@ -390,7 +400,6 @@ ingest.post('/xlsx', async (c) => {
       // This is critical when historical ingests happened before rules/normalization fixes.
       let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
       try {
-        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
@@ -529,8 +538,6 @@ ingest.post('/xlsx', async (c) => {
     // Apply categorization in SQL (fast, avoids Worker CPU timeouts on large files).
     if (inserted > 0 || skipped_duplicates > 0) {
       try {
-        // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
-        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
@@ -586,7 +593,6 @@ ingest.post('/pdf', async (c) => {
       // This is critical when historical ingests happened before rules/normalization fixes.
       let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
       try {
-        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
@@ -741,8 +747,6 @@ ingest.post('/pdf', async (c) => {
     // Same as XLSX: even when all rows are transaction-level duplicates, re-apply rules for the file hash.
     if (inserted > 0 || skipped_duplicates > 0) {
       try {
-        // Ensure every *expense* row ends up categorized (default to "Other" when no rules match).
-        await fillDefaultExpenseCategoriesForFile(c.env.DB, file_hash, 'cat_other');
         await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
         categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
         console.log(
