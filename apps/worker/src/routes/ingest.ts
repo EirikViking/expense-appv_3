@@ -357,8 +357,8 @@ async function applyCategoryRulesSqlForFile(
                 SELECT 1 FROM transaction_splits ts WHERE ts.parent_transaction_id = t.id
               )
           )
-          AND EXISTS (
-            SELECT 1
+          AND (
+            SELECT r.action_value
             FROM rules r
             JOIN transactions t2 ON t2.id = transaction_meta.transaction_id
             WHERE r.enabled = 1
@@ -373,9 +373,12 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(t2.is_transfer, 0) = 0
               AND t2.flow_type != 'transfer'
               AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
-          )
+            ORDER BY r.priority ASC
+            LIMIT 1
+          ) IS NOT NULL
       `
     )
+    // defaultCategoryId used twice: (1) r.action_value != ? in SET, (2) r.action_value != ? in guard subquery
     .bind(defaultCategoryId, fileHash, now, defaultCategoryId, fileHash, defaultCategoryId, fileHash)
     .run();
 
