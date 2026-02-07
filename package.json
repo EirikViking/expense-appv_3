@@ -28,7 +28,8 @@
     "setup:local": "pnpm install && pnpm db:migrate:local",
     "db:migrate:local": "pnpm --filter worker db:migrate:local",
     "db:migrate:remote": "pnpm --filter worker db:migrate:remote",
-    "db:seed": "npx tsx scripts/seed-data.ts > seed.sql && echo 'Seed SQL generated to seed.sql'"
+    "db:seed": "npx tsx scripts/seed-data.ts > seed.sql && echo 'Seed SQL generated to seed.sql'",
+    "apply-rules": "node scripts/quick-apply-rules.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
