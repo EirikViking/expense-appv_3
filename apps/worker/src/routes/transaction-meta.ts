@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import {
   updateTransactionMetaSchema,
+  bulkSetTransactionCategorySchema,
   createSplitSchema,
   generateId,
   type TransactionSplit,
@@ -8,6 +9,106 @@ import {
 import type { Env } from '../types';
 
 const transactionMeta = new Hono<{ Bindings: Env }>();
+
+transactionMeta.post('/bulk/category', async (c) => {
+  try {
+    const body = await c.req.json();
+    const parsed = bulkSetTransactionCategorySchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
+    }
+
+    const { transaction_ids, category_id } = parsed.data;
+
+    // Validate category exists if provided and load whether it implies transfer.
+    let desiredIsTransfer: boolean | null = null;
+    if (category_id) {
+      const cat = await c.env.DB
+        .prepare('SELECT COALESCE(is_transfer, 0) as is_transfer FROM categories WHERE id = ?')
+        .bind(category_id)
+        .first<{ is_transfer: 0 | 1 }>();
+      if (!cat) return c.json({ error: 'Category not found' }, 400);
+      desiredIsTransfer = cat.is_transfer === 1;
+    }
+
+    const now = new Date().toISOString();
+
+    // D1/SQLite variable limits can be lower; chunk IN(...) and batch writes.
+    const CHUNK_SIZE = 80;
+    const chunks: string[][] = [];
+    for (let i = 0; i < transaction_ids.length; i += CHUNK_SIZE) {
+      chunks.push(transaction_ids.slice(i, i + CHUNK_SIZE));
+    }
+
+    let updated = 0;
+
+    for (const ids of chunks) {
+      // Ensure every transaction exists (avoid silently creating meta for missing rows).
+      const placeholders = ids.map(() => '?').join(',');
+      const existing = await c.env.DB
+        .prepare(`SELECT id FROM transactions WHERE id IN (${placeholders})`)
+        .bind(...ids)
+        .all<{ id: string }>();
+      const existingIds = new Set((existing.results || []).map((r) => r.id));
+      const missing = ids.filter((id) => !existingIds.has(id));
+      if (missing.length > 0) {
+        return c.json({ error: 'Some transactions were not found', missing }, 404);
+      }
+
+      // Upsert category_id into transaction_meta for each transaction.
+      const stmts = ids.map((id) =>
+        c.env.DB.prepare(`
+          INSERT INTO transaction_meta (transaction_id, category_id, updated_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(transaction_id) DO UPDATE SET
+            category_id = excluded.category_id,
+            updated_at = excluded.updated_at
+        `).bind(id, category_id, now)
+      );
+
+      await c.env.DB.batch(stmts);
+      updated += ids.length;
+
+      // Keep transfer flags in sync if a category was explicitly chosen.
+      if (desiredIsTransfer !== null) {
+        if (desiredIsTransfer) {
+          await c.env.DB
+            .prepare(`
+              UPDATE transactions
+              SET
+                is_transfer = 1,
+                is_excluded = 1,
+                flow_type = 'transfer'
+              WHERE id IN (${placeholders})
+            `)
+            .bind(...ids)
+            .run();
+        } else {
+          await c.env.DB
+            .prepare(`
+              UPDATE transactions
+              SET
+                is_transfer = 0,
+                is_excluded = CASE WHEN COALESCE(is_transfer, 0) = 1 THEN 0 ELSE is_excluded END,
+                flow_type = CASE
+                  WHEN amount < 0 THEN 'expense'
+                  WHEN amount > 0 THEN 'income'
+                  ELSE 'unknown'
+                END
+              WHERE id IN (${placeholders})
+            `)
+            .bind(...ids)
+            .run();
+        }
+      }
+    }
+
+    return c.json({ success: true, updated });
+  } catch (error) {
+    console.error('Bulk category update error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
 
 // Update transaction metadata (category, merchant, notes)
 transactionMeta.patch('/:id', async (c) => {

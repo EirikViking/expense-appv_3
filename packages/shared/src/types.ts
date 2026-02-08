@@ -308,6 +308,11 @@ export interface UpdateTransactionMetaRequest {
   tag_ids?: string[];
 }
 
+export interface BulkSetTransactionCategoryRequest {
+  transaction_ids: string[];
+  category_id: string | null;
+}
+
 // Transaction patch (core fields/flags)
 export interface UpdateTransactionRequest {
   is_transfer?: boolean;

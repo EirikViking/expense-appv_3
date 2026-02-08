@@ -35,6 +35,7 @@ import type {
   CreateRecurringRequest,
   UpdateRecurringRequest,
   UpdateTransactionMetaRequest,
+  BulkSetTransactionCategoryRequest,
   TransactionWithMeta,
   AnalyticsSummary,
   CategoryBreakdown,
@@ -297,6 +298,12 @@ export const api = {
   updateTransactionMeta: (id: string, data: UpdateTransactionMetaRequest) =>
     request<TransactionWithMeta>(`/transaction-meta/${id}`, {
       method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  bulkSetTransactionCategory: (data: BulkSetTransactionCategoryRequest) =>
+    request<{ success: boolean; updated: number }>(`/transaction-meta/bulk/category`, {
+      method: 'POST',
       body: JSON.stringify(data),
     }),
 

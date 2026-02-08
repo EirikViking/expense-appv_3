@@ -84,6 +84,7 @@ export function TransactionsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
@@ -95,6 +96,24 @@ export function TransactionsPage() {
       fetchData();
     } catch (err) {
       alert(t('transactions.failedBulkDelete'));
+      fetchData();
+    }
+  };
+
+  const handleBulkSetCategory = async () => {
+    if (selectedIds.length === 0) return;
+    if (!bulkCategoryId) return;
+
+    try {
+      await api.bulkSetTransactionCategory({
+        transaction_ids: selectedIds,
+        category_id: bulkCategoryId,
+      });
+      setSelectedIds([]);
+      setBulkCategoryId('');
+      fetchData();
+    } catch (err) {
+      alert(t('transactions.failedBulkSetCategory'));
       fetchData();
     }
   };
@@ -296,10 +315,33 @@ export function TransactionsPage() {
         <h1 className="text-2xl font-bold">{t('transactions.title')}</h1>
         <div className="flex items-center gap-2">
           {selectedIds.length > 0 && (
+            <>
+              <div className="flex items-center gap-2">
+                <select
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  className="h-9 px-2 rounded border border-white/15 bg-white/5 text-sm text-white"
+                >
+                  <option value="">{t('transactions.bulkSelectCategory')}</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  disabled={!bulkCategoryId}
+                  onClick={handleBulkSetCategory}
+                >
+                  {t('transactions.bulkSetCategory')}
+                </Button>
+              </div>
             <Button variant="destructive" onClick={handleBulkDelete}>
               <Trash2 className="h-4 w-4 mr-2" />
               {t('transactions.delete')} ({selectedIds.length})
             </Button>
+            </>
           )}
           <Button onClick={() => setIsAddOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />

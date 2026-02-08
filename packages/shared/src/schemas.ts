@@ -178,6 +178,11 @@ export const updateTransactionMetaSchema = z.object({
   tag_ids: z.array(idSchema).optional(),
 });
 
+export const bulkSetTransactionCategorySchema = z.object({
+  transaction_ids: z.array(idSchema).min(1),
+  category_id: idSchema.nullable(),
+});
+
 export const createSplitSchema = z.object({
   splits: z.array(z.object({
     amount: z.number(),
