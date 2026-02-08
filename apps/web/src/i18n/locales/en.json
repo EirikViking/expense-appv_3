@@ -101,6 +101,7 @@
     "delete": "Delete",
     "saveTransaction": "Save transaction",
     "showingCount": "Showing {{shown}} of {{total}} transactions",
+    "totalSpentFiltered": "Total spent (filtered)",
     "merchantExact": "Merchant (exact)",
     "merchantId": "Merchant ID",
     "excludeTransfersDefault": "Exclude transfers (default)",

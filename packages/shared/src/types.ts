@@ -411,6 +411,18 @@ export interface TransactionsResponse {
   total: number;
   page: number;
   page_size: number;
+  /**
+   * Aggregates over the full filtered result set (ignores pagination).
+   * Values are based on the same filters used for the list query.
+   */
+  aggregates?: {
+    /** SUM(amount) (signed). */
+    sum_amount: number;
+    /** Total spent (absolute sum of negative amounts). */
+    total_spent: number;
+    /** Total income (sum of positive amounts). */
+    total_income: number;
+  };
 }
 
 export interface HealthResponse {

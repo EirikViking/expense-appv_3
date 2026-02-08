@@ -39,6 +39,7 @@ export function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
+  const [aggregates, setAggregates] = useState<{ sum_amount: number; total_spent: number; total_income: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -168,6 +169,7 @@ export function TransactionsPage() {
 
       setTransactions(txResult.transactions);
       setTotal(txResult.total);
+      setAggregates(txResult.aggregates ?? null);
       if ('categories' in catResult && catResult.categories) {
         setCategories(catResult.categories);
       }
@@ -663,6 +665,11 @@ export function TransactionsPage() {
           <p className="text-sm text-white/70">
             {t('transactions.showingCount', { shown: transactions.length, total })}
           </p>
+          {aggregates && (
+            <p className="text-sm text-white/70">
+              {t('transactions.totalSpentFiltered')}: <span className="font-medium text-white">{formatCurrency(aggregates.total_spent)}</span>
+            </p>
+          )}
 
           {/* Transactions List */}
           <Card>

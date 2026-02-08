@@ -346,6 +346,26 @@ transactions.get('/', async (c) => {
     const countResult = await c.env.DB.prepare(countQuery).bind(...params).first<{ total: number }>();
     const total = countResult?.total || 0;
 
+    // Aggregates over the full filtered set (ignores pagination).
+    // Use a DISTINCT subquery to avoid double-counting from JOINs (e.g. tag joins).
+    const aggregatesQuery = `
+      SELECT
+        COALESCE(SUM(x.amount), 0) as sum_amount,
+        COALESCE(SUM(CASE WHEN x.amount < 0 THEN -x.amount ELSE 0 END), 0) as total_spent,
+        COALESCE(SUM(CASE WHEN x.amount > 0 THEN x.amount ELSE 0 END), 0) as total_income
+      FROM (
+        SELECT DISTINCT t.id, t.amount
+        FROM transactions t
+        ${joinClause}
+        ${whereClause}
+      ) x
+    `;
+    const aggregates = await c.env.DB.prepare(aggregatesQuery).bind(...params).first<{
+      sum_amount: number;
+      total_spent: number;
+      total_income: number;
+    }>();
+
     // Get transactions with pagination
     const selectQuery = `
       SELECT DISTINCT t.* FROM transactions t
@@ -367,6 +387,11 @@ transactions.get('/', async (c) => {
       total,
       page: Math.floor(offset / limit) + 1,
       page_size: limit,
+      aggregates: {
+        sum_amount: Number(aggregates?.sum_amount ?? 0),
+        total_spent: Number(aggregates?.total_spent ?? 0),
+        total_income: Number(aggregates?.total_income ?? 0),
+      },
     };
 
     return c.json(response);

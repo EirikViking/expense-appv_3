@@ -100,6 +100,7 @@
     "delete": "Slett",
     "saveTransaction": "Lagre transaksjon",
     "showingCount": "Viser {{shown}} av {{total}} transaksjoner",
+    "totalSpentFiltered": "Totalt brukt (filtrert)",
     "merchantExact": "Kjøpmann (eksakt)",
     "merchantId": "Kjøpmann-ID",
     "excludeTransfersDefault": "Ekskluder overføringer (standard)",
