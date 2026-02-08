@@ -177,6 +177,12 @@
     "duplicate": "Fil er allerede lastet opp (duplikat)",
     "transactionsInserted": "transaksjoner lagt til",
     "duplicatesSkipped": "duplikater hoppet over",
+    "postProcess": {
+      "label": "Auto-kategorisering:",
+      "updated": "{{count}} oppdatert",
+      "remaining": "{{count}} igjen i Andre/Ukategorisert",
+      "failed": "Auto-kategorisering feilet."
+    },
     "invalidRowsSkipped": "{{count}} ugyldige rader hoppet over",
     "clearResults": "Tøm resultat",
     "skippedReasons": "Årsaker til hoppede linjer:",

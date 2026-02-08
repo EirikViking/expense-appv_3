@@ -70,6 +70,20 @@ export interface ValidateIngestResponse {
   suspicious_income?: Array<{ description: string; count: number; total_abs: number }>;
 }
 
+export interface ReclassifyOtherResponse {
+  success: boolean;
+  scope: { source_file_hash: string | null };
+  dry_run: boolean;
+  force?: boolean;
+  limit: number;
+  scanned: number;
+  updated: number;
+  skipped: { no_score: number; by_guard: number; low_conf: number };
+  remaining_other_like: number;
+  next_cursor: string | null;
+  done: boolean;
+}
+
 export class ApiError extends Error {
   status: number;
   data: unknown;
@@ -207,6 +221,21 @@ export const api = {
     const qs = buildQuery(params);
     return request<ValidateIngestResponse>(`/transactions/admin/validate-ingest${qs}`);
   },
+
+  reclassifyOther: (body: {
+    source_file_hash?: string;
+    cursor?: string | null;
+    limit?: number;
+    dry_run?: boolean;
+    min_conf?: number;
+    min_margin?: number;
+    min_docs?: number;
+    force?: boolean;
+  }) =>
+    request<ReclassifyOtherResponse>('/transactions/admin/reclassify-other', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   getTransaction: (id: string) =>
     request<TransactionWithMeta>(`/transactions/${id}`),

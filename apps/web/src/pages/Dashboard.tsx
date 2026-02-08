@@ -54,6 +54,7 @@ import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 import { useTranslation } from 'react-i18next';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 
 export function DashboardPage() {
   const { t } = useTranslation();
@@ -75,7 +76,10 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category_id') || '';
 
-  const defaultRange = useMemo(() => getYearToDateRange(), []);
+  const defaultRange = useMemo(() => {
+    const stored = loadLastDateRange();
+    return stored ?? getYearToDateRange();
+  }, []);
   const dateFrom = searchParams.get('date_from') || defaultRange.start;
   const dateTo = searchParams.get('date_to') || defaultRange.end;
   const statusFilter = (() => {
@@ -119,6 +123,12 @@ export function DashboardPage() {
     fn(next);
     setSearchParams(next, { replace: false });
   };
+
+  // Remember the last selected date range for next visit (unless URL pins it).
+  useEffect(() => {
+    if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
+    else if (!dateFrom && !dateTo) clearLastDateRange();
+  }, [dateFrom, dateTo]);
 
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);

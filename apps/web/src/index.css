@@ -13,6 +13,8 @@ html, body {
 :root {
   --app-bg: #070A12;
   --app-fg: #E7EAF3;
+  /* We run a dark UI even in "day" mode; make native controls (date pickers etc) follow suit. */
+  color-scheme: dark;
 
   /* Glass surface */
   --glass-bg: linear-gradient(180deg, rgba(10,14,26,0.74), rgba(10,14,26,0.46));
@@ -62,12 +64,23 @@ input[type="date"],
 select {
   background-color: var(--field-bg);
   border-color: var(--field-border);
-  color: inherit;
+  color: var(--app-fg);
+  -webkit-text-fill-color: var(--app-fg);
 }
 
 select option {
   color: #0b1220;
   background: #ffffff;
+}
+
+/* WebKit: date input inner parts sometimes ignore color inheritance */
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+  color: var(--app-fg);
 }
 
 /* WebKit: calendar icon on dark surfaces */

@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
+import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 
 export function TransactionsPage() {
   const { t } = useTranslation();
@@ -201,6 +202,15 @@ export function TransactionsPage() {
 
     if (qDateFrom) setDateFrom(qDateFrom);
     if (qDateTo) setDateTo(qDateTo);
+
+    // If URL doesn't specify dates, fall back to last used range.
+    if (!qDateFrom && !qDateTo) {
+      const stored = loadLastDateRange();
+      if (stored) {
+        setDateFrom(stored.start);
+        setDateTo(stored.end);
+      }
+    }
     if (qStatus) setStatus(qStatus);
     if (qSource) setSourceType(qSource);
     if (qCategory) setCategoryId(qCategory);
@@ -223,6 +233,12 @@ export function TransactionsPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Remember last selected date range for next visit.
+  useEffect(() => {
+    if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
+    else if (!dateFrom && !dateTo) clearLastDateRange();
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     if (!isAddOpen) {

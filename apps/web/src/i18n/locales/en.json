@@ -178,6 +178,12 @@
     "duplicate": "File already uploaded (duplicate)",
     "transactionsInserted": "transactions inserted",
     "duplicatesSkipped": "duplicates skipped",
+    "postProcess": {
+      "label": "Auto-categorization:",
+      "updated": "{{count}} updated",
+      "remaining": "{{count}} remaining in Other/Uncategorized",
+      "failed": "Auto-categorization failed."
+    },
     "invalidRowsSkipped": "{{count}} invalid rows skipped",
     "clearResults": "Clear results",
     "skippedReasons": "Skipped line reasons:",

@@ -18,6 +18,13 @@ interface FileResult {
   validation?: ValidateIngestResponse;
   validation_range?: { date_from: string; date_to: string };
   validation_error?: string;
+  post_process?: {
+    scanned: number;
+    updated: number;
+    remaining_other_like: number;
+    done: boolean;
+  };
+  post_process_error?: string;
 }
 
 const SKIPPED_SUMMARY_LABELS = [
@@ -127,6 +134,70 @@ export function UploadPage() {
     }
   };
 
+  const runPostProcessOther = async (filename: string, fileHash: string) => {
+    updateResult(filename, {
+      post_process_error: undefined,
+      post_process: { scanned: 0, updated: 0, remaining_other_like: 0, done: false },
+    });
+
+    try {
+      const runLoop = async (opts: { force: boolean }) => {
+        let cursor: string | null = null;
+        let totalScanned = 0;
+        let totalUpdated = 0;
+        let remaining = 0;
+        let done = false;
+
+        for (let i = 0; i < 50; i++) {
+          const res = await api.reclassifyOther({
+            source_file_hash: fileHash,
+            cursor,
+            limit: 200,
+            dry_run: false,
+            force: opts.force,
+          });
+
+          totalScanned += Number(res.scanned || 0);
+          totalUpdated += Number(res.updated || 0);
+          remaining = Number(res.remaining_other_like || 0);
+          done = Boolean(res.done);
+
+          updateResult(filename, {
+            post_process: { scanned: totalScanned, updated: totalUpdated, remaining_other_like: remaining, done },
+          });
+
+          if (done || !res.next_cursor) break;
+          cursor = res.next_cursor;
+        }
+
+        return { totalScanned, totalUpdated, remaining };
+      };
+
+      // Phase 1: safe model thresholds.
+      const safe = await runLoop({ force: false });
+
+      // Phase 2: aggressive collapse-to-top-level if we still have lots of "Other/uncategorized".
+      if (safe.remaining > 50) {
+        const aggressive = await runLoop({ force: true });
+        updateResult(filename, {
+          post_process: {
+            scanned: safe.totalScanned + aggressive.totalScanned,
+            updated: safe.totalUpdated + aggressive.totalUpdated,
+            remaining_other_like: aggressive.remaining,
+            done: true,
+          },
+        });
+      } else {
+        updateResult(filename, {
+          post_process: { scanned: safe.totalScanned, updated: safe.totalUpdated, remaining_other_like: safe.remaining, done: true },
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Post-processing failed';
+      updateResult(filename, { post_process_error: message });
+    }
+  };
+
   const failureLabel = (code: string) => {
     const key = `upload.validation.failures.${code}`;
     const translated = t(key);
@@ -180,7 +251,11 @@ export function UploadPage() {
 
         updateResult(filename, { status: 'success', result });
         if (!result.file_duplicate && result.inserted > 0) {
-          void runValidation(filename, rangeFromXlsxTransactions(transactions));
+          const range = rangeFromXlsxTransactions(transactions);
+          void runValidation(filename, range);
+          // After validation, run an automatic "Other"/uncategorized reduction scoped to this file.
+          // This keeps the app usable even when rules are incomplete.
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
         }
       } else if (file.name.toLowerCase().endsWith('.pdf')) {
         // Extract text from PDF in browser
@@ -209,7 +284,9 @@ export function UploadPage() {
 
         updateResult(filename, { status: 'success', result });
         if (!result.file_duplicate && result.inserted > 0) {
-          void runValidation(filename, rangeFromPdfText(text));
+          const range = rangeFromPdfText(text);
+          void runValidation(filename, range);
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
         }
       } else {
         updateResult(filename, {
@@ -277,8 +354,8 @@ export function UploadPage() {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${isDragging
-            ? 'border-blue-500 bg-blue-50'
+       className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${isDragging
+            ? 'border-blue-400/60 bg-blue-500/10'
             : 'border-white/20 hover:border-white/35'
           }`}
       >
@@ -319,60 +396,73 @@ export function UploadPage() {
                 (result.result.skipped_invalid > 0 || result.result.skipped_lines_summary)
             );
 
-            return (
-              <div
-                key={resultKey}
-                className={`p-4 rounded-lg border ${result.status === 'processing'
-                    ? 'bg-white/5 border-white/10'
-                    : result.status === 'success'
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-red-50 border-red-200'
-                  }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-white">{result.filename}</span>
-                  {result.status === 'processing' && (
-                    <span className="text-white/60">{t('upload.processing')}</span>
+             return (
+               <div
+                 key={resultKey}
+                 className={`p-4 rounded-lg border ${
+                   result.status === 'processing'
+                     ? 'bg-white/5 border-white/10'
+                     : result.status === 'success'
+                       ? 'bg-emerald-500/10 border-emerald-400/30'
+                       : 'bg-red-500/10 border-red-400/30'
+                 }`}
+               >
+                 <div className="flex items-center justify-between">
+                   <span className="font-medium text-white">{result.filename}</span>
+                   {result.status === 'processing' && (
+                     <span className="text-white/60">{t('upload.processing')}</span>
                   )}
                 </div>
 
-                {result.status === 'success' && result.result && (
-                  <div className="mt-2 text-sm">
-                    {result.result.file_duplicate ? (
-                      <p className="text-amber-600 font-medium">
-                        {t('upload.duplicate')}
-                      </p>
-                    ) : (
-                      <div className="space-y-1 text-white/70">
-                        <p>
-                          <span className="text-green-600 font-medium">
-                            {result.result.inserted}
-                          </span>{' '}
-                          {t('upload.transactionsInserted')}
-                        </p>
-                        {result.result.skipped_duplicates > 0 && (
-                          <p>
-                            <span className="text-amber-600 font-medium">
-                              {result.result.skipped_duplicates}
-                            </span>{' '}
-                            {t('upload.duplicatesSkipped')}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                 {result.status === 'success' && result.result && (
+                   <div className="mt-2 text-sm">
+                     {result.result.file_duplicate ? (
+                       <p className="text-amber-300 font-medium">
+                         {t('upload.duplicate')}
+                       </p>
+                     ) : (
+                       <div className="space-y-1 text-white/70">
+                         <p>
+                           <span className="text-emerald-300 font-medium">
+                             {result.result.inserted}
+                           </span>{' '}
+                           {t('upload.transactionsInserted')}
+                         </p>
+                         {result.result.skipped_duplicates > 0 && (
+                           <p>
+                             <span className="text-amber-300 font-medium">
+                               {result.result.skipped_duplicates}
+                             </span>{' '}
+                             {t('upload.duplicatesSkipped')}
+                           </p>
+                         )}
+                         {result.post_process ? (
+                           <p className="text-white/70">
+                             <span className="text-white/80 font-medium">{t('upload.postProcess.label')}</span>{' '}
+                             {t('upload.postProcess.updated', { count: result.post_process.updated })},{' '}
+                             {t('upload.postProcess.remaining', { count: result.post_process.remaining_other_like })}
+                           </p>
+                         ) : result.post_process_error ? (
+                           <p className="text-red-200">
+                             <span className="font-medium">{t('upload.postProcess.failed')}</span>{' '}
+                             <span className="text-red-200/80 text-xs">{result.post_process_error}</span>
+                           </p>
+                         ) : null}
+                       </div>
+                     )}
 
-                    {!result.result.file_duplicate && (
-                      <div className="mt-3">
-                        {result.validation ? (
-                          <div
-                            className={`rounded-md border p-3 ${result.validation.ok
-                                ? 'border-green-200 bg-green-100/60 text-green-900'
-                                : 'border-red-200 bg-red-100/60 text-red-900'
-                              }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="font-semibold">
+                     {!result.result.file_duplicate && (
+                       <div className="mt-3">
+                         {result.validation ? (
+                           <div
+                             className={`rounded-md border p-3 ${result.validation.ok
+                                 ? 'border-emerald-400/30 bg-emerald-500/10 text-white'
+                                 : 'border-red-400/30 bg-red-500/10 text-white'
+                               }`}
+                           >
+                             <div className="flex items-start justify-between gap-3">
+                               <div>
+                                 <p className="font-semibold">
                                   {result.validation.ok ? t('upload.validation.ok') : t('upload.validation.failed')}
                                 </p>
                                 {!result.validation.ok && (
@@ -388,7 +478,7 @@ export function UploadPage() {
                               </div>
                               {result.validation_range && (
                                 <Link
-                                  to={
+                                 to={
                                     '/transactions?' +
                                     new URLSearchParams({
                                       date_from: result.validation_range.date_from,
@@ -396,12 +486,12 @@ export function UploadPage() {
                                       include_excluded: 'true',
                                     }).toString()
                                   }
-                                  className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
-                                >
-                                  {t('upload.validation.viewTransactions')}
-                                </Link>
-                              )}
-                            </div>
+                                   className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
+                                 >
+                                   {t('upload.validation.viewTransactions')}
+                                 </Link>
+                               )}
+                             </div>
                           </div>
                         ) : result.validation_range ? (
                           <p className="text-xs text-white/70">{t('upload.validation.running')}</p>

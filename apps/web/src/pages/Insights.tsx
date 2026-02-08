@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/lib/utils';
 import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 
 type Lang = 'en' | 'nb';
 
@@ -169,8 +170,9 @@ export function InsightsPage() {
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
   const [subscriptions, setSubscriptions] = useState<RecurringItem[]>([]);
 
-  const [dateFrom, setDateFrom] = useState(getMonthRange().start);
-  const [dateTo, setDateTo] = useState(getMonthRange().end);
+  const initialRange = useMemo(() => loadLastDateRange() ?? getMonthRange(), []);
+  const [dateFrom, setDateFrom] = useState(initialRange.start);
+  const [dateTo, setDateTo] = useState(initialRange.end);
   const [showCustomRange, setShowCustomRange] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
@@ -200,6 +202,12 @@ export function InsightsPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
+
+  // Remember last selected date range for next visit.
+  useEffect(() => {
+    if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
+    else if (!dateFrom && !dateTo) clearLastDateRange();
   }, [dateFrom, dateTo]);
 
   const hub = useMemo(() => {

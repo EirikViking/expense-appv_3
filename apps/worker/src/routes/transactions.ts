@@ -17,6 +17,7 @@ import { extractMerchantFromPdfLine, parsePdfTransactionLine } from '../lib/pdf-
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
+import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -2177,6 +2178,265 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
     });
   } catch (error) {
     console.error('Rebuild flow/signs error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Reclassify "Other"/uncategorized rows using a lightweight NB model trained on already categorized data.
+// Intended for post-import automation: scope by source_file_hash to avoid touching historical data unintentionally.
+// Admin-protected by auth middleware (same as other /admin routes).
+transactions.post('/admin/reclassify-other', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => null)) as
+      | {
+          source_file_hash?: unknown;
+          cursor?: unknown;
+          limit?: unknown;
+          dry_run?: unknown;
+          min_conf?: unknown;
+          min_margin?: unknown;
+          min_docs?: unknown;
+          force?: unknown;
+        }
+      | null;
+
+    const sourceFileHash =
+      typeof body?.source_file_hash === 'string' && body.source_file_hash.trim()
+        ? body.source_file_hash.trim()
+        : null;
+
+    const dryRun = body?.dry_run === true;
+    const limitRaw = typeof body?.limit === 'number' ? body?.limit : Number(body?.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(50, limitRaw), 500) : 200;
+
+    const minConfRaw = typeof body?.min_conf === 'number' ? body.min_conf : Number(body?.min_conf);
+    const minMarginRaw = typeof body?.min_margin === 'number' ? body.min_margin : Number(body?.min_margin);
+    const minDocsRaw = typeof body?.min_docs === 'number' ? body.min_docs : Number(body?.min_docs);
+    const min_conf = Number.isFinite(minConfRaw) ? Math.min(Math.max(0.5, minConfRaw), 0.95) : 0.75;
+    const min_margin = Number.isFinite(minMarginRaw) ? Math.min(Math.max(0.1, minMarginRaw), 10) : 1.2;
+    const min_docs = Number.isFinite(minDocsRaw) ? Math.min(Math.max(3, minDocsRaw), 50) : 10;
+
+    const force = body?.force === true;
+
+    // Cursor = base64 json { tx_date, id } for stable paging.
+    let cursor: { tx_date: string; id: string } | null = null;
+    if (typeof body?.cursor === 'string' && body.cursor) {
+      try {
+        const raw = JSON.parse(atob(body.cursor));
+        if (
+          raw &&
+          typeof raw === 'object' &&
+          typeof raw.tx_date === 'string' &&
+          typeof raw.id === 'string' &&
+          /^\d{4}-\d{2}-\d{2}$/.test(raw.tx_date)
+        ) {
+          cursor = { tx_date: raw.tx_date, id: raw.id };
+        }
+      } catch {
+        cursor = null;
+      }
+    }
+
+    // 1) Training set = active non-transfer rows with a real category (not null/other).
+    const trainingRes = await c.env.DB.prepare(
+      `
+        SELECT
+          tm.category_id as category_id,
+          COALESCE(t.merchant, '') as merchant,
+          COALESCE(t.description, '') as description
+        FROM transactions t
+        JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND tm.category_id IS NOT NULL
+          AND tm.category_id != 'cat_other'
+        ORDER BY t.tx_date DESC
+        LIMIT 5000
+      `
+    ).all<{ category_id: string; merchant: string; description: string }>();
+
+    const examples =
+      (trainingRes.results || []).map((r) => ({
+        category_id: r.category_id,
+        text: buildCombinedText(r.merchant, r.description),
+      })) || [];
+
+    const { score } = trainNaiveBayes(examples, { minDocsPerCat: min_docs, alpha: 1 });
+
+    // For aggressive mode, collapse predictions to top-level categories (reduces over-specific assignments).
+    // Keep some leaf categories intact (groceries/tax) because they're high-signal.
+    const KEEP_AS_IS = new Set(['cat_food_groceries', 'cat_bills_tax']);
+    let parentById = new Map<string, string | null>();
+    if (force) {
+      const catsRes = await c.env.DB.prepare(`SELECT id, parent_id FROM categories`).all<{
+        id: string;
+        parent_id: string | null;
+      }>();
+      parentById = new Map((catsRes.results || []).map((r) => [r.id, r.parent_id ?? null]));
+    }
+
+    const toTopLevel = (catId: string) => {
+      if (!force) return catId;
+      if (!catId) return catId;
+      if (KEEP_AS_IS.has(catId)) return catId;
+      let cur = catId;
+      for (let i = 0; i < 8; i++) {
+        const p = parentById.get(cur);
+        if (!p) return cur;
+        cur = p;
+      }
+      return cur;
+    };
+
+    // 2) Target set = scoped cat_other OR NULL category rows (active, non-transfer).
+    // We use LEFT JOIN because "uncategorized" can be: no meta row OR meta row with NULL/empty category_id.
+    const params: any[] = [];
+    let where = `
+      COALESCE(t.is_excluded, 0) = 0
+      AND COALESCE(t.is_transfer, 0) = 0
+      AND t.flow_type != 'transfer'
+      AND (tm.transaction_id IS NULL OR tm.category_id IS NULL OR tm.category_id = '' OR tm.category_id = 'cat_other')
+    `;
+
+    if (sourceFileHash) {
+      where += ` AND t.source_file_hash = ?`;
+      params.push(sourceFileHash);
+    }
+
+    if (cursor) {
+      where += ` AND (t.tx_date < ? OR (t.tx_date = ? AND t.id < ?))`;
+      params.push(cursor.tx_date, cursor.tx_date, cursor.id);
+    }
+
+    const targetRes = await c.env.DB.prepare(
+      `
+        SELECT
+          t.id,
+          t.tx_date,
+          t.amount,
+          COALESCE(t.merchant, '') as merchant,
+          COALESCE(t.description, '') as description,
+          tm.category_id as category_id,
+          tm.notes as notes
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE ${where}
+        ORDER BY t.tx_date DESC, t.id DESC
+        LIMIT ?
+      `
+    )
+      .bind(...params, limit)
+      .all<{
+        id: string;
+        tx_date: string;
+        amount: number;
+        merchant: string;
+        description: string;
+        category_id: string | null;
+        notes: string | null;
+      }>();
+
+    const rows = targetRes.results || [];
+    const scanned = rows.length;
+
+    const stamp = `[auto] other-reclassify: ${new Date().toISOString()}`;
+    const updates: Array<{ id: string; category_id: string; notes: string }> = [];
+
+    let skipped_no_score = 0;
+    let skipped_by_guard = 0;
+    let skipped_low_conf = 0;
+
+    for (const r of rows) {
+      const combined = buildCombinedText(r.merchant, r.description);
+      const s = score(combined);
+      if (!s || !s.topCat) {
+        skipped_no_score++;
+        continue;
+      }
+
+      const predicted = toTopLevel(s.topCat);
+      if (predicted === 'cat_other') continue;
+
+      const passesThresholds = force || (s.pTop >= min_conf && s.margin >= min_margin);
+      if (!passesThresholds) {
+        skipped_low_conf++;
+        continue;
+      }
+
+      if (!passesGuards({ predicted_category_id: predicted, amount: Number(r.amount), combined_text: combined })) {
+        skipped_by_guard++;
+        continue;
+      }
+
+      const nextNotes = r.notes ? `${r.notes}\n${stamp}` : stamp;
+      updates.push({ id: r.id, category_id: predicted, notes: nextNotes });
+    }
+
+    let updated = 0;
+    if (!dryRun && updates.length > 0) {
+      const now = new Date().toISOString();
+      const stmts = updates.map((u) =>
+        c.env.DB.prepare(
+          `
+            INSERT INTO transaction_meta (transaction_id, category_id, notes, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(transaction_id) DO UPDATE SET
+              category_id = excluded.category_id,
+              notes = CASE
+                WHEN transaction_meta.notes IS NULL OR transaction_meta.notes = '' THEN excluded.notes
+                ELSE transaction_meta.notes || '\n' || excluded.notes
+              END,
+              updated_at = excluded.updated_at
+          `
+        ).bind(u.id, u.category_id, u.notes, now)
+      );
+
+      const res = await c.env.DB.batch(stmts);
+      for (const r of res as any[]) updated += Number(r?.meta?.changes || 0);
+    }
+
+    const nextCursor =
+      rows.length > 0 ? btoa(JSON.stringify({ tx_date: rows[rows.length - 1].tx_date, id: rows[rows.length - 1].id })) : null;
+
+    // Remaining "Other" for scope (cheap counter for UI/scripts).
+    // Note: This is best-effort; category_id lives in transaction_meta, so we count both NULL and cat_other.
+    const remainingRes = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as c
+        FROM transactions t
+        LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
+        WHERE COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          ${sourceFileHash ? 'AND t.source_file_hash = ?' : ''}
+          AND (tm.transaction_id IS NULL OR tm.category_id IS NULL OR tm.category_id = '' OR tm.category_id = 'cat_other')
+      `
+    )
+      .bind(...(sourceFileHash ? [sourceFileHash] : []))
+      .first<{ c: number }>();
+
+    const remaining = Number(remainingRes?.c || 0);
+
+    return c.json({
+      success: true,
+      scope: { source_file_hash: sourceFileHash },
+      dry_run: dryRun,
+      force,
+      limit,
+      scanned,
+      updated,
+      skipped: {
+        no_score: skipped_no_score,
+        by_guard: skipped_by_guard,
+        low_conf: skipped_low_conf,
+      },
+      remaining_other_like: remaining,
+      next_cursor: rows.length === limit ? nextCursor : null,
+      done: rows.length < limit,
+    });
+  } catch (error) {
+    console.error('Reclassify other error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
