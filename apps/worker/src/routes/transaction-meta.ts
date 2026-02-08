@@ -20,11 +20,11 @@ transactionMeta.patch('/:id', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    // Check transaction exists
+    // Check transaction exists (and load flags for transfer-sync logic)
     const tx = await c.env.DB
-      .prepare('SELECT 1 FROM transactions WHERE id = ?')
+      .prepare('SELECT id, amount, COALESCE(is_transfer, 0) as is_transfer, COALESCE(is_excluded, 0) as is_excluded, flow_type FROM transactions WHERE id = ?')
       .bind(transactionId)
-      .first();
+      .first<{ id: string; amount: number; is_transfer: 0 | 1; is_excluded: 0 | 1; flow_type: string }>();
 
     if (!tx) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -131,6 +131,44 @@ transactionMeta.patch('/:id', async (c) => {
         await c.env.DB
           .prepare('INSERT INTO transaction_tags (transaction_id, tag_id, created_at) VALUES (?, ?, ?)')
           .bind(transactionId, tagId, now)
+          .run();
+      }
+    }
+
+    // If category changed, keep "transfer" status in sync with the category's is_transfer flag.
+    // This prevents rows from staying marked as transfers when user re-categorizes them.
+    if (category_id !== undefined && category_id !== null) {
+      const cat = await c.env.DB
+        .prepare('SELECT COALESCE(is_transfer, 0) as is_transfer FROM categories WHERE id = ?')
+        .bind(category_id)
+        .first<{ is_transfer: 0 | 1 }>();
+
+      const desiredIsTransfer = (cat?.is_transfer ?? 0) === 1;
+      const currentIsTransfer = tx.is_transfer === 1;
+
+      if (desiredIsTransfer !== currentIsTransfer) {
+        const updates: string[] = ['is_transfer = ?'];
+        const params: Array<string | number> = [desiredIsTransfer ? 1 : 0];
+
+        if (desiredIsTransfer) {
+          // Transfers are excluded from analytics by default and should have a consistent flow_type.
+          updates.push("flow_type = 'transfer'");
+          if (tx.is_excluded === 0) updates.push('is_excluded = 1');
+        } else {
+          // When unmarking transfer, restore a normal flow_type based on amount sign.
+          const amount = Number(tx.amount ?? 0);
+          const inferred = amount < 0 ? 'expense' : amount > 0 ? 'income' : 'unknown';
+          updates.push('flow_type = ?');
+          params.push(inferred);
+
+          // If it was excluded due to being a transfer, include it back.
+          if (tx.is_excluded === 1) updates.push('is_excluded = 0');
+        }
+
+        params.push(transactionId);
+        await c.env.DB
+          .prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ?`)
+          .bind(...params)
           .run();
       }
     }
