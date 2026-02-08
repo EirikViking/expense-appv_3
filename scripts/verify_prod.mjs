@@ -134,6 +134,16 @@ async function run() {
   const groceriesDelta = Math.abs(groceriesAnalytics - groceriesTxSum);
   const groceriesPass = groceriesDelta <= 1.0;
 
+  // 1c) Guard against double-reporting: /analytics/by-category total should match /analytics/summary total_expenses.
+  const summary = await jsonRequest(
+    '/analytics/summary?' + new URLSearchParams({ date_from, date_to }).toString(),
+    { token }
+  );
+  const summaryExpenses = Number(summary?.total_expenses || 0);
+  const byCategoryTotal = Number(byCat?.total || 0);
+  const categoryDelta = Math.abs(summaryExpenses - byCategoryTotal);
+  const noDoubleCountPass = categoryDelta <= 1.0;
+
   // 1b) Search should find ingested REMA transactions when PDF raw text contains REMA.
   const pdfTxs = await fetchAllTransactions(token, {
     date_from,
@@ -192,7 +202,7 @@ async function run() {
   }
   const incomePass = incomeViolations.length === 0;
 
-  const pass = validatePass && groceriesPass && remaSearchPass && incomePass;
+  const pass = validatePass && groceriesPass && noDoubleCountPass && remaSearchPass && incomePass;
 
   console.log(
     JSON.stringify(
@@ -208,6 +218,12 @@ async function run() {
           delta: groceriesDelta,
           pass: groceriesPass,
           tx_count: groceriesTxs.length,
+        },
+        totals: {
+          summary_expenses: summaryExpenses,
+          by_category_total: byCategoryTotal,
+          delta: categoryDelta,
+          pass: noDoubleCountPass,
         },
         search: {
           pdf_rema_raw_count: pdfRemaRawCount,
