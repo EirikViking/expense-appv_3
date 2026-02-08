@@ -47,6 +47,7 @@
     "merchant": "Merchant",
     "transfer": "Transfer",
     "recurring": "Recurring",
+    "total": "Total",
     "unknownFile": "Unknown file",
     "notAvailable": "N/A"
   },

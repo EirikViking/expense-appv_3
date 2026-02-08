@@ -122,6 +122,10 @@ export function DashboardPage() {
     return trendSeries.reduce((sum, point) => sum + (point.expenses ?? 0), 0);
   }, [trendSeries]);
 
+  const trendTotalCount = useMemo(() => {
+    return trendSeries.reduce((sum, point) => sum + (point.count ?? 0), 0);
+  }, [trendSeries]);
+
   const updateSearch = (fn: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(searchParams);
     fn(next);
@@ -804,6 +808,11 @@ export function DashboardPage() {
                       <div className="col-span-2 text-sm text-right text-white/60">{p.count}</div>
                     </button>
                   ))}
+                  <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-white/5">
+                    <div className="col-span-6 text-sm font-medium text-white/80">{t('common.total')}</div>
+                    <div className="col-span-4 text-sm text-right font-semibold text-white">{formatCurrency(trendTotal)}</div>
+                    <div className="col-span-2 text-sm text-right text-white/70">{trendTotalCount}</div>
+                  </div>
                 </div>
               </div>
             </div>

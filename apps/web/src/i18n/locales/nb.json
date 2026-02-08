@@ -47,6 +47,7 @@
     "merchant": "Kjøpmann",
     "transfer": "Overføring",
     "recurring": "Gjentakende",
+    "total": "Totalt",
     "unknownFile": "Ukjent fil",
     "notAvailable": "Ikke tilgjengelig"
   },
