@@ -84,6 +84,7 @@
     "groceriesMonthlyTrendHint": "Track your groceries spending per month.",
     "categoryMonthlyTrend": "Monthly category spend",
     "categoryMonthlyTrendHint": "Click a month to review and edit transactions.",
+    "monthlyTrendTotal": "Total for selected months",
     "last3Months": "Last 3 months",
     "last6Months": "Last 6 months",
     "last12Months": "Last 12 months",

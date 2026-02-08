@@ -118,6 +118,10 @@ export function DashboardPage() {
     return selectableCategories.find((c) => c.id === trendCategoryId)?.name || t('dashboard.groceries');
   }, [selectableCategories, trendCategoryId, t]);
 
+  const trendTotal = useMemo(() => {
+    return trendSeries.reduce((sum, point) => sum + (point.expenses ?? 0), 0);
+  }, [trendSeries]);
+
   const updateSearch = (fn: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(searchParams);
     fn(next);
@@ -722,22 +726,27 @@ export function DashboardPage() {
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+          <div className="space-y-1">
             <p className="text-xs text-white/60">{t('dashboard.categoryMonthlyTrendHint')}</p>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-xs text-white/60">{t('common.category')}</span>
-              <select
-                value={trendCategoryId}
-                onChange={(e) => setTrendCategoryId(e.target.value)}
-                className="h-9 px-2 rounded border border-white/15 bg-white/5 text-sm text-white"
-              >
-                {selectableCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <p className="text-xs text-white/80">
+              {t('dashboard.monthlyTrendTotal')}: <span className="font-medium text-white">{formatCurrency(trendTotal)}</span>
+            </p>
           </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-xs text-white/60">{t('common.category')}</span>
+            <select
+              value={trendCategoryId}
+              onChange={(e) => setTrendCategoryId(e.target.value)}
+              className="h-9 px-2 rounded border border-white/15 bg-white/5 text-sm text-white"
+            >
+              {selectableCategories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
         </CardHeader>
         <CardContent>
           {trendSeries.length > 0 ? (
