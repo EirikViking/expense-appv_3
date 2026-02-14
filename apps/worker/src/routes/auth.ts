@@ -240,7 +240,13 @@ auth.post('/set-password', async (c) => {
 
     const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'invite');
     if (!used) {
-      return c.json({ error: 'Invalid or expired token' }, 400);
+      return c.json(
+        {
+          error: 'Invalid or expired token',
+          message: 'Ugyldig eller utløpt lenke. Be om en ny invite-lenke.',
+        },
+        400
+      );
     }
 
     const hashed = await hashPassword(parsed.data.password);
@@ -271,7 +277,13 @@ auth.post('/reset-password', async (c) => {
 
     const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'reset');
     if (!used) {
-      return c.json({ error: 'Invalid or expired token' }, 400);
+      return c.json(
+        {
+          error: 'Invalid or expired token',
+          message: 'Ugyldig eller utløpt lenke. Be om en ny reset-lenke.',
+        },
+        400
+      );
     }
 
     const hashed = await hashPassword(parsed.data.password);

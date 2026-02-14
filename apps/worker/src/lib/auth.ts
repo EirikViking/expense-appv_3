@@ -33,6 +33,38 @@ export interface PasswordTokenUsage {
   user_id: string;
 }
 
+export function buildPasswordTokenCandidates(rawToken: string): string[] {
+  const out = new Set<string>();
+  const base = String(rawToken || '').trim();
+  if (!base) return [];
+
+  out.add(base);
+  out.add(base.replace(/^["']|["']$/g, ''));
+  out.add(base.replace(/[),.;:!?]+$/, ''));
+  out.add(base.replace(/\s+/g, ''));
+
+  try {
+    const decoded = decodeURIComponent(base);
+    if (decoded && decoded !== base) {
+      const decodedTrimmed = decoded.trim();
+      out.add(decodedTrimmed);
+      out.add(decodedTrimmed.replace(/\s+/g, ''));
+      out.add(decodedTrimmed.replace(/ /g, '+'));
+      out.add(decodedTrimmed.replace(/ /g, '-'));
+    }
+  } catch {
+    // Ignore invalid URI encoding; we still keep other candidates.
+  }
+
+  if (base.includes(' ')) {
+    // Tolerate share/copy transforms from legacy base64 and url-safe forms.
+    out.add(base.replace(/ /g, '+'));
+    out.add(base.replace(/ /g, '-'));
+  }
+
+  return [...out].filter(Boolean);
+}
+
 function toHex(bytes: Uint8Array): string {
   return Array.from(bytes)
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -235,18 +267,23 @@ export async function consumePasswordToken(
   rawToken: string,
   type: PasswordTokenType
 ): Promise<PasswordTokenUsage | null> {
-  const tokenHash = await sha256Hex(rawToken);
+  const candidates = buildPasswordTokenCandidates(rawToken);
+  if (candidates.length === 0) return null;
+
+  const hashes = await Promise.all(candidates.map((candidate) => sha256Hex(candidate)));
+  const uniqueHashes = [...new Set(hashes)];
+  const hashPlaceholders = uniqueHashes.map(() => '?').join(', ');
   const now = nowUnixSeconds();
   const tokenRow = await db
     .prepare(
       `SELECT id, user_id
        FROM password_tokens
-       WHERE token_hash = ?
+       WHERE token_hash IN (${hashPlaceholders})
          AND type = ?
          AND used_at IS NULL
          AND expires_at > ?`
     )
-    .bind(tokenHash, type, now)
+    .bind(...uniqueHashes, type, now)
     .first<{ id: string; user_id: string }>();
 
   if (!tokenRow) return null;
