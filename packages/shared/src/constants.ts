@@ -10,6 +10,10 @@ export type TransactionStatus = (typeof TRANSACTION_STATUSES)[number];
 export const FLOW_TYPES = ['unknown', 'expense', 'income', 'transfer'] as const;
 export type FlowType = (typeof FLOW_TYPES)[number];
 
+// User roles
+export const USER_ROLES = ['admin', 'user'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
 // Category rule match types (legacy - for old category_rules table)
 export const MATCH_TYPES = ['exact', 'contains', 'regex'] as const;
 export type MatchType = (typeof MATCH_TYPES)[number];
