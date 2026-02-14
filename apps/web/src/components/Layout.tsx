@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard,
@@ -21,6 +21,8 @@ import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Atmosphere } from '@/components/Atmosphere';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -38,9 +40,10 @@ const navItems = [
 ];
 
 export function Layout({ children }: LayoutProps) {
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, needsOnboarding, completeOnboarding } = useAuth();
   const { showBudgets } = useFeatureFlags();
   const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTranslation();
 
@@ -169,6 +172,45 @@ export function Layout({ children }: LayoutProps) {
           </div>
         </footer>
       </div>
+
+      <Dialog
+        open={isAuthenticated && needsOnboarding}
+        onOpenChange={(open) => {
+          if (!open && needsOnboarding) {
+            void completeOnboarding();
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('onboarding.title')}</DialogTitle>
+            <DialogDescription>{t('onboarding.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 text-sm text-white/80">
+            <p>{t('onboarding.stepUpload')}</p>
+            <p>{t('onboarding.stepReview')}</p>
+            <p>{t('onboarding.stepCategorize')}</p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await completeOnboarding();
+              }}
+            >
+              {t('onboarding.close')}
+            </Button>
+            <Button
+              onClick={async () => {
+                await completeOnboarding();
+                navigate('/upload');
+              }}
+            >
+              {t('onboarding.goToUpload')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
