@@ -415,8 +415,15 @@ export const api = {
 
   testRule: (id: string, testText: string) => {
     return request<{
-      matches: boolean;
-      message: string;
+      rule_id: string;
+      tested: number;
+      matched: number;
+      matches: Array<{
+        transaction_id: string;
+        description: string;
+        amount: number;
+        date: string;
+      }>;
     }>(`/rules/${id}/test`, {
       method: 'POST',
       body: JSON.stringify({ test_text: testText }),

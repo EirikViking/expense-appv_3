@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Input } from '@/components/ui/input';
 import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/lib/utils';
 import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { useNavigate } from 'react-router-dom';
+import { SmartDateInput } from '@/components/SmartDateInput';
+import { validateDateRange } from '@/lib/date-input';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 type Lang = 'en' | 'nb';
 
@@ -178,6 +180,9 @@ export function InsightsPage() {
   const [showCustomRange, setShowCustomRange] = useState(false);
   const [customDateFrom, setCustomDateFrom] = useState('');
   const [customDateTo, setCustomDateTo] = useState('');
+  const [customDateFromError, setCustomDateFromError] = useState<string | null>(null);
+  const [customDateToError, setCustomDateToError] = useState<string | null>(null);
+  const [customRangeError, setCustomRangeError] = useState<string | null>(null);
 
   const [seed, setSeed] = useState(0);
 
@@ -219,9 +224,14 @@ export function InsightsPage() {
 
   const applyCustomRange = () => {
     if (!customDateFrom || !customDateTo) return;
+    if (!validateDateRange(customDateFrom, customDateTo)) {
+      setCustomRangeError(lang === 'nb' ? 'Fra kan ikke være etter Til.' : 'From cannot be after To.');
+      return;
+    }
     setDateFrom(customDateFrom);
     setDateTo(customDateTo);
     setShowCustomRange(false);
+    setCustomRangeError(null);
   };
 
   const createBaseDrilldownQuery = () => {
@@ -243,6 +253,22 @@ export function InsightsPage() {
     if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
     else if (merchant.merchant_name) qs.set('merchant_name', merchant.merchant_name);
     navigate(`/transactions?${qs.toString()}`);
+  };
+
+  const openDramaDrilldown = () => {
+    const topMerchant = merchants[0];
+    if (topMerchant) {
+      openMerchantDrilldown(topMerchant);
+      return;
+    }
+
+    const topCategory = categories.find((c) => c.category_id);
+    if (topCategory?.category_id) {
+      openCategoryDrilldown(topCategory.category_id);
+      return;
+    }
+
+    navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
   };
 
   return (
@@ -298,7 +324,17 @@ export function InsightsPage() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={() => setShowCustomRange((v) => !v)}
+              onClick={() =>
+                setShowCustomRange((v) => {
+                  const next = !v;
+                  if (next) {
+                    setCustomDateFrom(dateFrom);
+                    setCustomDateTo(dateTo);
+                    setCustomRangeError(null);
+                  }
+                  return next;
+                })
+              }
             >
               {hub.copy.customRange}
             </Button>
@@ -312,11 +348,27 @@ export function InsightsPage() {
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-white/70 mb-1">{hub.copy.from}</label>
-                <Input type="date" value={customDateFrom} onChange={(e) => setCustomDateFrom(e.target.value)} />
+                <SmartDateInput
+                  value={customDateFrom}
+                  ariaLabel={hub.copy.from}
+                  invalidFormatMessage={lang === 'nb' ? 'Ugyldig datoformat.' : 'Invalid date format.'}
+                  invalidDateMessage={lang === 'nb' ? 'Ugyldig dato.' : 'Invalid date.'}
+                  onChange={setCustomDateFrom}
+                  onErrorChange={setCustomDateFromError}
+                />
+                {customDateFromError && <p className="mt-1 text-xs text-red-300">{customDateFromError}</p>}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-white/70 mb-1">{hub.copy.to}</label>
-                <Input type="date" value={customDateTo} onChange={(e) => setCustomDateTo(e.target.value)} />
+                <SmartDateInput
+                  value={customDateTo}
+                  ariaLabel={hub.copy.to}
+                  invalidFormatMessage={lang === 'nb' ? 'Ugyldig datoformat.' : 'Invalid date format.'}
+                  invalidDateMessage={lang === 'nb' ? 'Ugyldig dato.' : 'Invalid date.'}
+                  onChange={setCustomDateTo}
+                  onErrorChange={setCustomDateToError}
+                />
+                {customDateToError && <p className="mt-1 text-xs text-red-300">{customDateToError}</p>}
               </div>
               <div className="flex items-end gap-2">
                 <Button onClick={applyCustomRange} disabled={!customDateFrom || !customDateTo}>
@@ -326,6 +378,9 @@ export function InsightsPage() {
                   {hub.copy.cancel}
                 </Button>
               </div>
+              {customRangeError && (
+                <p className="sm:col-span-3 text-sm text-red-300">{customRangeError}</p>
+              )}
             </div>
           )}
         </CardContent>
@@ -395,6 +450,14 @@ export function InsightsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-white/85 leading-relaxed">{hub.drama}</p>
+              <p className="mt-2 text-xs text-white/60">
+                {lang === 'nb'
+                  ? 'Daglig drama oppsummerer den største driveren akkurat nå. Klikk for å se transaksjonene bak.'
+                  : 'Daily drama summarizes the strongest spending driver right now. Click to inspect the underlying transactions.'}
+              </p>
+              <Button type="button" variant="outline" size="sm" className="mt-3" onClick={openDramaDrilldown}>
+                {lang === 'nb' ? 'Se transaksjonene bak dramaet' : 'View transactions behind this drama'}
+              </Button>
               <div className="mt-4">
                 <p className="text-xs font-semibold text-white/70">{hub.copy.subsTitle}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -418,6 +481,11 @@ export function InsightsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{lang === 'nb' ? 'Leaderboard (helt uoffisielt)' : 'Leaderboard (unofficial)'}</CardTitle>
+          <p className="text-xs text-white/60">
+            {lang === 'nb'
+              ? 'Klikk en rad for drilldown til transaksjoner med samme periode og utgiftstype.'
+              : 'Click a row to drill down to transactions with the same date range and flow type.'}
+          </p>
         </CardHeader>
         <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
@@ -431,7 +499,9 @@ export function InsightsPage() {
                   onClick={() => openCategoryDrilldown(c.category_id)}
                   title={lang === 'nb' ? 'Vis transaksjoner for kategori' : 'View transactions for category'}
                 >
-                  <span className="text-sm text-white/80">{c.category_name || 'Uncategorized'}</span>
+                  <span className="text-sm text-white/80">
+                    {localizeCategoryName(c.category_name || (lang === 'nb' ? 'Ukategorisert' : 'Uncategorized'), lang)}
+                  </span>
                   <span className="text-sm font-semibold text-white">{formatCompactCurrency(c.total || 0)}</span>
                 </button>
               ))}

@@ -79,6 +79,7 @@ export function Layout({ children }: LayoutProps) {
           <button
             onClick={() => setSidebarOpen(false)}
             className="lg:hidden p-1 rounded-md hover:bg-white/10"
+            aria-label="Close navigation menu"
           >
             <X className="h-5 w-5 text-white/70" />
           </button>
@@ -137,6 +138,7 @@ export function Layout({ children }: LayoutProps) {
           <button
             onClick={() => setSidebarOpen(true)}
             className="p-2 rounded-md hover:bg-white/10"
+            aria-label="Open navigation menu"
           >
             <Menu className="h-5 w-5 text-white/80" />
           </button>

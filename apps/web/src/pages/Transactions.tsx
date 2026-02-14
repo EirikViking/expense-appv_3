@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,10 +32,16 @@ import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
+import { SmartDateInput } from '@/components/SmartDateInput';
+import { validateDateRange } from '@/lib/date-input';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 export function TransactionsPage() {
-  const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
+  const { t, i18n } = useTranslation();
+  const currentLanguage = i18n.resolvedLanguage || i18n.language;
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
@@ -46,6 +52,9 @@ export function TransactionsPage() {
   // Filters
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateFromError, setDateFromError] = useState<string | null>(null);
+  const [dateToError, setDateToError] = useState<string | null>(null);
+  const [dateRangeError, setDateRangeError] = useState<string | null>(null);
   const [status, setStatus] = useState<TransactionStatus | ''>('');
   const [sourceType, setSourceType] = useState<SourceType | ''>('');
   const [categoryId, setCategoryId] = useState('');
@@ -147,6 +156,15 @@ export function TransactionsPage() {
   };
 
   const fetchData = useCallback(async () => {
+    if (!validateDateRange(dateFrom, dateTo)) {
+      setDateRangeError('Fra-dato kan ikke være etter til-dato.');
+      setTransactions([]);
+      setTotal(0);
+      setAggregates(null);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -203,6 +221,14 @@ export function TransactionsPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    if (!dateFrom || !dateTo) {
+      setDateRangeError(null);
+      return;
+    }
+    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : 'Fra-dato kan ikke være etter til-dato.');
+  }, [dateFrom, dateTo]);
+
   // Initialize from URL query params (drilldown support)
   useEffect(() => {
     const qDateFrom = searchParams.get('date_from') || '';
@@ -220,6 +246,8 @@ export function TransactionsPage() {
     const qFlowType = (searchParams.get('flow_type') || '') as FlowType | '';
     const qSortBy = searchParams.get('sort_by') || '';
     const qSortOrder = searchParams.get('sort_order') || '';
+    const qPageRaw = searchParams.get('page');
+    const qPage = qPageRaw ? Number(qPageRaw) : 0;
 
     if (qDateFrom) setDateFrom(qDateFrom);
     if (qDateTo) setDateTo(qDateTo);
@@ -243,6 +271,7 @@ export function TransactionsPage() {
     if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
     if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
     if (qFlowType) setFlowType(qFlowType);
+    if (Number.isInteger(qPage) && qPage >= 0) setPage(qPage);
 
     // Sort init (keep backward compatibility)
     if (qSortBy || qSortOrder) {
@@ -252,8 +281,53 @@ export function TransactionsPage() {
       else if (by === 'amount_abs') setSortKey(order === 'asc' ? 'amount_abs_asc' : 'amount_abs_desc');
       else setSortKey(order === 'asc' ? 'date_asc' : 'date_desc');
     }
+    setFiltersInitialized(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!filtersInitialized) return;
+    const next = new URLSearchParams();
+    if (dateFrom) next.set('date_from', dateFrom);
+    if (dateTo) next.set('date_to', dateTo);
+    if (status) next.set('status', status);
+    if (sourceType) next.set('source_type', sourceType);
+    if (categoryId) next.set('category_id', categoryId);
+    if (merchantId) next.set('merchant_id', merchantId);
+    if (merchantName) next.set('merchant_name', merchantName);
+    if (minAmount) next.set('min_amount', minAmount);
+    if (maxAmount) next.set('max_amount', maxAmount);
+    if (searchQuery) next.set('search', searchQuery);
+    if (!excludeTransfers) next.set('include_transfers', '1');
+    if (showExcluded) next.set('include_excluded', '1');
+    if (flowType) next.set('flow_type', flowType);
+    if (page > 0) next.set('page', String(page));
+
+    if (sortKey.startsWith('amount_abs')) next.set('sort_by', 'amount_abs');
+    else if (sortKey.startsWith('merchant')) next.set('sort_by', 'merchant');
+    else next.set('sort_by', 'date');
+    next.set('sort_order', sortKey.endsWith('_asc') ? 'asc' : 'desc');
+
+    setSearchParams(next, { replace: true });
+  }, [
+    filtersInitialized,
+    dateFrom,
+    dateTo,
+    status,
+    sourceType,
+    categoryId,
+    merchantId,
+    merchantName,
+    minAmount,
+    maxAmount,
+    searchQuery,
+    excludeTransfers,
+    showExcluded,
+    flowType,
+    page,
+    sortKey,
+    setSearchParams,
+  ]);
 
   // Remember last selected date range for next visit.
   useEffect(() => {
@@ -308,9 +382,20 @@ export function TransactionsPage() {
   };
 
   const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const hasDrilldownContext = Boolean(
+    (searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
+      searchParams.get('date_from') &&
+      searchParams.get('date_to')
+  );
 
   return (
     <div className="space-y-6">
+      {hasDrilldownContext && (
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+          <ChevronLeft className="h-4 w-4 mr-1" />
+          {t('common.previous')}
+        </Button>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('transactions.title')}</h1>
         <div className="flex items-center gap-2">
@@ -325,7 +410,7 @@ export function TransactionsPage() {
                   <option value="">{t('transactions.bulkSelectCategory')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                      {localizeCategoryName(cat.name, currentLanguage)}
                     </option>
                   ))}
                 </select>
@@ -467,27 +552,35 @@ export function TransactionsPage() {
                 <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.fromDate')}
                 </label>
-                <Input
-                  type="date"
+                <SmartDateInput
                   value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
+                  ariaLabel={t('common.fromDate')}
+                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
+                  invalidDateMessage="Ugyldig dato."
+                  onChange={(next) => {
+                    setDateFrom(next);
                     setPage(0);
                   }}
+                  onErrorChange={setDateFromError}
                 />
+                {dateFromError && <p className="mt-1 text-xs text-red-300">{dateFromError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.toDate')}
                 </label>
-                <Input
-                  type="date"
+                <SmartDateInput
                   value={dateTo}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
+                  ariaLabel={t('common.toDate')}
+                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
+                  invalidDateMessage="Ugyldig dato."
+                  onChange={(next) => {
+                    setDateTo(next);
                     setPage(0);
                   }}
+                  onErrorChange={setDateToError}
                 />
+                {dateToError && <p className="mt-1 text-xs text-red-300">{dateToError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
@@ -557,12 +650,15 @@ export function TransactionsPage() {
                   <option value="">{t('common.allCategories')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                      {localizeCategoryName(cat.name, currentLanguage)}
                     </option>
                   ))}
                 </select>
               </div>
             </div>
+            {dateRangeError && (
+              <p className="mt-3 text-sm text-red-300">{dateRangeError}</p>
+            )}
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -722,6 +818,15 @@ export function TransactionsPage() {
                     key={tx.id}
                     className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
                     onClick={() => !editingId && setSelectedTransaction(tx)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (editingId) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedTransaction(tx);
+                      }
+                    }}
                   >
                     {editingId === tx.id ? (
                       // Edit Mode
@@ -753,7 +858,7 @@ export function TransactionsPage() {
                               <option value="">{t('common.uncategorized')}</option>
                               {categories.map((cat) => (
                                 <option key={cat.id} value={cat.id}>
-                                  {cat.name}
+                                  {localizeCategoryName(cat.name, currentLanguage)}
                                 </option>
                               ))}
                             </select>
@@ -777,6 +882,7 @@ export function TransactionsPage() {
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(tx.id)}
+                          aria-label={`${t('transactions.title')}: ${tx.description}`}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (e.target.checked) setSelectedIds([...selectedIds, tx.id]);
@@ -834,7 +940,7 @@ export function TransactionsPage() {
                                     color: tx.category_color,
                                   } : { backgroundColor: '#6b728020', color: '#6b7280' }}
                                 >
-                                  {tx.category_name}
+                                  {localizeCategoryName(tx.category_name, currentLanguage)}
                                 </span>
                               </>
                             )}
@@ -876,7 +982,7 @@ export function TransactionsPage() {
                             <Badge
                               variant={tx.status === 'booked' ? 'default' : 'warning'}
                             >
-                              {tx.status}
+                              {tx.status === 'booked' ? t('common.booked') : t('common.pending')}
                             </Badge>
                             <button
                               onClick={(e) => {
@@ -884,6 +990,7 @@ export function TransactionsPage() {
                                 startEdit(tx);
                               }}
                               className="p-1 hover:bg-white/10 rounded"
+                              aria-label={`${t('transactions.editOne')}: ${tx.description}`}
                             >
                               <Pencil className="h-3 w-3 text-white/45" />
                             </button>
@@ -973,7 +1080,7 @@ export function TransactionsPage() {
                 <option value="">{t('common.uncategorized')}</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.name}
+                    {localizeCategoryName(cat.name, currentLanguage)}
                   </option>
                 ))}
               </select>

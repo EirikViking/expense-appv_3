@@ -18,13 +18,32 @@ import {
   XCircle,
   GripVertical,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
+
+type RuleTestResult = {
+  ruleId: string;
+  tested: number;
+  matched: number;
+  actionLabel: string;
+  matches: Array<{
+    transaction_id: string;
+    description: string;
+    amount: number;
+    date: string;
+  }>;
+};
 
 export function RulesPage() {
+  const RULES_PAGE_SIZE = 25;
+  const { t, i18n } = useTranslation();
+  const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [rules, setRules] = useState<Rule[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rulesPage, setRulesPage] = useState(0);
 
   // Edit/Create state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,13 +66,14 @@ export function RulesPage() {
 
   // Test state
   const [testText, setTestText] = useState('');
-  const [testResult, setTestResult] = useState<{ matches: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<RuleTestResult | null>(null);
   const [testingRuleId, setTestingRuleId] = useState<string | null>(null);
 
   // Apply state
   const [applyingRules, setApplyingRules] = useState(false);
   const [applyResult, setApplyResult] = useState<{ affected: number } | null>(null);
   const [applyStatus, setApplyStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [applyPreviewCount, setApplyPreviewCount] = useState<number | null>(null);
   const location = useLocation();
 
   const fetchData = async () => {
@@ -65,8 +85,20 @@ export function RulesPage() {
         api.getTags(),
       ]);
       setRules(rulesRes.rules);
+      setRulesPage(0);
       setCategories(catsRes.categories);
       setTags(tagsRes.tags);
+      try {
+        const txPreview = await api.getTransactions({
+          include_excluded: false,
+          include_transfers: true,
+          limit: 1,
+          offset: 0,
+        });
+        setApplyPreviewCount(txPreview.total);
+      } catch {
+        setApplyPreviewCount(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
@@ -178,7 +210,9 @@ export function RulesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this rule?')) return;
+    const rule = rules.find((r) => r.id === id);
+    const ruleName = rule?.name || 'this rule';
+    if (!confirm(`Delete "${ruleName}"?`)) return;
     try {
       await api.deleteRule(id);
       fetchData();
@@ -187,17 +221,56 @@ export function RulesPage() {
     }
   };
 
+  const getActionPreviewLabel = (rule: Rule): string => {
+    if (rule.action_type === 'set_category') {
+      const cat = categories.find((c) => c.id === rule.action_value);
+      return `${t('rulesPage.setCategoryTo')} ${localizeCategoryName(cat?.name || rule.action_value, currentLanguage)}`;
+    }
+    if (rule.action_type === 'add_tag') {
+      const tag = tags.find((t) => t.id === rule.action_value);
+      return `${t('rulesPage.addTagTo')} ${tag?.name || rule.action_value}`;
+    }
+    return `${rule.action_type.replace('_', ' ')} -> ${rule.action_value}`;
+  };
+
   const handleTest = async (ruleId: string) => {
+    const rule = rules.find((r) => r.id === ruleId);
+    if (!rule) return;
     setTestingRuleId(ruleId);
     try {
       const result = await api.testRule(ruleId, testText);
-      setTestResult({ matches: result.matches, message: result.message });
+      const filteredMatches = testText.trim()
+        ? result.matches.filter((m) =>
+            m.description.toLowerCase().includes(testText.trim().toLowerCase())
+          )
+        : result.matches;
+
+      setTestResult({
+        ruleId,
+        tested: result.tested,
+        matched: filteredMatches.length,
+        actionLabel: getActionPreviewLabel(rule),
+        matches: filteredMatches.slice(0, 20),
+      });
     } catch (err) {
-      setTestResult({ matches: false, message: 'Test failed' });
+      setTestResult({
+        ruleId,
+        tested: 0,
+        matched: 0,
+        actionLabel: getActionPreviewLabel(rule),
+        matches: [],
+      });
+    } finally {
+      setTestingRuleId(null);
     }
   };
 
   const handleApplyAll = async () => {
+    const preview = applyPreviewCount != null
+      ? `This will evaluate about ${applyPreviewCount} transactions. Continue?`
+      : 'Apply all enabled rules to matching transactions now?';
+    if (!confirm(preview)) return;
+
     setApplyingRules(true);
     setApplyResult(null);
     setApplyStatus(null);
@@ -240,6 +313,10 @@ export function RulesPage() {
     return rule.action_value;
   };
 
+  const totalRulePages = Math.max(1, Math.ceil(rules.length / RULES_PAGE_SIZE));
+  const visibleRules = rules.slice(rulesPage * RULES_PAGE_SIZE, (rulesPage + 1) * RULES_PAGE_SIZE);
+  const shownCount = visibleRules.length;
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -260,19 +337,28 @@ export function RulesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Rules</h1>
+        <h1 className="text-2xl font-bold">{t('rulesPage.title')}</h1>
         <div className="flex gap-2">
           <Button
             variant="outline"
             onClick={handleApplyAll}
             disabled={applyingRules || rules.length === 0}
+            title={
+              applyPreviewCount != null
+                ? `Will evaluate about ${applyPreviewCount} transactions`
+                : 'Apply rules to all matching transactions'
+            }
           >
             <Play className="h-4 w-4 mr-2" />
-            {applyingRules ? 'Applying...' : 'Apply All Rules'}
+            {applyingRules
+              ? t('rulesPage.applying')
+              : applyPreviewCount != null
+                ? t('rulesPage.applyAllWithCount', { count: applyPreviewCount })
+                : t('rulesPage.applyAll')}
           </Button>
           <Button onClick={startCreate}>
             <Plus className="h-4 w-4 mr-2" />
-            New Rule
+            {t('rulesPage.newRule')}
           </Button>
         </div>
       </div>
@@ -295,7 +381,7 @@ export function RulesPage() {
             <span>{applyStatus.message}</span>
             {applyResult && applyStatus.type === 'success' && (
               <span className="text-sm text-green-700">
-                {applyResult.affected} updated
+                {t('rulesPage.updatedCount', { count: applyResult.affected })}
               </span>
             )}
           </div>
@@ -307,20 +393,20 @@ export function RulesPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
-              {isCreating ? 'New Rule' : 'Edit Rule'}
+              {isCreating ? t('rulesPage.newRule') : t('rulesPage.editRule')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Rule Name
+                  {t('rulesPage.ruleName')}
                 </label>
                 <Input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g., Netflix Subscription"
+                  placeholder={t('rulesPage.ruleNamePlaceholder')}
                 />
                 {formErrors.name && (
                   <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
@@ -328,7 +414,7 @@ export function RulesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Priority
+                  {t('rulesPage.priority')}
                 </label>
                 <Input
                   type="number"
@@ -343,10 +429,10 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-white/80 mb-3">Match Condition</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">{t('rulesPage.matchCondition')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Field</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.field')}</label>
                   <select
                     value={formField}
                     onChange={(e) => setFormField(e.target.value)}
@@ -360,7 +446,7 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Match Type</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.matchType')}</label>
                   <select
                     value={formMatchType}
                     onChange={(e) => setFormMatchType(e.target.value)}
@@ -374,12 +460,12 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Pattern</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.pattern')}</label>
                   <Input
                     type="text"
                     value={formPattern}
                     onChange={(e) => setFormPattern(e.target.value)}
-                    placeholder="e.g., NETFLIX"
+                    placeholder={t('rulesPage.patternPlaceholder')}
                   />
                   {formErrors.pattern && (
                     <p className="mt-1 text-xs text-red-600">{formErrors.pattern}</p>
@@ -389,10 +475,10 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-white/80 mb-3">Action</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">{t('rulesPage.action')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Action Type</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.actionType')}</label>
                   <select
                     value={formActionType}
                     onChange={(e) => {
@@ -409,17 +495,17 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Value</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.value')}</label>
                   {formActionType === 'set_category' ? (
                     <select
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
                       className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select category</option>
+                      <option value="">{t('rulesPage.selectCategory')}</option>
                       {categories.map((cat) => (
                         <option key={cat.id} value={cat.id}>
-                          {cat.name}
+                          {localizeCategoryName(cat.name, currentLanguage)}
                         </option>
                       ))}
                     </select>
@@ -429,7 +515,7 @@ export function RulesPage() {
                       onChange={(e) => setFormActionValue(e.target.value)}
                       className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select tag</option>
+                      <option value="">{t('rulesPage.selectTag')}</option>
                       {tags.map((tag) => (
                         <option key={tag.id} value={tag.id}>
                           {tag.name}
@@ -441,7 +527,7 @@ export function RulesPage() {
                       type="text"
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
-                      placeholder="Value"
+                      placeholder={t('rulesPage.value')}
                     />
                   )}
                   {formErrors.actionValue && (
@@ -460,7 +546,7 @@ export function RulesPage() {
                 className="h-4 w-4 rounded border-white/15"
               />
               <label htmlFor="enabled" className="text-sm text-white/80">
-                Rule enabled
+                {t('rulesPage.ruleEnabled')}
               </label>
             </div>
 
@@ -471,10 +557,10 @@ export function RulesPage() {
             )}
             <div className="flex gap-2">
               <Button onClick={handleSave}>
-                {isCreating ? 'Create' : 'Save'}
+                {isCreating ? t('rulesPage.create') : t('common.save')}
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </div>
           </CardContent>
@@ -484,7 +570,7 @@ export function RulesPage() {
       {/* Test Rule Section */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Test Rules</CardTitle>
+          <CardTitle className="text-lg">{t('rulesPage.testRules')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
@@ -493,29 +579,40 @@ export function RulesPage() {
               value={testText}
               onChange={(e) => {
                 setTestText(e.target.value);
-                setTestResult(null);
               }}
-              placeholder="Enter text to test against rules..."
+              placeholder={t('rulesPage.testPlaceholder')}
               className="flex-1"
             />
           </div>
           {testResult && (
             <div
               className={`mt-3 p-3 rounded-lg ${
-                testResult.matches
+                testResult.matched > 0
                   ? 'bg-green-50 text-green-700'
                   : 'bg-white/5 text-white/80'
               }`}
             >
-              {testResult.matches ? (
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4" />
-                  {testResult.message}
+              {testResult.matched > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    {t('rulesPage.ruleMatched', { matched: testResult.matched, tested: testResult.tested })}
+                  </div>
+                  <p className="text-xs opacity-90">{t('rulesPage.predictedOutcome')}: {testResult.actionLabel}</p>
+                  <div className="max-h-48 overflow-auto rounded border border-green-200/40 bg-white/40 p-2">
+                    <ul className="space-y-1 text-xs">
+                      {testResult.matches.map((m) => (
+                        <li key={m.transaction_id} className="truncate">
+                          <span className="font-medium">{m.date}</span> - {m.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <XCircle className="h-4 w-4" />
-                  {testResult.message}
+                  {t('rulesPage.noMatches')}
                 </div>
               )}
             </div>
@@ -528,13 +625,16 @@ export function RulesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Workflow className="h-5 w-5" />
-            Rules ({rules.length})
+            {t('rulesPage.title')} ({rules.length})
           </CardTitle>
+          <p className="text-xs text-white/70">
+            {t('rulesPage.showingCount', { shown: shownCount, total: rules.length })}
+          </p>
         </CardHeader>
         <CardContent>
           {rules.length > 0 ? (
             <div className="space-y-2">
-              {rules.map((rule) => (
+              {visibleRules.map((rule) => (
                 <div
                   key={rule.id}
                   className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -549,11 +649,11 @@ export function RulesPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{rule.name}</span>
                       <Badge variant="outline" className="text-xs">
-                        Priority: {rule.priority}
+                        {t('rulesPage.priority')}: {rule.priority}
                       </Badge>
                       {!rule.enabled && (
                         <Badge variant="secondary" className="text-xs">
-                          Disabled
+                          {t('rulesPage.disabled')}
                         </Badge>
                       )}
                     </div>
@@ -564,24 +664,30 @@ export function RulesPage() {
                       {' then '}
                       <span className="text-blue-600">{rule.action_type.replace('_', ' ')}</span>
                       {': '}
-                      <span className="font-medium">{getActionValueLabel(rule)}</span>
+                      <span className="font-medium">
+                        {rule.action_type === 'set_category'
+                          ? localizeCategoryName(getActionValueLabel(rule), currentLanguage)
+                          : getActionValueLabel(rule)}
+                      </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {testText && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleTest(rule.id)}
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleTest(rule.id)}
+                      disabled={testingRuleId === rule.id}
+                      title="Run rule test"
+                      aria-label={`${t('rulesPage.testRules')}: ${rule.name}`}
+                    >
+                      <Play className="h-4 w-4" />
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => toggleEnabled(rule)}
+                      aria-label={rule.enabled ? `${t('rulesPage.disabled')}: ${rule.name}` : `${t('rulesPage.ruleEnabled')}: ${rule.name}`}
                     >
                       {rule.enabled ? (
                         <CheckCircle className="h-4 w-4 text-green-500" />
@@ -593,6 +699,7 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => startEdit(rule)}
+                      aria-label={`${t('transactions.editOne')}: ${rule.name}`}
                     >
                       <Pencil className="h-4 w-4 text-white/45" />
                     </Button>
@@ -600,16 +707,40 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDelete(rule.id)}
+                      aria-label={`${t('transactions.deleteOne')}: ${rule.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-red-400" />
                     </Button>
                   </div>
                 </div>
               ))}
+              {totalRulePages > 1 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRulesPage((p) => Math.max(0, p - 1))}
+                    disabled={rulesPage === 0}
+                  >
+                    {t('common.previous')}
+                  </Button>
+                  <span className="text-xs text-white/70">
+                    {t('transactions.pageOf', { page: rulesPage + 1, total: totalRulePages })}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRulesPage((p) => Math.min(totalRulePages - 1, p + 1))}
+                    disabled={rulesPage >= totalRulePages - 1}
+                  >
+                    {t('common.next')}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-white/60 text-center py-8">
-              No rules yet. Create one to automatically categorize transactions!
+              {t('rulesPage.noRules')}
             </p>
           )}
         </CardContent>
