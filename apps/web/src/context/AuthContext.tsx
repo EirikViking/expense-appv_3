@@ -65,8 +65,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string, rememberMe: boolean) => {
     await api.login(email, password, rememberMe);
-    await checkAuth();
-  }, [checkAuth]);
+    const me = await api.authMe();
+
+    if (me.bootstrap_required) {
+      setBootstrapRequired(true);
+      setIsAuthenticated(false);
+      setUser(null);
+      setNeedsOnboarding(false);
+      throw new ApiError('Bootstrap required', 400, me);
+    }
+
+    if (!me.authenticated || !me.user) {
+      setBootstrapRequired(false);
+      setIsAuthenticated(false);
+      setUser(null);
+      setNeedsOnboarding(false);
+      throw new ApiError('Login session was not established. Please try again.', 401, me);
+    }
+
+    setBootstrapRequired(false);
+    setIsAuthenticated(true);
+    setUser(me.user);
+    setNeedsOnboarding(Boolean(me.needs_onboarding));
+  }, []);
 
   const logout = useCallback(async () => {
     try {

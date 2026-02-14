@@ -27,12 +27,11 @@ app.use(
       if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
         return origin;
       }
-      // Allow Cloudflare Pages (*.pages.dev and custom domains)
-      if (origin.endsWith('.pages.dev') || origin.endsWith('.cromkake.workers.dev')) {
-        return origin;
-      }
-      // Allow any https origin for staging
-      if (origin.startsWith('https://')) {
+      // Allow this Cloudflare Pages project (prod + preview branches)
+      if (
+        origin === 'https://expense-appv-3.pages.dev' ||
+        origin.endsWith('.expense-appv-3.pages.dev')
+      ) {
         return origin;
       }
       return 'http://localhost:5173';

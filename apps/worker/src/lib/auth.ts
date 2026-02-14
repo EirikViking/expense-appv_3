@@ -79,6 +79,12 @@ function secureCookie(url: string): boolean {
   return url.startsWith('https://');
 }
 
+function sessionSameSite(url: string): 'Lax' | 'None' {
+  // Frontend and API run on different origins in production.
+  // SameSite=None is required for credentialed cross-site fetch.
+  return secureCookie(url) ? 'None' : 'Lax';
+}
+
 export function nowUnixSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
@@ -172,7 +178,7 @@ export function setSessionCookie(
   setCookie(c as any, 'session', sessionId, {
     httpOnly: true,
     secure: secureCookie(c.req.url),
-    sameSite: 'Lax',
+    sameSite: sessionSameSite(c.req.url),
     maxAge: maxAgeSeconds,
     path: '/',
   });
@@ -182,7 +188,7 @@ export function clearSessionCookie(c: { req: { url: string } }): void {
   deleteCookie(c as any, 'session', {
     httpOnly: true,
     secure: secureCookie(c.req.url),
-    sameSite: 'Lax',
+    sameSite: sessionSameSite(c.req.url),
     path: '/',
   });
 }
