@@ -19,6 +19,19 @@ import {
   GripVertical,
 } from 'lucide-react';
 
+type RuleTestResult = {
+  ruleId: string;
+  tested: number;
+  matched: number;
+  actionLabel: string;
+  matches: Array<{
+    transaction_id: string;
+    description: string;
+    amount: number;
+    date: string;
+  }>;
+};
+
 export function RulesPage() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -47,7 +60,7 @@ export function RulesPage() {
 
   // Test state
   const [testText, setTestText] = useState('');
-  const [testResult, setTestResult] = useState<{ matches: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<RuleTestResult | null>(null);
   const [testingRuleId, setTestingRuleId] = useState<string | null>(null);
 
   // Apply state
@@ -201,13 +214,47 @@ export function RulesPage() {
     }
   };
 
+  const getActionPreviewLabel = (rule: Rule): string => {
+    if (rule.action_type === 'set_category') {
+      const cat = categories.find((c) => c.id === rule.action_value);
+      return `Set category -> ${cat?.name || rule.action_value}`;
+    }
+    if (rule.action_type === 'add_tag') {
+      const tag = tags.find((t) => t.id === rule.action_value);
+      return `Add tag -> ${tag?.name || rule.action_value}`;
+    }
+    return `${rule.action_type.replace('_', ' ')} -> ${rule.action_value}`;
+  };
+
   const handleTest = async (ruleId: string) => {
+    const rule = rules.find((r) => r.id === ruleId);
+    if (!rule) return;
     setTestingRuleId(ruleId);
     try {
       const result = await api.testRule(ruleId, testText);
-      setTestResult({ matches: result.matches, message: result.message });
+      const filteredMatches = testText.trim()
+        ? result.matches.filter((m) =>
+            m.description.toLowerCase().includes(testText.trim().toLowerCase())
+          )
+        : result.matches;
+
+      setTestResult({
+        ruleId,
+        tested: result.tested,
+        matched: filteredMatches.length,
+        actionLabel: getActionPreviewLabel(rule),
+        matches: filteredMatches.slice(0, 20),
+      });
     } catch (err) {
-      setTestResult({ matches: false, message: 'Test failed' });
+      setTestResult({
+        ruleId,
+        tested: 0,
+        matched: 0,
+        actionLabel: getActionPreviewLabel(rule),
+        matches: [],
+      });
+    } finally {
+      setTestingRuleId(null);
     }
   };
 
@@ -521,29 +568,40 @@ export function RulesPage() {
               value={testText}
               onChange={(e) => {
                 setTestText(e.target.value);
-                setTestResult(null);
               }}
-              placeholder="Enter text to test against rules..."
+              placeholder="Optional: filter test matches by text..."
               className="flex-1"
             />
           </div>
           {testResult && (
             <div
               className={`mt-3 p-3 rounded-lg ${
-                testResult.matches
+                testResult.matched > 0
                   ? 'bg-green-50 text-green-700'
                   : 'bg-white/5 text-white/80'
               }`}
             >
-              {testResult.matches ? (
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4" />
-                  {testResult.message}
+              {testResult.matched > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4" />
+                    Rule matched {testResult.matched} of {testResult.tested} recent transactions
+                  </div>
+                  <p className="text-xs opacity-90">Predicted outcome: {testResult.actionLabel}</p>
+                  <div className="max-h-48 overflow-auto rounded border border-green-200/40 bg-white/40 p-2">
+                    <ul className="space-y-1 text-xs">
+                      {testResult.matches.map((m) => (
+                        <li key={m.transaction_id} className="truncate">
+                          <span className="font-medium">{m.date}</span> - {m.description}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <XCircle className="h-4 w-4" />
-                  {testResult.message}
+                  No matching transactions found for the selected rule.
                 </div>
               )}
             </div>
@@ -597,15 +655,15 @@ export function RulesPage() {
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {testText && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleTest(rule.id)}
-                      >
-                        <Play className="h-4 w-4" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleTest(rule.id)}
+                      disabled={testingRuleId === rule.id}
+                      title="Run rule test"
+                    >
+                      <Play className="h-4 w-4" />
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
