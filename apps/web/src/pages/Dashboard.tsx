@@ -53,14 +53,12 @@ import type {
 import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
 import { useTranslation } from 'react-i18next';
-import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
-  const { showBudgets } = useFeatureFlags();
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
@@ -488,21 +486,19 @@ export function DashboardPage() {
           </CardContent>
         </Card>
 
-        {showBudgets && (
-          <Card
-            className="cursor-pointer hover:bg-white/5 transition-colors"
-            onClick={() => openKPIDrilldown(t('dashboard.income'), { flowType: 'income' })}
-          >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{t('dashboard.income')}</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
-              <p className="text-xs text-white/60 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
-            </CardContent>
-          </Card>
-        )}
+        <Card
+          className="cursor-pointer hover:bg-white/5 transition-colors"
+          onClick={() => openKPIDrilldown(t('dashboard.income'), { flowType: 'income' })}
+        >
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">{t('dashboard.income')}</CardTitle>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
+            <p className="text-xs text-white/60 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
+          </CardContent>
+        </Card>
 
         <Card
           className="cursor-pointer hover:bg-white/5 transition-colors"
@@ -616,16 +612,14 @@ export function DashboardPage() {
                     dot={false}
                     name={t('dashboard.expenses')}
                   />
-                  {showBudgets && (
-                    <Line
-                      type="monotone"
-                      dataKey="income"
-                      stroke="#22c55e"
-                      strokeWidth={2}
-                      dot={false}
-                      name={t('dashboard.income')}
-                    />
-                  )}
+                  <Line
+                    type="monotone"
+                    dataKey="income"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={false}
+                    name={t('dashboard.income')}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             ) : (

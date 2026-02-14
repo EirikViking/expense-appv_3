@@ -11,9 +11,9 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextValue | null>(null)
 
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
   const [showBudgets, setShowBudgets] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
     const stored = localStorage.getItem(SHOW_BUDGETS_KEY);
-    return stored !== 'false';
+    return stored === 'true';
   });
 
   useEffect(() => {

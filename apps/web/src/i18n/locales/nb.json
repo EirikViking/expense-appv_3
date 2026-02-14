@@ -277,6 +277,7 @@
     "appearanceDescription": "Tilpass opplevelsen",
     "showBudgets": "Vis budsjetter",
     "showBudgetsHelp": "Aktiver budsjett-navigasjon og visninger.",
+    "showBudgetsDisabledHelp": "Budsjetter er skjult til hele budsjettflyten er produksjonsklar.",
     "dangerZone": "Faresone",
     "dangerHelp": "Irreversible handlinger. Vær forsiktig.",
     "deleteAllData": "Slett all data",

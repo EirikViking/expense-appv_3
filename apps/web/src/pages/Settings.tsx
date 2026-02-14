@@ -3,21 +3,15 @@ import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Settings as SettingsIcon } from 'lucide-react';
-import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 
 export function SettingsPage() {
     const { t } = useTranslation();
-    const { showBudgets, setShowBudgets } = useFeatureFlags();
     const [resetDialogOpen, setResetDialogOpen] = useState(false);
     const [resetPhrase, setResetPhrase] = useState('');
     const [loading, setLoading] = useState(false);
-
-    const toggleBudgets = () => {
-        setShowBudgets(!showBudgets);
-    };
 
     const confirmReset = async () => {
         if (resetPhrase.trim().toUpperCase() !== 'DELETE') return;
@@ -51,21 +45,11 @@ export function SettingsPage() {
                     <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
                         <div className="space-y-0.5">
                             <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>
-                            <p className="text-sm text-white/70">{t('settingsPage.showBudgetsHelp')}</p>
+                            <p className="text-sm text-white/70">{t('settingsPage.showBudgetsDisabledHelp')}</p>
                         </div>
-                        <div className="flex items-center h-6">
-                            <button
-                                onClick={toggleBudgets}
-                                aria-label={t('settingsPage.showBudgets')}
-                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 ${showBudgets ? 'bg-blue-600' : 'bg-white/10'
-                                    }`}
-                            >
-                                <span
-                                    className={`inline-block h-4 w-4 transform rounded-full bg-white/80 transition-transform ${showBudgets ? 'translate-x-6' : 'translate-x-1'
-                                        }`}
-                                />
-                            </button>
-                        </div>
+                        <span className="rounded bg-white/10 px-2 py-1 text-xs text-white/70">
+                            {t('budgetsPage.comingSoon')}
+                        </span>
                     </div>
                 </CardContent>
             </Card>

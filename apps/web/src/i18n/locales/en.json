@@ -278,6 +278,7 @@
     "appearanceDescription": "Customize your experience",
     "showBudgets": "Show budgets",
     "showBudgetsHelp": "Enable budget navigation and views.",
+    "showBudgetsDisabledHelp": "Budgets are hidden until the full budgeting flow is production-ready.",
     "dangerZone": "Danger zone",
     "dangerHelp": "Irreversible actions. Proceed with caution.",
     "deleteAllData": "Delete all data",
