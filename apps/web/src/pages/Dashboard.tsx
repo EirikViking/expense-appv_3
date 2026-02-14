@@ -16,8 +16,6 @@ import {
 } from 'recharts';
 import {
   TrendingDown,
-  TrendingUp,
-  CreditCard,
   Clock,
   CheckCircle,
   AlertTriangle,
@@ -289,8 +287,8 @@ export function DashboardPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map(i => (
+        <div className="grid gap-4 md:grid-cols-2">
+          {[1, 2].map(i => (
             <Card key={i}>
               <CardHeader className="pb-2">
                 <Skeleton className="h-4 w-24" />
@@ -452,52 +450,20 @@ export function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card
           className="cursor-pointer hover:bg-white/5 transition-colors"
-          onClick={() => openKPIDrilldown(excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow'), {})}
+          onClick={() => openKPIDrilldown(t('dashboard.spending'), { flowType: 'expense' })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{excludeTransfers ? t('dashboard.netSpend') : t('dashboard.netCashflow')}</CardTitle>
-            <CreditCard className="h-4 w-4 text-white/60" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {excludeTransfers
-                ? formatCurrency(overview?.net_spend || 0, true)
-                : formatCurrency(overview?.net_cashflow || 0, true)}
-            </div>
-            <p className="text-xs text-white/60 mt-1">
-              {excludeTransfers ? t('dashboard.transfersExcluded') : t('dashboard.cashflowView')}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:bg-white/5 transition-colors"
-          onClick={() => openKPIDrilldown(t('dashboard.expenses'), { flowType: 'expense' })}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.expenses')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('dashboard.spending')}</CardTitle>
             <TrendingDown className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{formatCurrency(overview?.expenses || 0)}</div>
-            <p className="text-xs text-white/60 mt-1">{t('dashboard.absoluteSumOfSpending')}</p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className="cursor-pointer hover:bg-white/5 transition-colors"
-          onClick={() => openKPIDrilldown(t('dashboard.income'), { flowType: 'income' })}
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.income')}</CardTitle>
-            <TrendingUp className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(overview?.income || 0)}</div>
-            <p className="text-xs text-white/60 mt-1">{t('dashboard.transfersDoNotCountAsIncome')}</p>
+            <p className="text-xs text-white/60 mt-1">
+              {excludeTransfers ? t('dashboard.transfersExcluded') : t('dashboard.transfersIncluded')}
+            </p>
           </CardContent>
         </Card>
 
@@ -616,15 +582,7 @@ export function DashboardPage() {
                     stroke="#ef4444"
                     strokeWidth={2}
                     dot={false}
-                    name={t('dashboard.expenses')}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="income"
-                    stroke="#22c55e"
-                    strokeWidth={2}
-                    dot={false}
-                    name={t('dashboard.income')}
+                    name={t('dashboard.spending')}
                   />
                 </LineChart>
               </ResponsiveContainer>

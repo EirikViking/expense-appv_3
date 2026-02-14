@@ -153,7 +153,7 @@ function makeHubCards(opts: {
   if (topMerchant) patterns.push({ label: lang === 'nb' ? 'Største kjøpmann' : 'Top merchant', value: `${topMerchant.name} • ${formatCompactCurrency(topMerchant.total)}`, tone: 'info' });
   if (expenses > 0) patterns.push({ label: lang === 'nb' ? 'Dagligvarer-andel' : 'Groceries share', value: fmtPct(groceriesShare), tone: groceriesShare > 0.25 ? 'warn' : 'good' });
   patterns.push({ label: lang === 'nb' ? 'Utgifter' : 'Expenses', value: formatCompactCurrency(expenses), tone: 'info' });
-  patterns.push({ label: lang === 'nb' ? 'Inntekter' : 'Income', value: formatCompactCurrency(income), tone: 'info' });
+  patterns.push({ label: lang === 'nb' ? 'Inntekt' : 'Income', value: formatCompactCurrency(income), tone: 'info' });
 
   return {
     copy,
