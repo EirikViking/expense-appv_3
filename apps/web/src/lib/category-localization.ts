@@ -42,9 +42,20 @@ const NB_CATEGORY_NAME_MAP: Record<string, string> = {
   'Gaver og veldedighet': 'Gaver og veldedighet',
 };
 
+const NB_CATEGORY_NAME_MAP_NORMALIZED: Record<string, string> = Object.fromEntries(
+  Object.entries(NB_CATEGORY_NAME_MAP).map(([key, value]) => [key.toLowerCase(), value])
+);
+
+function isNorwegianLanguage(language: string): boolean {
+  const normalized = String(language || '').toLowerCase();
+  return normalized === 'nb' || normalized.startsWith('nb-') || normalized === 'no' || normalized.startsWith('no-');
+}
+
 export function localizeCategoryName(name: string | null | undefined, language: string): string {
   if (!name) return '';
-  if (language !== 'nb') return name;
-  return NB_CATEGORY_NAME_MAP[name] ?? name;
+  if (!isNorwegianLanguage(language)) return name;
+
+  const normalizedName = name.trim().toLowerCase();
+  return NB_CATEGORY_NAME_MAP[name] ?? NB_CATEGORY_NAME_MAP_NORMALIZED[normalizedName] ?? name;
 }
 
