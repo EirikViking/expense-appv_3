@@ -689,7 +689,7 @@ export function DashboardPage() {
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                    data={categories.slice(0, 8).map(c => ({ ...c, name: localizeCategoryName(c.category_name, currentLanguage) }))}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}

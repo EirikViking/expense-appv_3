@@ -38,6 +38,17 @@ async function readJsonBody(c: any): Promise<{ ok: true; body: unknown } | { ok:
   }
 }
 
+async function consumePasswordTokenFlexible(
+  db: D1Database,
+  token: string,
+  preferredType: 'invite' | 'reset'
+) {
+  const primary = await consumePasswordToken(db, token, preferredType);
+  if (primary) return primary;
+  const fallbackType = preferredType === 'invite' ? 'reset' : 'invite';
+  return consumePasswordToken(db, token, fallbackType);
+}
+
 auth.post('/bootstrap', async (c) => {
   try {
     const userCount = await countUsers(c.env.DB);
@@ -157,6 +168,11 @@ auth.post('/login', async (c) => {
     }
 
     const { email, password, remember_me } = parsed.data;
+    const prevSessionId = readSessionCookie(c);
+    if (prevSessionId) {
+      await deleteSession(c.env.DB, prevSessionId);
+    }
+
     const user = await getUserByEmail(c.env.DB, email);
     if (!user || !user.active) {
       return c.json({ error: 'Invalid credentials' }, 401);
@@ -211,17 +227,48 @@ auth.get('/me', async (c) => {
     const sessionId = readSessionCookie(c);
     if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
 
-    const user = await getSessionUser(c.env.DB, sessionId);
-    if (!user) {
+    const actorUser = await getSessionUser(c.env.DB, sessionId);
+    if (!actorUser) {
       clearSessionCookie(c);
       return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    let effectiveUser = actorUser;
+    let impersonating = false;
+    if (actorUser.role === 'admin') {
+      const sessionRow = await c.env.DB
+        .prepare('SELECT impersonated_user_id FROM sessions WHERE id = ?')
+        .bind(sessionId)
+        .first<{ impersonated_user_id: string | null }>();
+      if (sessionRow?.impersonated_user_id) {
+        const target = await c.env.DB
+          .prepare(
+            `SELECT id, email, name, role, active, onboarding_done_at, created_at, updated_at
+             FROM users
+             WHERE id = ?`
+          )
+          .bind(sessionRow.impersonated_user_id)
+          .first<any>();
+        if (target) {
+          effectiveUser = sanitizeUser(target);
+          impersonating = true;
+        } else {
+          await c.env.DB
+            .prepare('UPDATE sessions SET impersonated_user_id = NULL WHERE id = ?')
+            .bind(sessionId)
+            .run();
+        }
+      }
     }
 
     const response: AuthMeResponse = {
       authenticated: true,
       bootstrap_required: false,
-      user,
-      needs_onboarding: !user.onboarding_done_at,
+      user: actorUser,
+      actor_user: actorUser,
+      effective_user: effectiveUser,
+      impersonating,
+      needs_onboarding: !effectiveUser.onboarding_done_at,
     };
     return c.json(response);
   } catch (error) {
@@ -238,7 +285,7 @@ auth.post('/set-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'invite');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'invite');
     if (!used) {
       return c.json(
         {
@@ -254,7 +301,7 @@ auth.post('/set-password', async (c) => {
     await c.env.DB
       .prepare(
         `UPDATE users
-         SET password_salt = ?, password_hash = ?, password_iters = ?, active = 1, updated_at = ?
+         SET password_salt = ?, password_hash = ?, password_iters = ?, active = 1, onboarding_done_at = NULL, updated_at = ?
          WHERE id = ?`
       )
       .bind(hashed.salt, hashed.hash, hashed.iterations, now, used.user_id)
@@ -275,7 +322,7 @@ auth.post('/reset-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'reset');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'reset');
     if (!used) {
       return c.json(
         {
@@ -308,13 +355,25 @@ auth.post('/onboarding-complete', async (c) => {
   try {
     const sessionId = readSessionCookie(c);
     if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
-    const user = await getSessionUser(c.env.DB, sessionId);
-    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const actorUser = await getSessionUser(c.env.DB, sessionId);
+    if (!actorUser) return c.json({ error: 'Unauthorized' }, 401);
+
+    let targetUserId = actorUser.id;
+    if (actorUser.role === 'admin') {
+      const sessionRow = await c.env.DB
+        .prepare('SELECT impersonated_user_id FROM sessions WHERE id = ?')
+        .bind(sessionId)
+        .first<{ impersonated_user_id: string | null }>();
+      if (sessionRow?.impersonated_user_id) {
+        targetUserId = sessionRow.impersonated_user_id;
+      }
+    }
 
     const now = new Date().toISOString();
     await c.env.DB
       .prepare('UPDATE users SET onboarding_done_at = ?, updated_at = ? WHERE id = ?')
-      .bind(now, now, user.id)
+      .bind(now, now, targetUserId)
       .run();
 
     return c.json({ success: true });

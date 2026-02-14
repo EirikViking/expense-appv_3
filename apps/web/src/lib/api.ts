@@ -248,7 +248,7 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
 
   // Auth
-  authMe: () => request<AuthMeResponse>('/auth/me'),
+  authMe: () => request<AuthMeResponse>('/auth/me', { skipCache: true }),
 
   bootstrap: (data: BootstrapRequest) =>
     request<BootstrapResponse>('/auth/bootstrap', {
@@ -302,6 +302,21 @@ export const api = {
   adminCreateResetLink: (id: string) =>
     request<ResetLinkResponse>(`/admin/users/${id}/reset-link`, {
       method: 'POST',
+    }),
+
+  adminImpersonateUser: (id: string) =>
+    request<{ success: boolean; impersonated_user_id: string }>(`/admin/users/${id}/impersonate`, {
+      method: 'POST',
+    }),
+
+  adminClearImpersonation: () =>
+    request<BasicSuccessResponse>('/admin/impersonation/clear', {
+      method: 'POST',
+    }),
+
+  adminDeleteUser: (id: string) =>
+    request<BasicSuccessResponse>(`/admin/users/${id}`, {
+      method: 'DELETE',
     }),
 
   // Ingest

@@ -12,6 +12,7 @@ import {
 import type { Env } from '../types';
 import { buildCategoryBreakdown, toNumber } from '../lib/analytics';
 import { merchantChainKey } from '../lib/merchant-chain';
+import { getScopeUserId } from '../lib/request-scope';
 
 const analytics = new Hono<{ Bindings: Env }>();
 
@@ -19,6 +20,9 @@ const analytics = new Hono<{ Bindings: Env }>();
 // Defaults to excluding transfers from income/expense/net spend, but returns transfers as a separate number.
 analytics.get('/overview', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -41,6 +45,7 @@ analytics.get('/overview', async (c) => {
       merchant_id,
       tag_id,
       include_transfers,
+      user_id: scopeUserId,
     });
 
     // Compute transfers separately (always include transfers, even if excluded, to avoid "missing transfers")
@@ -51,8 +56,9 @@ analytics.get('/overview', async (c) => {
         COALESCE(COUNT(*), 0) as transfers_count
       FROM transactions t
       WHERE t.tx_date >= ? AND t.tx_date <= ?
+        AND t.user_id = ?
         AND (COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = 'transfer')
-    `).bind(date_from, date_to).first<{
+    `).bind(date_from, date_to, scopeUserId).first<{
       transfers_in: number;
       transfers_out: number;
       transfers_count: number;
@@ -113,6 +119,10 @@ function buildWhereClause(params: Record<string, unknown>, options?: { include_e
   const bindings: (string | number)[] = [];
 
   const includeTransfers = params.include_transfers === true;
+  if (params.user_id) {
+    conditions.push('t.user_id = ?');
+    bindings.push(params.user_id as string);
+  }
 
   // Default: exclude transactions marked as excluded, but allow transfers to be included in cashflow mode.
   if (!options?.include_excluded) {
@@ -167,6 +177,9 @@ function buildWhereClause(params: Record<string, unknown>, options?: { include_e
 // Summary endpoint - totals for period
 analytics.get('/summary', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -175,7 +188,7 @@ analytics.get('/summary', async (c) => {
     }
 
     const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers } = parsed.data;
-    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers });
+    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers, user_id: scopeUserId });
 
     // Join with categories to check is_transfer for income calculation
     // Transfers (where category is_transfer=1) should NOT count as income
@@ -242,6 +255,9 @@ analytics.get('/summary', async (c) => {
 // By category breakdown
 analytics.get('/by-category', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -253,11 +269,12 @@ analytics.get('/by-category', async (c) => {
 
     // Build base conditions
     const conditions: string[] = [
+      't.user_id = ?',
       't.tx_date >= ?',
       't.tx_date <= ?',
       "(t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))",
     ];
-    const bindings: (string | number)[] = [date_from, date_to];
+    const bindings: (string | number)[] = [scopeUserId, date_from, date_to];
 
     if (include_transfers) {
       conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
@@ -341,6 +358,9 @@ analytics.get('/by-category', async (c) => {
 // By merchant breakdown
 analytics.get('/by-merchant', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -403,6 +423,7 @@ analytics.get('/by-merchant', async (c) => {
       category_id,
       tag_id,
       include_transfers,
+      user_id: scopeUserId,
     });
 
     // Pull enough rows to allow safe post-aggregation (e.g. chain merging of "KIWI 505" + "KIWI 123").
@@ -446,6 +467,7 @@ analytics.get('/by-merchant', async (c) => {
       category_id,
       tag_id,
       include_transfers,
+      user_id: scopeUserId,
     });
 
     const prevResult = await c.env.DB
@@ -516,6 +538,9 @@ analytics.get('/by-merchant', async (c) => {
 // Time series
 analytics.get('/timeseries', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -524,7 +549,7 @@ analytics.get('/timeseries', async (c) => {
     }
 
     const { date_from, date_to, status, source_type, category_id, merchant_id, tag_id, granularity, include_transfers } = parsed.data;
-    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers });
+    const { clause, bindings } = buildWhereClause({ date_from, date_to, status, source_type, category_id, merchant_id, tag_id, include_transfers, user_id: scopeUserId });
 
     // Determine date grouping
     let dateExpr: string;
@@ -575,6 +600,9 @@ analytics.get('/timeseries', async (c) => {
 // Subscription detection
 analytics.get('/subscriptions', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const minOccurrences = parseInt(c.req.query('min') || '3');
     const monthsBack = parseInt(c.req.query('months') || '6');
 
@@ -596,6 +624,7 @@ analytics.get('/subscriptions', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         WHERE t.tx_date >= ?
+          AND t.user_id = ?
           AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
@@ -606,7 +635,7 @@ analytics.get('/subscriptions', async (c) => {
         ORDER BY occurrence_count DESC
         LIMIT 50
       `)
-      .bind(startDateStr, minOccurrences)
+      .bind(startDateStr, scopeUserId, minOccurrences)
       .all<{
         merchant_id: string;
         merchant_name: string;
@@ -676,6 +705,9 @@ analytics.get('/subscriptions', async (c) => {
 // Anomaly detection
 analytics.get('/anomalies', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -695,11 +727,12 @@ analytics.get('/anomalies', async (c) => {
           AVG(ABS(amount) * ABS(amount)) - AVG(ABS(amount)) * AVG(ABS(amount)) as variance
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ?
+          AND user_id = ?
           AND (flow_type = 'expense' OR (flow_type = 'unknown' AND amount < 0))
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? "(COALESCE(is_transfer,0)=1 OR flow_type='transfer')" : '0'}))
           ${includeTransfers ? '' : "AND COALESCE(is_transfer, 0) = 0 AND flow_type != 'transfer'"}
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .first<{ mean: number; variance: number }>();
 
     const mean = toNumber(statsResult?.mean);
@@ -722,6 +755,7 @@ analytics.get('/anomalies', async (c) => {
           t.tx_date as date
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
           AND ABS(t.amount) > ?
           AND (COALESCE(t.is_excluded, 0) = 0 OR (${includeTransfers ? "(COALESCE(t.is_transfer,0)=1 OR t.flow_type='transfer')" : '0'}))
@@ -729,7 +763,7 @@ analytics.get('/anomalies', async (c) => {
         ORDER BY ABS(t.amount) DESC
         LIMIT 50
       `)
-      .bind(date_from, date_to, outlierThreshold)
+      .bind(date_from, date_to, scopeUserId, outlierThreshold)
       .all<{
         transaction_id: string;
         description: string;
@@ -771,6 +805,9 @@ analytics.get('/anomalies', async (c) => {
 // Period comparison
 analytics.get('/compare', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
 
     // Support both query param shapes:
@@ -864,9 +901,10 @@ analytics.get('/compare', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN categories c ON tm.category_id = c.id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
       `)
-      .bind(current_start, current_end)
+      .bind(current_start, current_end, scopeUserId)
       .first();
 
     // Get previous period stats
@@ -893,9 +931,10 @@ analytics.get('/compare', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN categories c ON tm.category_id = c.id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
       `)
-      .bind(previous_start, previous_end)
+      .bind(previous_start, previous_end, scopeUserId)
       .first();
 
     const current: AnalyticsSummary = {
@@ -962,6 +1001,9 @@ interface FunFact {
 
 analytics.get('/fun-facts', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = analyticsQuerySchema.safeParse(query);
 
@@ -979,13 +1021,14 @@ analytics.get('/fun-facts', async (c) => {
         SELECT tx_date, SUM(ABS(amount)) as total
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND user_id = ?
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
           ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY tx_date
         ORDER BY total DESC
         LIMIT 1
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .first<{ tx_date: string; total: number }>();
 
     if (biggestDayResult) {
@@ -1006,13 +1049,14 @@ analytics.get('/fun-facts', async (c) => {
         SELECT description, COUNT(*) as count, SUM(ABS(amount)) as total
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND user_id = ?
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
           ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY description
         ORDER BY count DESC
         LIMIT 1
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .first<{ description: string; count: number; total: number }>();
 
     if (topMerchantResult && topMerchantResult.count > 1) {
@@ -1031,10 +1075,11 @@ analytics.get('/fun-facts', async (c) => {
         SELECT AVG(ABS(amount)) as avg_amount, COUNT(*) as count
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND user_id = ?
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
           ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .first<{ avg_amount: number; count: number }>();
 
     if (avgResult && avgResult.count > 0) {
@@ -1069,11 +1114,12 @@ analytics.get('/fun-facts', async (c) => {
           COUNT(*) as count
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND user_id = ?
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
           ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         GROUP BY day_type
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .all<{ day_type: string; total: number; count: number }>();
 
     if (weekendResult.results && weekendResult.results.length === 2) {
@@ -1101,12 +1147,13 @@ analytics.get('/fun-facts', async (c) => {
         SELECT description, ABS(amount) as amount
         FROM transactions
         WHERE tx_date >= ? AND tx_date <= ? AND amount < 0
+          AND user_id = ?
           AND (COALESCE(is_excluded, 0) = 0 OR (${includeTransfers ? 'COALESCE(is_transfer,0)=1' : '0'}))
           ${includeTransfers ? '' : 'AND COALESCE(is_transfer, 0) = 0'}
         ORDER BY ABS(amount) ASC
         LIMIT 1
       `)
-      .bind(date_from, date_to)
+      .bind(date_from, date_to, scopeUserId)
       .first<{ description: string; amount: number }>();
 
     if (smallestResult && smallestResult.amount > 0) {

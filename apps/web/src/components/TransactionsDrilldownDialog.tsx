@@ -14,6 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TransactionDetailsDialog } from './TransactionDetailsDialog';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 interface TransactionsDrilldownDialogProps {
     open: boolean;
@@ -51,6 +53,8 @@ export function TransactionsDrilldownDialog({
     minAmount,
     maxAmount,
 }: TransactionsDrilldownDialogProps) {
+    const { t, i18n } = useTranslation();
+    const currentLanguage = i18n.resolvedLanguage || i18n.language;
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
     const [total, setTotal] = useState(0);
@@ -176,7 +180,7 @@ export function TransactionsDrilldownDialog({
                                                         color: tx.category_color ?? undefined
                                                     }}
                                                 >
-                                                    {tx.category_name}
+                                                    {localizeCategoryName(tx.category_name, currentLanguage)}
                                                 </Badge>
                                             )}
                                             <span
@@ -194,7 +198,7 @@ export function TransactionsDrilldownDialog({
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-32 text-gray-500">
-                                No transactions found
+                                {t('transactions.noTransactionsFound')}
                             </div>
                         )}
                     </div>

@@ -18,8 +18,8 @@ type UserDraft = {
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { user, actorUser, isImpersonating, checkAuth } = useAuth();
+  const isAdmin = actorUser?.role === 'admin';
 
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState('');
@@ -30,6 +30,8 @@ export function SettingsPage() {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [impersonatingUserId, setImpersonatingUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -146,6 +148,43 @@ export function SettingsPage() {
     }
   };
 
+  const impersonateUser = async (targetUserId: string) => {
+    setImpersonatingUserId(targetUserId);
+    setUsersError(null);
+    try {
+      await api.adminImpersonateUser(targetUserId);
+      await checkAuth();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.impersonateFailed'));
+    } finally {
+      setImpersonatingUserId(null);
+    }
+  };
+
+  const clearImpersonation = async () => {
+    setUsersError(null);
+    try {
+      await api.adminClearImpersonation();
+      await checkAuth();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.impersonateFailed'));
+    }
+  };
+
+  const deleteUser = async (targetUser: AppUser) => {
+    if (!window.confirm(t('settingsUsers.deleteConfirm', { name: targetUser.name }))) return;
+    setDeletingUserId(targetUser.id);
+    setUsersError(null);
+    try {
+      await api.adminDeleteUser(targetUser.id);
+      await loadUsers();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.deleteFailed'));
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
@@ -244,6 +283,17 @@ export function SettingsPage() {
               </div>
             )}
 
+            {isImpersonating && actorUser && (
+              <div className="rounded-md border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                <p className="mb-2">
+                  {t('settingsUsers.impersonatingAs')}: <strong>{user?.name || user?.email}</strong>
+                </p>
+                <Button variant="outline" size="sm" onClick={() => void clearImpersonation()}>
+                  {t('settingsUsers.stopImpersonation')}
+                </Button>
+              </div>
+            )}
+
             <div className="space-y-2">
               {usersLoading && <p className="text-sm text-white/70">{t('settingsUsers.loading')}</p>}
               {!usersLoading && users.map((u) => {
@@ -285,6 +335,22 @@ export function SettingsPage() {
                     <div className="flex items-end gap-2 md:justify-end">
                       <Button size="sm" variant="outline" onClick={() => void createResetLink(u.id)}>
                         {t('settingsUsers.resetLink')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={impersonatingUserId === u.id || isImpersonating || u.id === actorUser?.id}
+                        onClick={() => void impersonateUser(u.id)}
+                      >
+                        {impersonatingUserId === u.id ? t('settingsUsers.loading') : t('settingsUsers.impersonate')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingUserId === u.id || u.id === actorUser?.id}
+                        onClick={() => void deleteUser(u)}
+                      >
+                        {deletingUserId === u.id ? t('settingsPage.deleting') : t('transactions.delete')}
                       </Button>
                       <Button size="sm" disabled={savingUserId === u.id} onClick={() => void saveUser(u)}>
                         {savingUserId === u.id ? t('settingsUsers.saving') : t('settingsUsers.save')}

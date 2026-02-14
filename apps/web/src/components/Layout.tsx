@@ -23,6 +23,7 @@ import { Atmosphere } from '@/components/Atmosphere';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -40,7 +41,7 @@ const navItems = [
 ];
 
 export function Layout({ children }: LayoutProps) {
-  const { isAuthenticated, logout, needsOnboarding, completeOnboarding, user } = useAuth();
+  const { isAuthenticated, logout, needsOnboarding, completeOnboarding, user, actorUser, isImpersonating, checkAuth } = useAuth();
   const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
@@ -163,6 +164,25 @@ export function Layout({ children }: LayoutProps) {
 
         <main className="flex-1 p-4 lg:p-6">
           <div className="max-w-7xl mx-auto">
+            {isImpersonating && actorUser && (
+              <div className="mb-4 rounded-md border border-amber-300/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                <span>
+                  {t('settingsUsers.impersonatingAs')}: <strong>{userName || user?.email}</strong>
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-3"
+                  onClick={async () => {
+                    await api.adminClearImpersonation();
+                    await checkAuth();
+                    navigate('/settings');
+                  }}
+                >
+                  {t('settingsUsers.stopImpersonation')}
+                </Button>
+              </div>
+            )}
             {children}
           </div>
         </main>
