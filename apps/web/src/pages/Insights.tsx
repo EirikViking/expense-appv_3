@@ -255,6 +255,22 @@ export function InsightsPage() {
     navigate(`/transactions?${qs.toString()}`);
   };
 
+  const openDramaDrilldown = () => {
+    const topMerchant = merchants[0];
+    if (topMerchant) {
+      openMerchantDrilldown(topMerchant);
+      return;
+    }
+
+    const topCategory = categories.find((c) => c.category_id);
+    if (topCategory?.category_id) {
+      openCategoryDrilldown(topCategory.category_id);
+      return;
+    }
+
+    navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -434,6 +450,14 @@ export function InsightsPage() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-white/85 leading-relaxed">{hub.drama}</p>
+              <p className="mt-2 text-xs text-white/60">
+                {lang === 'nb'
+                  ? 'Daglig drama oppsummerer den største driveren akkurat nå. Klikk for å se transaksjonene bak.'
+                  : 'Daily drama summarizes the strongest spending driver right now. Click to inspect the underlying transactions.'}
+              </p>
+              <Button type="button" variant="outline" size="sm" className="mt-3" onClick={openDramaDrilldown}>
+                {lang === 'nb' ? 'Se transaksjonene bak dramaet' : 'View transactions behind this drama'}
+              </Button>
               <div className="mt-4">
                 <p className="text-xs font-semibold text-white/70">{hub.copy.subsTitle}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -457,6 +481,11 @@ export function InsightsPage() {
       <Card>
         <CardHeader>
           <CardTitle>{lang === 'nb' ? 'Leaderboard (helt uoffisielt)' : 'Leaderboard (unofficial)'}</CardTitle>
+          <p className="text-xs text-white/60">
+            {lang === 'nb'
+              ? 'Klikk en rad for drilldown til transaksjoner med samme periode og utgiftstype.'
+              : 'Click a row to drill down to transactions with the same date range and flow type.'}
+          </p>
         </CardHeader>
         <CardContent className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
