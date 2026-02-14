@@ -136,8 +136,8 @@ export function CategoriesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this category? Transactions will become uncategorized.')) {
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? Transactions will become uncategorized.`)) {
       return;
     }
     try {
@@ -234,7 +234,7 @@ export function CategoriesPage() {
                   <Pencil className="h-4 w-4 text-white/45" />
                 </button>
                 <button
-                  onClick={() => handleDelete(node.id)}
+                  onClick={() => handleDelete(node.id, node.name)}
                   className="p-1 hover:bg-red-100 rounded"
                 >
                   <Trash2 className="h-4 w-4 text-red-400" />

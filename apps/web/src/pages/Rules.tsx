@@ -54,6 +54,7 @@ export function RulesPage() {
   const [applyingRules, setApplyingRules] = useState(false);
   const [applyResult, setApplyResult] = useState<{ affected: number } | null>(null);
   const [applyStatus, setApplyStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [applyPreviewCount, setApplyPreviewCount] = useState<number | null>(null);
   const location = useLocation();
 
   const fetchData = async () => {
@@ -67,6 +68,17 @@ export function RulesPage() {
       setRules(rulesRes.rules);
       setCategories(catsRes.categories);
       setTags(tagsRes.tags);
+      try {
+        const txPreview = await api.getTransactions({
+          include_excluded: false,
+          include_transfers: true,
+          limit: 1,
+          offset: 0,
+        });
+        setApplyPreviewCount(txPreview.total);
+      } catch {
+        setApplyPreviewCount(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
@@ -178,7 +190,9 @@ export function RulesPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this rule?')) return;
+    const rule = rules.find((r) => r.id === id);
+    const ruleName = rule?.name || 'this rule';
+    if (!confirm(`Delete "${ruleName}"?`)) return;
     try {
       await api.deleteRule(id);
       fetchData();
@@ -198,6 +212,11 @@ export function RulesPage() {
   };
 
   const handleApplyAll = async () => {
+    const preview = applyPreviewCount != null
+      ? `This will evaluate about ${applyPreviewCount} transactions. Continue?`
+      : 'Apply all enabled rules to matching transactions now?';
+    if (!confirm(preview)) return;
+
     setApplyingRules(true);
     setApplyResult(null);
     setApplyStatus(null);
@@ -266,9 +285,18 @@ export function RulesPage() {
             variant="outline"
             onClick={handleApplyAll}
             disabled={applyingRules || rules.length === 0}
+            title={
+              applyPreviewCount != null
+                ? `Will evaluate about ${applyPreviewCount} transactions`
+                : 'Apply rules to all matching transactions'
+            }
           >
             <Play className="h-4 w-4 mr-2" />
-            {applyingRules ? 'Applying...' : 'Apply All Rules'}
+            {applyingRules
+              ? 'Applying...'
+              : applyPreviewCount != null
+                ? `Apply All Rules (~${applyPreviewCount})`
+                : 'Apply All Rules'}
           </Button>
           <Button onClick={startCreate}>
             <Plus className="h-4 w-4 mr-2" />

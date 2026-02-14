@@ -4,21 +4,21 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Settings as SettingsIcon } from 'lucide-react';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 export function SettingsPage() {
     const { showBudgets, setShowBudgets } = useFeatureFlags();
-    const [resetConfirm, setResetConfirm] = useState(false);
+    const [resetDialogOpen, setResetDialogOpen] = useState(false);
+    const [resetPhrase, setResetPhrase] = useState('');
     const [loading, setLoading] = useState(false);
 
     const toggleBudgets = () => {
         setShowBudgets(!showBudgets);
     };
 
-    const handleReset = async () => {
-        if (!resetConfirm) {
-            setResetConfirm(true);
-            return;
-        }
+    const confirmReset = async () => {
+        if (resetPhrase.trim().toUpperCase() !== 'DELETE') return;
         setLoading(true);
         try {
             await api.resetData(true);
@@ -28,7 +28,8 @@ export function SettingsPage() {
             alert(`Failed to delete data: ${err.message || 'Unknown error'}`);
         } finally {
             setLoading(false);
-            setResetConfirm(false);
+            setResetPhrase('');
+            setResetDialogOpen(false);
         }
     };
 
@@ -82,15 +83,60 @@ export function SettingsPage() {
                         </div>
                         <Button
                             variant="destructive"
-                            onClick={handleReset}
+                            onClick={() => setResetDialogOpen(true)}
                             disabled={loading}
                             className="bg-red-600 hover:bg-red-700 text-white"
                         >
-                            {resetConfirm ? 'Click again to confirm' : 'Delete All Data'}
+                            Delete All Data
                         </Button>
                     </div>
                 </CardContent>
             </Card>
+
+            <Dialog
+                open={resetDialogOpen}
+                onOpenChange={(open) => {
+                    if (!loading) {
+                        setResetDialogOpen(open);
+                        if (!open) setResetPhrase('');
+                    }
+                }}
+            >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Confirm full data deletion</DialogTitle>
+                        <DialogDescription>
+                            This permanently deletes all transactions, uploads and metadata.
+                            Type <span className="font-semibold">DELETE</span> to continue.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Input
+                        value={resetPhrase}
+                        onChange={(e) => setResetPhrase(e.target.value)}
+                        placeholder="Type DELETE"
+                        aria-label="Type DELETE to confirm"
+                    />
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setResetDialogOpen(false);
+                                setResetPhrase('');
+                            }}
+                            disabled={loading}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={confirmReset}
+                            disabled={loading || resetPhrase.trim().toUpperCase() !== 'DELETE'}
+                        >
+                            {loading ? 'Deleting...' : 'Confirm delete all data'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
