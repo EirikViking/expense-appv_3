@@ -239,6 +239,9 @@ adminUsers.delete('/users/:id', async (c) => {
     if (!existing) return c.json({ error: 'User not found' }, 404);
 
     await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM rules WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM recurring WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM ingested_files WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM password_tokens WHERE user_id = ?').bind(id),

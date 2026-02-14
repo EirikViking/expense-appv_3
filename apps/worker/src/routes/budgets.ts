@@ -8,14 +8,15 @@ import {
   type BudgetsResponse,
 } from '@expense/shared';
 import type { Env } from '../types';
+import { getScopeUserId } from '../lib/request-scope';
 
 const budgets = new Hono<{ Bindings: Env }>();
 
 // Helper to get budget with spent amount
-async function getBudgetWithSpent(db: D1Database, budgetId: string): Promise<BudgetWithSpent | null> {
+async function getBudgetWithSpent(db: D1Database, budgetId: string, userId: string): Promise<BudgetWithSpent | null> {
   const budget = await db
-    .prepare('SELECT * FROM budgets WHERE id = ?')
-    .bind(budgetId)
+    .prepare('SELECT * FROM budgets WHERE id = ? AND user_id = ?')
+    .bind(budgetId, userId)
     .first<Budget & { category_id?: string | null; amount?: number }>();
 
   if (!budget) return null;
@@ -50,8 +51,9 @@ async function getBudgetWithSpent(db: D1Database, budgetId: string): Promise<Bud
     WHERE t.tx_date >= ?
       AND (? IS NULL OR t.tx_date <= ?)
       AND t.amount < 0
+      AND t.user_id = ?
   `;
-  const spentParams: (string | null)[] = [budget.start_date, budget.end_date, budget.end_date];
+  const spentParams: (string | null)[] = [budget.start_date, budget.end_date, budget.end_date, userId];
 
   if (categoryId) {
     spentQuery += ' AND tm.category_id = ?';
@@ -78,19 +80,23 @@ async function getBudgetWithSpent(db: D1Database, budgetId: string): Promise<Bud
 // Get all budgets
 budgets.get('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const activeOnly = c.req.query('active') === 'true';
 
-    let query = 'SELECT id FROM budgets';
+    let query = 'SELECT id FROM budgets WHERE user_id = ?';
+    const params: Array<string | number> = [scopeUserId];
     if (activeOnly) {
-      query += ' WHERE is_active = 1';
+      query += ' AND is_active = 1';
     }
     query += ' ORDER BY start_date DESC';
 
-    const result = await c.env.DB.prepare(query).all<{ id: string }>();
+    const result = await c.env.DB.prepare(query).bind(...params).all<{ id: string }>();
 
     const budgetsList: BudgetWithSpent[] = [];
     for (const { id } of result.results || []) {
-      const budget = await getBudgetWithSpent(c.env.DB, id);
+      const budget = await getBudgetWithSpent(c.env.DB, id, scopeUserId);
       if (budget) budgetsList.push(budget);
     }
 
@@ -108,25 +114,29 @@ budgets.get('/', async (c) => {
 // Get current active budget
 budgets.get('/current', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const today = new Date().toISOString().split('T')[0];
 
     const result = await c.env.DB
       .prepare(`
         SELECT id FROM budgets
-        WHERE is_active = 1
+        WHERE user_id = ?
+          AND is_active = 1
           AND start_date <= ?
           AND (end_date IS NULL OR end_date >= ?)
         ORDER BY start_date DESC
         LIMIT 1
       `)
-      .bind(today, today)
+      .bind(scopeUserId, today, today)
       .first<{ id: string }>();
 
     if (!result) {
       return c.json({ budget: null });
     }
 
-    const budget = await getBudgetWithSpent(c.env.DB, result.id);
+    const budget = await getBudgetWithSpent(c.env.DB, result.id, scopeUserId);
     return c.json({ budget });
   } catch (error) {
     console.error('Current budget error:', error);
@@ -137,8 +147,11 @@ budgets.get('/current', async (c) => {
 // Get single budget
 budgets.get('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
-    const budget = await getBudgetWithSpent(c.env.DB, id);
+    const budget = await getBudgetWithSpent(c.env.DB, id, scopeUserId);
 
     if (!budget) {
       return c.json({ error: 'Budget not found' }, 404);
@@ -154,6 +167,9 @@ budgets.get('/:id', async (c) => {
 // Create budget (simplified - single category budget)
 budgets.post('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = createBudgetSchema.safeParse(body);
 
@@ -181,10 +197,10 @@ budgets.post('/', async (c) => {
     // Create budget
     await c.env.DB
       .prepare(`
-        INSERT INTO budgets (id, name, period_type, start_date, end_date, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        INSERT INTO budgets (id, name, period_type, start_date, end_date, is_active, created_at, updated_at, user_id)
+        VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
       `)
-      .bind(budgetId, name, period, budgetStartDate, end_date || null, now, now)
+      .bind(budgetId, name, period, budgetStartDate, end_date || null, now, now, scopeUserId)
       .run();
 
     // Create budget item if category specified
@@ -199,7 +215,7 @@ budgets.post('/', async (c) => {
         .run();
     }
 
-    const created = await getBudgetWithSpent(c.env.DB, budgetId);
+    const created = await getBudgetWithSpent(c.env.DB, budgetId, scopeUserId);
     return c.json(created, 201);
   } catch (error) {
     console.error('Budget create error:', error);
@@ -210,6 +226,9 @@ budgets.post('/', async (c) => {
 // Update budget
 budgets.put('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const body = await c.req.json();
     const parsed = updateBudgetSchema.safeParse(body);
@@ -219,8 +238,8 @@ budgets.put('/:id', async (c) => {
     }
 
     const existing = await c.env.DB
-      .prepare('SELECT 1 FROM budgets WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT 1 FROM budgets WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first();
 
     if (!existing) {
@@ -252,8 +271,9 @@ budgets.put('/:id', async (c) => {
     }
 
     params.push(id);
+    params.push(scopeUserId);
     await c.env.DB
-      .prepare(`UPDATE budgets SET ${updates.join(', ')} WHERE id = ?`)
+      .prepare(`UPDATE budgets SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
       .bind(...params)
       .run();
 
@@ -278,7 +298,7 @@ budgets.put('/:id', async (c) => {
       }
     }
 
-    const updated = await getBudgetWithSpent(c.env.DB, id);
+    const updated = await getBudgetWithSpent(c.env.DB, id, scopeUserId);
     return c.json(updated);
   } catch (error) {
     console.error('Budget update error:', error);
@@ -289,11 +309,14 @@ budgets.put('/:id', async (c) => {
 // Delete budget
 budgets.delete('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB
-      .prepare('DELETE FROM budgets WHERE id = ?')
-      .bind(id)
+      .prepare('DELETE FROM budgets WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .run();
 
     if (result.meta.changes === 0) {
