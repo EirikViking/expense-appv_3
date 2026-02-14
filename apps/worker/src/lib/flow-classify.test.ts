@@ -46,6 +46,24 @@ describe('flow-classify', () => {
     const n = normalizeAmountAndFlags({ flow_type: c.flow_type, amount: 2000 });
     expect(n.flags).toEqual({ is_transfer: 1, is_excluded: 1 });
   });
+
+  it('classifies Straksbetaling by sign and never as transfer', () => {
+    const expense = classifyFlowType({
+      source_type: 'xlsx',
+      description: 'Straksbetaling',
+      amount: -640,
+      raw_json: null,
+    });
+    expect(expense.flow_type).toBe('expense');
+
+    const income = classifyFlowType({
+      source_type: 'xlsx',
+      description: 'Straksbetaling',
+      amount: 640,
+      raw_json: null,
+    });
+    expect(income.flow_type).toBe('income');
+  });
 });
 
 

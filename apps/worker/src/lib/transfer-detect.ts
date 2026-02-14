@@ -1,6 +1,11 @@
 // Lightweight heuristics to identify internal transfers.
 // This is intentionally conservative; users can always override via UI.
 
+export function isStraksbetalingDescription(description: string | null | undefined): boolean {
+  const d = (description || '').trim().toLowerCase();
+  return d === 'straksbetaling' || d.startsWith('straksbetaling ');
+}
+
 const TRANSFER_PATTERNS: RegExp[] = [
   // Norwegian (Bokmal-ish)
   /\boverf(o|ø)ring\b/i,
@@ -14,7 +19,6 @@ const TRANSFER_PATTERNS: RegExp[] = [
   /\bkredittkortregning\b/i,
   /\bfelleskonto\b/i,
   /\bgebyr\s+overført\b/i,
-  /\bstraksbetaling\b/i,
   /\bseb\s+kort\b/i,
   /\bengangsfullmakt\b/i,
   /\bbetaling\s+med\s+engangsfullmakt\b/i,
@@ -38,5 +42,7 @@ const TRANSFER_PATTERNS: RegExp[] = [
 export function detectIsTransfer(description: string | null | undefined): boolean {
   const d = (description || '').trim();
   if (!d) return false;
+  // Product decision: "Straksbetaling" must be treated as expense/income, never transfer.
+  if (isStraksbetalingDescription(d)) return false;
   return TRANSFER_PATTERNS.some((re) => re.test(d));
 }

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { detectIsTransfer } from './transfer-detect';
 
 describe('transfer-detect', () => {
-  it('detects Storebrand payment-rail rows', () => {
-    expect(detectIsTransfer('Straksbetaling')).toBe(true);
+  it('detects transfer-like payment-rail rows (except Straksbetaling)', () => {
+    expect(detectIsTransfer('Straksbetaling')).toBe(false);
     expect(detectIsTransfer('SEB Kort')).toBe(true);
     expect(detectIsTransfer('Betaling med engangsfullmakt - Kjøp Kron')).toBe(true);
   });
@@ -13,4 +13,3 @@ describe('transfer-detect', () => {
     expect(detectIsTransfer('SATS Bjoervika')).toBe(false);
   });
 });
-

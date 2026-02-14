@@ -1,5 +1,6 @@
 import type { FlowType, SourceType } from '@expense/shared';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from './xlsx-normalize';
+import { isStraksbetalingDescription } from './transfer-detect';
 
 function normalizeForMatch(input: string): string {
   return input
@@ -133,6 +134,13 @@ export function classifyFlowType(args: {
   raw_json?: string | null;
 }): { flow_type: FlowType; reason: string; section_label: string | null } {
   const sectionLabel = extractSectionLabelFromRawJson(args.raw_json || undefined);
+
+  // Product decision: "Straksbetaling" must never be transfer.
+  if (isStraksbetalingDescription(args.description)) {
+    return args.amount > 0
+      ? { flow_type: 'income', reason: 'straksbetaling-positive', section_label: sectionLabel }
+      : { flow_type: 'expense', reason: 'straksbetaling-nonpositive', section_label: sectionLabel };
+  }
 
   // Transfers must never count as income/expense (when excluded).
   if (looksLikeTransfer(args.description, sectionLabel)) {

@@ -29,7 +29,7 @@ describe('xlsx-normalize', () => {
     expect(isPaymentLikeRow('INNBETALING BANKGIRO', null)).toBe(true);
     expect(isPaymentLikeRow('Betaling bankgiro', null)).toBe(false);
     expect(isPaymentLikeRow('REMA 1000', 'Kjøp/uttak')).toBe(false);
-    expect(isPaymentLikeRow('Straksbetaling', null)).toBe(true);
+    expect(isPaymentLikeRow('Straksbetaling', null)).toBe(false);
     expect(isPaymentLikeRow('SEB Kort', null)).toBe(true);
     expect(isPaymentLikeRow('Betaling med engangsfullmakt - Kjøp Kron', null)).toBe(true);
 
