@@ -107,42 +107,116 @@ export class ApiError extends Error {
   }
 }
 
+type RequestOptions = RequestInit & {
+  skipCache?: boolean;
+  cacheTtlMs?: number;
+};
+
+type CachedResponse = {
+  expiresAt: number;
+  data: unknown;
+};
+
+const getResponseCache = new Map<string, CachedResponse>();
+const inflightGetRequests = new Map<string, Promise<unknown>>();
+
+function clearRequestCache() {
+  getResponseCache.clear();
+  inflightGetRequests.clear();
+}
+
+function getCacheTtlMs(endpoint: string, override?: number): number {
+  if (typeof override === 'number') return override;
+  if (endpoint.startsWith('/categories') || endpoint.startsWith('/tags')) return 5 * 60_000;
+  if (endpoint.startsWith('/analytics')) return 30_000;
+  if (endpoint.startsWith('/merchants')) return 60_000;
+  if (endpoint.startsWith('/transactions')) return 10_000;
+  if (endpoint.startsWith('/auth/me')) return 15_000;
+  return 20_000;
+}
+
+function readCachedResponse<T>(cacheKey: string): T | null {
+  const cached = getResponseCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    getResponseCache.delete(cacheKey);
+    return null;
+  }
+  return cached.data as T;
+}
+
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestOptions = {}
 ): Promise<T> {
+  const fetchOptions: RequestInit = { ...options };
+  delete (fetchOptions as RequestOptions).skipCache;
+  delete (fetchOptions as RequestOptions).cacheTtlMs;
   const headers: Record<string, string> = {};
 
   // Only set Content-Type for requests with a body (POST, PUT, PATCH)
   const method = options.method?.toUpperCase() || 'GET';
+  const isGet = method === 'GET';
+  const skipCache = options.skipCache === true;
+  const cacheTtlMs = getCacheTtlMs(endpoint, options.cacheTtlMs);
+  const shouldCacheGet = isGet && !skipCache && cacheTtlMs > 0;
+  const cacheKey = `${method}:${endpoint}`;
   if (method !== 'GET' && method !== 'DELETE') {
     headers['Content-Type'] = 'application/json';
   }
 
-  const apiUrl = getApiBaseUrl();
-  const response = await fetch(`${apiUrl}${endpoint}`, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      ...headers,
-      ...(options.headers as Record<string, string>),
-    },
+  if (shouldCacheGet) {
+    const cached = readCachedResponse<T>(cacheKey);
+    if (cached !== null) return cached;
+    const inflight = inflightGetRequests.get(cacheKey) as Promise<T> | undefined;
+    if (inflight) return inflight;
+  }
+
+  const executeRequest = async (): Promise<T> => {
+    const apiUrl = getApiBaseUrl();
+    const response = await fetch(`${apiUrl}${endpoint}`, {
+      credentials: 'include',
+      ...fetchOptions,
+      headers: {
+        ...headers,
+        ...(fetchOptions.headers as Record<string, string>),
+      },
+    });
+
+    let data: unknown = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const errObj = data as Partial<ErrorResponse> & { message?: string };
+      const msg = errObj?.message || errObj?.error || `HTTP ${response.status}`;
+      throw new ApiError(String(msg), response.status, data);
+    }
+
+    if (shouldCacheGet) {
+      getResponseCache.set(cacheKey, {
+        data,
+        expiresAt: Date.now() + cacheTtlMs,
+      });
+    } else if (!isGet) {
+      clearRequestCache();
+    }
+
+    return data as T;
+  };
+
+  if (!shouldCacheGet) {
+    return executeRequest();
+  }
+
+  const inflight = executeRequest().finally(() => {
+    inflightGetRequests.delete(cacheKey);
   });
-
-  let data: unknown = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    const errObj = data as Partial<ErrorResponse> & { message?: string };
-    const msg = errObj?.message || errObj?.error || `HTTP ${response.status}`;
-    throw new ApiError(String(msg), response.status, data);
-  }
-
-  return data as T;
+  inflightGetRequests.set(cacheKey, inflight);
+  return inflight;
 }
 
 // Build query string from params
