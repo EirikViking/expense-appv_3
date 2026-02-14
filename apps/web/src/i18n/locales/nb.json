@@ -92,6 +92,7 @@
     "noGroceriesData": "Ingen dagligvaredata",
     "month": "Måned",
     "spent": "Brukt",
+    "topExpenseCards": "Største utgiftsposter",
     "txCountShort": "Tx",
     "clickToDrilldown": "Klikk for drilldown",
     "transactionsOnDate": "Transaksjoner: {{date}}"
