@@ -1,4 +1,8 @@
 import type {
+  AuthMeResponse,
+  BootstrapRequest,
+  BootstrapResponse,
+  BasicSuccessResponse,
   LoginResponse,
   IngestResponse,
   TransactionsResponse,
@@ -47,6 +51,12 @@ import type {
   AnalyticsOverview,
   UpdateTransactionRequest,
   AnalyticsQuery,
+  AppUser,
+  CreateUserRequest,
+  UpdateUserRequest,
+  AdminUsersResponse,
+  CreateUserResponse,
+  ResetLinkResponse,
 } from '@expense/shared';
 import { getApiBaseUrl } from './version';
 
@@ -97,29 +107,10 @@ export class ApiError extends Error {
   }
 }
 
-// Token storage key
-const AUTH_TOKEN_KEY = 'expense_auth_token';
-
-// Get stored auth token
-export function getAuthToken(): string | null {
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
-// Set auth token
-export function setAuthToken(token: string): void {
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
-}
-
-// Clear auth token
-export function clearAuthToken(): void {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-}
-
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  // Build headers, including Authorization if token exists
   const headers: Record<string, string> = {};
 
   // Only set Content-Type for requests with a body (POST, PUT, PATCH)
@@ -128,14 +119,9 @@ async function request<T>(
     headers['Content-Type'] = 'application/json';
   }
 
-  // Add Authorization header if token exists
-  const token = getAuthToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   const apiUrl = getApiBaseUrl();
   const response = await fetch(`${apiUrl}${endpoint}`, {
+    credentials: 'include',
     ...options,
     headers: {
       ...headers,
@@ -188,14 +174,59 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
 
   // Auth
-  login: (password: string) =>
+  authMe: () => request<AuthMeResponse>('/auth/me'),
+
+  bootstrap: (data: BootstrapRequest) =>
+    request<BootstrapResponse>('/auth/bootstrap', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  login: (email: string, password: string, remember_me: boolean) =>
     request<LoginResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email, password, remember_me }),
     }),
 
   logout: () =>
-    request<{ success: boolean }>('/auth/logout', {
+    request<BasicSuccessResponse>('/auth/logout', {
+      method: 'POST',
+    }),
+
+  setPassword: (token: string, password: string) =>
+    request<BasicSuccessResponse>('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+
+  resetPassword: (token: string, password: string) =>
+    request<BasicSuccessResponse>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
+
+  onboardingComplete: () =>
+    request<BasicSuccessResponse>('/auth/onboarding-complete', {
+      method: 'POST',
+    }),
+
+  // Admin users
+  adminListUsers: () => request<AdminUsersResponse>('/admin/users'),
+
+  adminCreateUser: (data: CreateUserRequest) =>
+    request<CreateUserResponse>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  adminUpdateUser: (id: string, data: UpdateUserRequest) =>
+    request<AppUser>(`/admin/users/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  adminCreateResetLink: (id: string) =>
+    request<ResetLinkResponse>(`/admin/users/${id}/reset-link`, {
       method: 'POST',
     }),
 

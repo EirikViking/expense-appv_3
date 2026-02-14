@@ -6,7 +6,8 @@ Personal expense analytics app for Norwegian bank and credit card data.
 - XLSX upload and parsing (credit cards)
 - PDF upload and text extraction (bank statements)
 - Transaction and file deduplication (SHA256)
-- JWT authentication
+- Session authentication with Secure HttpOnly cookies
+- Admin user management (invite + reset links, role/active controls)
 - Norwegian date and number formats
 
 ## Tech stack
@@ -21,6 +22,47 @@ Personal expense analytics app for Norwegian bank and credit card data.
 pnpm install
 pnpm dev:web     # http://localhost:5173
 pnpm dev:worker  # http://localhost:8788
+```
+
+## Auth bootstrap and invite flow (CLI)
+
+Local verification sequence (cookie-based auth, no localStorage token):
+
+```bash
+API_BASE=http://localhost:8788
+COOKIE_JAR=.cookies.txt
+
+# 1) First run: no users -> bootstrap required
+curl -s -i "$API_BASE/auth/me"
+
+# 2) Create first admin (sets session cookie)
+curl -s -i -c "$COOKIE_JAR" -b "$COOKIE_JAR" \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"admin@example.com","name":"Admin","password":"StrongPass123"}' \\
+  "$API_BASE/auth/bootstrap"
+
+# 3) Confirm authenticated user context
+curl -s -i -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$API_BASE/auth/me"
+
+# 4) Create a new user and capture invite token from JSON
+curl -s -i -c "$COOKIE_JAR" -b "$COOKIE_JAR" \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"user@example.com","name":"Regular User","role":"user"}' \\
+  "$API_BASE/admin/users"
+
+# 5) Set first password with invite token (replace INVITE_TOKEN)
+curl -s -i -H "Content-Type: application/json" \\
+  -d '{"token":"INVITE_TOKEN","password":"UserPass123"}' \\
+  "$API_BASE/auth/set-password"
+
+# 6) Login as invited user (separate cookie jar)
+curl -s -i -c user.cookies -b user.cookies \\
+  -H "Content-Type: application/json" \\
+  -d '{"email":"user@example.com","password":"UserPass123","remember_me":true}' \\
+  "$API_BASE/auth/login"
+
+# 7) Verify protected endpoint works as invited user
+curl -s -i -c user.cookies -b user.cookies "$API_BASE/transactions?limit=1"
 ```
 
 ## Production diagnostics (CLI)

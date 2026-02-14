@@ -58,6 +58,58 @@ body {
   backdrop-filter: blur(14px);
 }
 
+.chart-tooltip {
+  min-width: 170px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(10, 14, 26, 0.96);
+  color: #e7eaf3;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(8px);
+  padding: 8px 10px;
+  z-index: 60;
+}
+
+.chart-tooltip__label {
+  font-size: 12px;
+  color: rgba(231, 234, 243, 0.78);
+  margin-bottom: 6px;
+}
+
+.chart-tooltip__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chart-tooltip__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.chart-tooltip__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: rgba(231, 234, 243, 0.85);
+}
+
+.chart-tooltip__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  flex: 0 0 auto;
+}
+
+.chart-tooltip__value {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
 /* Fix: native date inputs and selects can become unreadable when we set text color to white.
    Make the control itself dark, and force dropdown options to remain readable. */
 input[type="date"],

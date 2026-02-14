@@ -3,6 +3,7 @@ import {
   SOURCE_TYPES,
   TRANSACTION_STATUSES,
   FLOW_TYPES,
+  USER_ROLES,
   RULE_MATCH_FIELDS,
   RULE_MATCH_TYPES,
   RULE_ACTION_TYPES,
@@ -27,8 +28,45 @@ const queryBoolSchema = z
 // Auth schemas
 // ============================================
 
+const emailSchema = z.string().trim().toLowerCase().email();
+const passwordSchema = z.string().min(8).max(200);
+
+export const userRoleSchema = z.enum(USER_ROLES);
+
+export const bootstrapRequestSchema = z.object({
+  email: emailSchema,
+  name: z.string().trim().min(1).max(120),
+  password: passwordSchema,
+});
+
 export const loginRequestSchema = z.object({
+  email: emailSchema,
   password: z.string().min(1),
+  remember_me: z.boolean().optional().default(false),
+});
+
+export const setPasswordRequestSchema = z.object({
+  token: z.string().min(16).max(512),
+  password: passwordSchema,
+});
+
+export const resetPasswordRequestSchema = z.object({
+  token: z.string().min(16).max(512),
+  password: passwordSchema,
+});
+
+export const createUserRequestSchema = z.object({
+  email: emailSchema,
+  name: z.string().trim().min(1).max(120),
+  role: userRoleSchema.default('user'),
+});
+
+export const updateUserRequestSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  role: userRoleSchema.optional(),
+  active: z.boolean().optional(),
+}).refine((data) => data.name !== undefined || data.role !== undefined || data.active !== undefined, {
+  message: 'At least one user field must be provided',
 });
 
 // ============================================

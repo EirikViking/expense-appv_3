@@ -6,7 +6,7 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, bootstrapRequired } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -15,6 +15,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
+  }
+
+  if (bootstrapRequired) {
+    return <Navigate to="/bootstrap" replace />;
   }
 
   if (!isAuthenticated) {

@@ -13,6 +13,7 @@ import transactionMetaRoutes from './routes/transaction-meta';
 import budgetsRoutes from './routes/budgets';
 import recurringRoutes from './routes/recurring';
 import analyticsRoutes from './routes/analytics';
+import adminUsersRoutes from './routes/admin-users';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -68,6 +69,7 @@ app.use('/transaction-meta/*', authMiddleware);
 app.use('/budgets/*', authMiddleware);
 app.use('/recurring/*', authMiddleware);
 app.use('/analytics/*', authMiddleware);
+app.use('/admin/*', authMiddleware);
 
 // Mount routes
 app.route('/ingest', ingestRoutes);
@@ -80,6 +82,7 @@ app.route('/transaction-meta', transactionMetaRoutes);
 app.route('/budgets', budgetsRoutes);
 app.route('/recurring', recurringRoutes);
 app.route('/analytics', analyticsRoutes);
+app.route('/admin', adminUsersRoutes);
 
 // 404 handler
 app.notFound((c) => {

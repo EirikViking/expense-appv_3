@@ -94,8 +94,7 @@
     "spent": "Spent",
     "topExpenseCards": "Largest expense items",
     "txCountShort": "Tx",
-    "clickToDrilldown": "Click to drill down"
-    ,
+    "clickToDrilldown": "Click to drill down",
     "transactionsOnDate": "Transactions: {{date}}"
   },
   "transactions": {
@@ -168,11 +167,60 @@
   },
   "login": {
     "title": "Personal Expense Analytics",
-    "subtitle": "Enter your password to continue",
+    "subtitle": "Enter your email and password to continue",
+    "email": "Email",
     "password": "Password",
+    "rememberMe": "Remember me",
     "signIn": "Sign in",
     "signingIn": "Signing in...",
     "failed": "Login failed"
+  },
+  "bootstrap": {
+    "title": "Create First Admin",
+    "subtitle": "No users exist yet. Create the first admin account.",
+    "email": "Admin email",
+    "name": "Admin name",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "createAdmin": "Create admin account",
+    "creating": "Creating...",
+    "passwordMismatch": "Passwords do not match.",
+    "failed": "Failed to create admin account."
+  },
+  "setPassword": {
+    "title": "Set password",
+    "subtitle": "Finish your account setup by setting a password.",
+    "password": "New password",
+    "confirmPassword": "Confirm new password",
+    "submit": "Set password",
+    "submitting": "Saving...",
+    "success": "Password set. Redirecting to login...",
+    "missingToken": "Missing invite token.",
+    "passwordMismatch": "Passwords do not match.",
+    "failed": "Failed to set password.",
+    "backToLogin": "Back to login"
+  },
+  "resetPassword": {
+    "title": "Reset password",
+    "subtitle": "Set a new password for your account.",
+    "password": "New password",
+    "confirmPassword": "Confirm new password",
+    "submit": "Reset password",
+    "submitting": "Saving...",
+    "success": "Password reset. Redirecting to login...",
+    "missingToken": "Missing reset token.",
+    "passwordMismatch": "Passwords do not match.",
+    "failed": "Failed to reset password.",
+    "backToLogin": "Back to login"
+  },
+  "onboarding": {
+    "title": "Welcome",
+    "description": "Start by importing your files, then review and categorize transactions.",
+    "stepUpload": "1. Go to Upload and import XLSX/PDF files.",
+    "stepReview": "2. Review parsed transactions and fix any issues.",
+    "stepCategorize": "3. Use Categories and Rules to improve insights.",
+    "goToUpload": "Go to Upload",
+    "close": "Close"
   },
   "upload": {
     "title": "Upload Files",
@@ -295,10 +343,32 @@
     "resetFailed": "Failed to delete data",
     "unknownError": "Unknown error"
   },
+  "settingsUsers": {
+    "title": "Users",
+    "description": "Manage user access and password setup links.",
+    "loading": "Loading users...",
+    "email": "Email",
+    "name": "Name",
+    "role": "Role",
+    "roleUser": "User",
+    "roleAdmin": "Admin",
+    "active": "Active",
+    "create": "Create user",
+    "creating": "Creating...",
+    "save": "Save",
+    "saving": "Saving...",
+    "copyLink": "Copy link",
+    "inviteReady": "Invite link generated (shown once):",
+    "resetReady": "Reset link generated (shown once):",
+    "resetLink": "Reset link",
+    "loadFailed": "Failed to load users.",
+    "createFailed": "Failed to create user.",
+    "saveFailed": "Failed to save user.",
+    "resetFailed": "Failed to generate reset link."
+  },
   "budgetsPage": {
     "title": "Budgets",
     "comingSoon": "Coming soon",
     "notReady": "Budgets are not production-ready yet."
   }
 }
-

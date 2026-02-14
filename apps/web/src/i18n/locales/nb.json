@@ -167,11 +167,13 @@
   },
   "login": {
     "title": "Personlig utgiftsanalyse",
-    "subtitle": "Skriv inn passordet ditt for å fortsette",
+    "subtitle": "Skriv inn e-post og passord for ? fortsette",
     "password": "Passord",
     "signIn": "Logg inn",
     "signingIn": "Logger inn...",
-    "failed": "Innlogging feilet"
+    "failed": "Innlogging feilet",
+    "email": "E-post",
+    "rememberMe": "Husk meg"
   },
   "upload": {
     "title": "Last opp filer",
@@ -216,7 +218,7 @@
         "groceries_income_leak": "Dagligvarer inneholder inntektsrader (skal være utgifter)"
       }
     },
-    "pdfNoTransactionsHelp": "Hvis PDF-en tydelig inneholder transaksjoner, kan det v\u00e6re Storebrand \"Detaljer\"-formatet. Pr\u00f8v igjen etter at backend-parseren er oppdatert.",
+    "pdfNoTransactionsHelp": "Hvis PDF-en tydelig inneholder transaksjoner, kan det være Storebrand \"Detaljer\"-formatet. Prøv igjen etter at backend-parseren er oppdatert.",
     "showErrorDetails": "Vis feildetaljer"
   },
   "categoriesPage": {
@@ -298,7 +300,75 @@
     "title": "Budsjetter",
     "comingSoon": "Kommer snart",
     "notReady": "Budsjettfunksjonen er ikke produksjonsklar enda."
+  },
+  "bootstrap": {
+    "title": "Opprett f?rste admin",
+    "subtitle": "Ingen brukere finnes enn?. Opprett f?rste admin-konto.",
+    "email": "Admin e-post",
+    "name": "Admin navn",
+    "password": "Passord",
+    "confirmPassword": "Bekreft passord",
+    "createAdmin": "Opprett admin-konto",
+    "creating": "Oppretter...",
+    "passwordMismatch": "Passordene matcher ikke.",
+    "failed": "Kunne ikke opprette admin-konto."
+  },
+  "setPassword": {
+    "title": "Sett passord",
+    "subtitle": "Fullf?r kontooppsett ved ? sette passord.",
+    "password": "Nytt passord",
+    "confirmPassword": "Bekreft nytt passord",
+    "submit": "Sett passord",
+    "submitting": "Lagrer...",
+    "success": "Passord satt. Sender deg til innlogging...",
+    "missingToken": "Mangler invite-token.",
+    "passwordMismatch": "Passordene matcher ikke.",
+    "failed": "Kunne ikke sette passord.",
+    "backToLogin": "Tilbake til innlogging"
+  },
+  "resetPassword": {
+    "title": "Nullstill passord",
+    "subtitle": "Sett et nytt passord for kontoen.",
+    "password": "Nytt passord",
+    "confirmPassword": "Bekreft nytt passord",
+    "submit": "Nullstill passord",
+    "submitting": "Lagrer...",
+    "success": "Passord nullstilt. Sender deg til innlogging...",
+    "missingToken": "Mangler reset-token.",
+    "passwordMismatch": "Passordene matcher ikke.",
+    "failed": "Kunne ikke nullstille passord.",
+    "backToLogin": "Tilbake til innlogging"
+  },
+  "onboarding": {
+    "title": "Velkommen",
+    "description": "Start med ? importere filer, og g? deretter gjennom og kategoriser transaksjoner.",
+    "stepUpload": "1. G? til Last opp og importer XLSX/PDF-filer.",
+    "stepReview": "2. G? gjennom parsede transaksjoner og rett eventuelle feil.",
+    "stepCategorize": "3. Bruk Kategorier og Regler for bedre innsikt.",
+    "goToUpload": "G? til Last opp",
+    "close": "Lukk"
+  },
+  "settingsUsers": {
+    "title": "Brukere",
+    "description": "Administrer brukertilgang og lenker for passord-oppsett.",
+    "loading": "Laster brukere...",
+    "email": "E-post",
+    "name": "Navn",
+    "role": "Rolle",
+    "roleUser": "Bruker",
+    "roleAdmin": "Admin",
+    "active": "Aktiv",
+    "create": "Opprett bruker",
+    "creating": "Oppretter...",
+    "save": "Lagre",
+    "saving": "Lagrer...",
+    "copyLink": "Kopier lenke",
+    "inviteReady": "Invite-lenke generert (vises kun ?n gang):",
+    "resetReady": "Reset-lenke generert (vises kun ?n gang):",
+    "resetLink": "Reset-lenke",
+    "loadFailed": "Kunne ikke laste brukere.",
+    "createFailed": "Kunne ikke opprette bruker.",
+    "saveFailed": "Kunne ikke lagre bruker.",
+    "resetFailed": "Kunne ikke generere reset-lenke."
   }
 }
-
-

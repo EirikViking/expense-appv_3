@@ -1,19 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import app from '../index';
-import { signJwt } from '../lib/jwt';
 
 describe('ingest routes', () => {
   it('returns 400 with CORS headers on invalid JSON', async () => {
+    const db = {
+      prepare: (sql: string) => ({
+        bind: (..._params: any[]) => ({
+          first: async () => {
+            if (sql.includes('FROM sessions s')) {
+              return {
+                id: 'u1',
+                email: 'admin@example.com',
+                name: 'Admin',
+                role: 'admin',
+                active: 1,
+                onboarding_done_at: null,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+            }
+            return null;
+          },
+        }),
+      }),
+    } as unknown as D1Database;
+
     const env = {
-      DB: {} as D1Database,
+      DB: db,
       ADMIN_PASSWORD: 'test',
       JWT_SECRET: 'test-secret',
     };
-
-    const token = await signJwt(
-      { authenticated: true, exp: Date.now() + 60_000 },
-      env.JWT_SECRET
-    );
 
     const response = await app.request(
       '/ingest/xlsx',
@@ -21,7 +37,7 @@ describe('ingest routes', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+          Cookie: 'session=test-session-token',
           Origin: 'https://expense-appv-3.pages.dev',
         },
         body: '{',

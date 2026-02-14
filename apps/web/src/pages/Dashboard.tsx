@@ -52,6 +52,7 @@ import type {
 } from '@expense/shared';
 import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
+import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
@@ -602,14 +603,12 @@ export function DashboardPage() {
                   />
                   <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
                   <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    labelFormatter={formatDateShort}
-                    contentStyle={{
-                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      color: '#E7EAF3',
-                      borderRadius: '8px',
-                    }}
+                    content={(
+                      <ChartTooltip
+                        valueFormatter={(value) => formatCurrency(value)}
+                        labelFormatter={(value) => formatDateShort(String(value))}
+                      />
+                    )}
                   />
                   <Line
                     type="monotone"
@@ -691,13 +690,9 @@ export function DashboardPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    contentStyle={{
-                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      color: '#E7EAF3',
-                      borderRadius: '8px',
-                    }}
+                    content={(
+                      <ChartTooltip valueFormatter={(value) => formatCurrency(value)} />
+                    )}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -771,14 +766,12 @@ export function DashboardPage() {
                   <XAxis dataKey="month" tickFormatter={formatYearMonth} className="text-xs" />
                   <YAxis tickFormatter={formatCompactCurrency} className="text-xs" />
                   <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    labelFormatter={formatYearMonth}
-                    contentStyle={{
-                      backgroundColor: 'rgba(10, 14, 26, 0.92)',
-                      border: '1px solid rgba(255,255,255,0.14)',
-                      color: '#E7EAF3',
-                      borderRadius: '8px',
-                    }}
+                    content={(
+                      <ChartTooltip
+                        valueFormatter={(value) => formatCurrency(value)}
+                        labelFormatter={(value) => formatYearMonth(String(value))}
+                      />
+                    )}
                   />
                   <Line
                     type="monotone"

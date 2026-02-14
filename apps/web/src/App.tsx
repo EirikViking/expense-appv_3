@@ -6,6 +6,9 @@ import { ApiGuardScreen } from './components/ApiGuard';
 import { isApiUrlConfigured, getApiBaseUrl } from './lib/version';
 import { FeatureFlagsProvider, useFeatureFlags } from './context/FeatureFlagsContext';
 import { LoginPage } from './pages/Login';
+import { BootstrapPage } from './pages/Bootstrap';
+import { SetPasswordPage } from './pages/SetPassword';
+import { ResetPasswordPage } from './pages/ResetPassword';
 import { DashboardPage } from './pages/Dashboard';
 import { UploadPage } from './pages/Upload';
 import { TransactionsPage } from './pages/Transactions';
@@ -24,6 +27,9 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/bootstrap" element={<BootstrapPage />} />
+      <Route path="/set-password" element={<SetPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         path="/"
         element={

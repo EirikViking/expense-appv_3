@@ -1,12 +1,17 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
-import { api, setAuthToken, clearAuthToken, getAuthToken } from '../lib/api';
+import type { AppUser } from '@expense/shared';
+import { api, ApiError } from '../lib/api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (password: string) => Promise<void>;
+  bootstrapRequired: boolean;
+  user: AppUser | null;
+  needsOnboarding: boolean;
+  login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -14,54 +19,86 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [bootstrapRequired, setBootstrapRequired] = useState(false);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const checkAuth = useCallback(async () => {
     try {
-      // Check if we have a stored token first
-      const token = getAuthToken();
-      if (!token) {
+      const me = await api.authMe();
+      if (me.bootstrap_required) {
+        setBootstrapRequired(true);
         setIsAuthenticated(false);
-        setIsLoading(false);
+        setUser(null);
+        setNeedsOnboarding(false);
         return;
       }
-      // Try to access a protected endpoint to verify auth
-      await api.getTransactions({ limit: 1 });
-      setIsAuthenticated(true);
-    } catch {
-      // Token is invalid or expired, clear it
-      clearAuthToken();
+
+      if (me.authenticated && me.user) {
+        setBootstrapRequired(false);
+        setIsAuthenticated(true);
+        setUser(me.user);
+        setNeedsOnboarding(Boolean(me.needs_onboarding));
+        return;
+      }
+
       setIsAuthenticated(false);
+      setUser(null);
+      setNeedsOnboarding(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setIsAuthenticated(false);
+        setBootstrapRequired(false);
+        setUser(null);
+        setNeedsOnboarding(false);
+      } else {
+        throw err;
+      }
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    checkAuth();
+    void checkAuth();
   }, [checkAuth]);
 
-  const login = useCallback(async (password: string) => {
-    const response = await api.login(password);
-    if (response.success) {
-      // Store the token if returned
-      if (response.token) {
-        setAuthToken(response.token);
-      }
-      setIsAuthenticated(true);
-    }
-  }, []);
+  const login = useCallback(async (email: string, password: string, rememberMe: boolean) => {
+    await api.login(email, password, rememberMe);
+    await checkAuth();
+  }, [checkAuth]);
 
   const logout = useCallback(async () => {
     try {
       await api.logout();
     } finally {
-      clearAuthToken();
       setIsAuthenticated(false);
+      setUser(null);
+      setNeedsOnboarding(false);
+      setBootstrapRequired(false);
     }
   }, []);
 
+  const completeOnboarding = useCallback(async () => {
+    await api.onboardingComplete();
+    setNeedsOnboarding(false);
+    setUser((prev) => (prev ? { ...prev, onboarding_done_at: new Date().toISOString() } : prev));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout, checkAuth }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated,
+        isLoading,
+        bootstrapRequired,
+        user,
+        needsOnboarding,
+        login,
+        logout,
+        checkAuth,
+        completeOnboarding,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

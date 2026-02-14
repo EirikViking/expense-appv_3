@@ -2,6 +2,7 @@ import type {
   SourceType,
   TransactionStatus,
   FlowType,
+  UserRole,
   MatchType,
   RuleMatchField,
   RuleMatchType,
@@ -198,8 +199,49 @@ export interface TransactionSplit {
 // API request types
 // ============================================
 
-export interface LoginRequest {
+export interface AppUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  active: boolean;
+  onboarding_done_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BootstrapRequest {
+  email: string;
+  name: string;
   password: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  remember_me?: boolean;
+}
+
+export interface SetPasswordRequest {
+  token: string;
+  password: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  name: string;
+  role: UserRole;
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  role?: UserRole;
+  active?: boolean;
 }
 
 export interface XlsxIngestRequest {
@@ -388,7 +430,39 @@ export interface ApplyRulesRequest {
 
 export interface LoginResponse {
   success: boolean;
-  token?: string;
+  user: AppUser;
+  needs_onboarding: boolean;
+}
+
+export interface AuthMeResponse {
+  authenticated: boolean;
+  bootstrap_required: boolean;
+  user?: AppUser;
+  needs_onboarding?: boolean;
+}
+
+export interface BootstrapResponse {
+  success: boolean;
+  user: AppUser;
+  bootstrap_required: false;
+  needs_onboarding: boolean;
+}
+
+export interface BasicSuccessResponse {
+  success: boolean;
+}
+
+export interface AdminUsersResponse {
+  users: AppUser[];
+}
+
+export interface CreateUserResponse {
+  user: AppUser;
+  invite_token: string;
+}
+
+export interface ResetLinkResponse {
+  reset_token: string;
 }
 
 export interface IngestResponse {
