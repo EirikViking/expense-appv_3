@@ -10,6 +10,7 @@ import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/l
 import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
+import { useNavigate } from 'react-router-dom';
 
 type Lang = 'en' | 'nb';
 
@@ -162,6 +163,7 @@ function makeHubCards(opts: {
 
 export function InsightsPage() {
   const { i18n } = useTranslation();
+  const navigate = useNavigate();
   const lang = getLang(i18n.resolvedLanguage);
 
   const [loading, setLoading] = useState(true);
@@ -220,6 +222,27 @@ export function InsightsPage() {
     setDateFrom(customDateFrom);
     setDateTo(customDateTo);
     setShowCustomRange(false);
+  };
+
+  const createBaseDrilldownQuery = () => {
+    const qs = new URLSearchParams();
+    qs.set('date_from', dateFrom);
+    qs.set('date_to', dateTo);
+    qs.set('flow_type', 'expense');
+    return qs;
+  };
+
+  const openCategoryDrilldown = (categoryId?: string | null) => {
+    const qs = createBaseDrilldownQuery();
+    if (categoryId) qs.set('category_id', categoryId);
+    navigate(`/transactions?${qs.toString()}`);
+  };
+
+  const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
+    const qs = createBaseDrilldownQuery();
+    if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
+    else if (merchant.merchant_name) qs.set('merchant_name', merchant.merchant_name);
+    navigate(`/transactions?${qs.toString()}`);
   };
 
   return (
@@ -401,10 +424,16 @@ export function InsightsPage() {
             <p className="text-xs font-semibold text-white/70 mb-2">{lang === 'nb' ? 'Topp kategorier' : 'Top categories'}</p>
             <div className="space-y-2">
               {categories.slice(0, 8).map((c) => (
-                <div key={c.category_id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                <button
+                  key={c.category_id || c.category_name || 'uncategorized'}
+                  type="button"
+                  className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10"
+                  onClick={() => openCategoryDrilldown(c.category_id)}
+                  title={lang === 'nb' ? 'Vis transaksjoner for kategori' : 'View transactions for category'}
+                >
                   <span className="text-sm text-white/80">{c.category_name || 'Uncategorized'}</span>
                   <span className="text-sm font-semibold text-white">{formatCompactCurrency(c.total || 0)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -412,10 +441,16 @@ export function InsightsPage() {
             <p className="text-xs font-semibold text-white/70 mb-2">{lang === 'nb' ? 'Topp kjøpmenn' : 'Top merchants'}</p>
             <div className="space-y-2">
               {merchants.slice(0, 8).map((m) => (
-                <div key={(m.merchant_id || 'null') + (m.merchant_name || '')} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+                <button
+                  key={(m.merchant_id || 'null') + (m.merchant_name || '')}
+                  type="button"
+                  className="w-full flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-left transition-colors hover:bg-white/10"
+                  onClick={() => openMerchantDrilldown(m)}
+                  title={lang === 'nb' ? 'Vis transaksjoner for kjopmann' : 'View transactions for merchant'}
+                >
                   <span className="text-sm text-white/80">{m.merchant_name || 'Unknown'}</span>
                   <span className="text-sm font-semibold text-white">{formatCompactCurrency(m.total || 0)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
