@@ -8,6 +8,7 @@ import { AlertTriangle, Settings as SettingsIcon, Users } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
+import { InviteShareCard } from '@/components/InviteShareCard';
 
 type UserDraft = {
   name: string;
@@ -214,18 +215,18 @@ export function SettingsPage() {
             </form>
 
             {lastInviteLink && (
-              <div className="rounded-md border border-emerald-300/30 bg-emerald-500/10 p-3 text-sm">
-                <p className="text-emerald-100 mb-2">{t('settingsUsers.inviteReady')}</p>
-                <div className="break-all text-emerald-100/90">{lastInviteLink}</div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => void copyText(lastInviteLink)}
-                >
-                  {t('settingsUsers.copyLink')}
-                </Button>
-              </div>
+              <InviteShareCard
+                title={t('settingsUsers.inviteCardTitle')}
+                subtitle={t('settingsUsers.inviteCardSubtitle')}
+                link={lastInviteLink}
+                copyLabel={t('settingsUsers.copyLink')}
+                copiedLabel={t('settingsUsers.copied')}
+                shareLabel={t('settingsUsers.share')}
+                emailLabel={t('settingsUsers.shareEmail')}
+                telegramLabel={t('settingsUsers.shareTelegram')}
+                whatsappLabel={t('settingsUsers.shareWhatsapp')}
+                facebookLabel={t('settingsUsers.shareFacebook')}
+              />
             )}
 
             {lastResetLink && (

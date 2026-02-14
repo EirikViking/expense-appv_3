@@ -1,5 +1,6 @@
 {
   "appName": "Expense Analytics",
+  "appNameOwnedSuffix": "expense analytics",
   "nav": {
     "dashboard": "Dashboard",
     "transactions": "Transactions",
@@ -212,9 +213,10 @@
   },
   "onboarding": {
     "title": "Welcome",
-    "description": "Start by importing your files, then review and categorize transactions.",
-    "stepUpload": "1. Go to Upload and import XLSX/PDF files.",
-    "stepReview": "2. Review parsed transactions and fix any issues.",
+    "titleWithName": "Welcome, {{name}}.",
+    "description": "Quick start:",
+    "stepUpload": "1. Go to Upload, and import XLSX or PDF.",
+    "stepReview": "2. Review imported transactions and fix any issues.",
     "stepCategorize": "3. Use Categories and Rules to improve insights.",
     "goToUpload": "Go to Upload",
     "close": "Close"
@@ -355,6 +357,14 @@
     "save": "Save",
     "saving": "Saving...",
     "copyLink": "Copy link",
+    "copied": "Copied",
+    "inviteCardTitle": "Invite link",
+    "inviteCardSubtitle": "Shown only once. Copy or share with the user.",
+    "share": "Share",
+    "shareEmail": "Email",
+    "shareTelegram": "Telegram",
+    "shareWhatsapp": "WhatsApp",
+    "shareFacebook": "Facebook",
     "inviteReady": "Invite link generated (shown once):",
     "resetReady": "Reset link generated (shown once):",
     "resetLink": "Reset link",

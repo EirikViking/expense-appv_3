@@ -13,7 +13,7 @@ import {
   X,
   Settings,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getVersionString, getApiBaseUrl } from '@/lib/version';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
@@ -40,12 +40,17 @@ const navItems = [
 ];
 
 export function Layout({ children }: LayoutProps) {
-  const { isAuthenticated, logout, needsOnboarding, completeOnboarding } = useAuth();
+  const { isAuthenticated, logout, needsOnboarding, completeOnboarding, user } = useAuth();
   const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t } = useTranslation();
+  const userName = (user?.name || '').trim();
+  const appTitle = useMemo(
+    () => (userName ? `${userName}'s ${t('appNameOwnedSuffix')}` : t('appName')),
+    [userName, t]
+  );
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -76,7 +81,7 @@ export function Layout({ children }: LayoutProps) {
               E
             </div>
             <span className="text-lg font-semibold text-white text-display">
-              {t('appName')}
+              {appTitle}
             </span>
           </Link>
           <button
@@ -146,7 +151,7 @@ export function Layout({ children }: LayoutProps) {
             <Menu className="h-5 w-5 text-white/80" />
           </button>
           <span className="text-lg font-semibold text-white text-display">
-            {t('appName')}
+            {appTitle}
           </span>
           <div className="ml-auto">
             <div className="flex items-center gap-2">
@@ -183,7 +188,7 @@ export function Layout({ children }: LayoutProps) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('onboarding.title')}</DialogTitle>
+            <DialogTitle>{userName ? t('onboarding.titleWithName', { name: userName }) : t('onboarding.title')}</DialogTitle>
             <DialogDescription>{t('onboarding.description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm text-white/80">
