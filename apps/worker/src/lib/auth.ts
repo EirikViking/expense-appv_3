@@ -1,7 +1,8 @@
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { generateId, sha256Hex, type AppUser, type UserRole } from '@expense/shared';
 
-export const PASSWORD_ITERS = 210_000;
+const WORKER_PBKDF2_MAX_ITERS = 100_000;
+export const PASSWORD_ITERS = WORKER_PBKDF2_MAX_ITERS;
 export const INVITE_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 export const SESSION_MAX_AGE_SHORT_SECONDS = 24 * 60 * 60;
 export const SESSION_MAX_AGE_LONG_SECONDS = 30 * 24 * 60 * 60;
