@@ -18,6 +18,8 @@ import {
   XCircle,
   GripVertical,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 type RuleTestResult = {
   ruleId: string;
@@ -33,6 +35,8 @@ type RuleTestResult = {
 };
 
 export function RulesPage() {
+  const { t, i18n } = useTranslation();
+  const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [rules, setRules] = useState<Rule[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -217,11 +221,11 @@ export function RulesPage() {
   const getActionPreviewLabel = (rule: Rule): string => {
     if (rule.action_type === 'set_category') {
       const cat = categories.find((c) => c.id === rule.action_value);
-      return `Set category -> ${cat?.name || rule.action_value}`;
+      return `${t('rulesPage.setCategoryTo')} ${localizeCategoryName(cat?.name || rule.action_value, currentLanguage)}`;
     }
     if (rule.action_type === 'add_tag') {
       const tag = tags.find((t) => t.id === rule.action_value);
-      return `Add tag -> ${tag?.name || rule.action_value}`;
+      return `${t('rulesPage.addTagTo')} ${tag?.name || rule.action_value}`;
     }
     return `${rule.action_type.replace('_', ' ')} -> ${rule.action_value}`;
   };
@@ -326,7 +330,7 @@ export function RulesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Rules</h1>
+        <h1 className="text-2xl font-bold">{t('rulesPage.title')}</h1>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -340,14 +344,14 @@ export function RulesPage() {
           >
             <Play className="h-4 w-4 mr-2" />
             {applyingRules
-              ? 'Applying...'
+              ? t('rulesPage.applying')
               : applyPreviewCount != null
-                ? `Apply All Rules (~${applyPreviewCount})`
-                : 'Apply All Rules'}
+                ? t('rulesPage.applyAllWithCount', { count: applyPreviewCount })
+                : t('rulesPage.applyAll')}
           </Button>
           <Button onClick={startCreate}>
             <Plus className="h-4 w-4 mr-2" />
-            New Rule
+            {t('rulesPage.newRule')}
           </Button>
         </div>
       </div>
@@ -370,7 +374,7 @@ export function RulesPage() {
             <span>{applyStatus.message}</span>
             {applyResult && applyStatus.type === 'success' && (
               <span className="text-sm text-green-700">
-                {applyResult.affected} updated
+                {t('rulesPage.updatedCount', { count: applyResult.affected })}
               </span>
             )}
           </div>
@@ -382,20 +386,20 @@ export function RulesPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">
-              {isCreating ? 'New Rule' : 'Edit Rule'}
+              {isCreating ? t('rulesPage.newRule') : t('rulesPage.editRule')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Rule Name
+                  {t('rulesPage.ruleName')}
                 </label>
                 <Input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g., Netflix Subscription"
+                  placeholder={t('rulesPage.ruleNamePlaceholder')}
                 />
                 {formErrors.name && (
                   <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
@@ -403,7 +407,7 @@ export function RulesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Priority
+                  {t('rulesPage.priority')}
                 </label>
                 <Input
                   type="number"
@@ -418,10 +422,10 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-white/80 mb-3">Match Condition</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">{t('rulesPage.matchCondition')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Field</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.field')}</label>
                   <select
                     value={formField}
                     onChange={(e) => setFormField(e.target.value)}
@@ -435,7 +439,7 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Match Type</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.matchType')}</label>
                   <select
                     value={formMatchType}
                     onChange={(e) => setFormMatchType(e.target.value)}
@@ -449,12 +453,12 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Pattern</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.pattern')}</label>
                   <Input
                     type="text"
                     value={formPattern}
                     onChange={(e) => setFormPattern(e.target.value)}
-                    placeholder="e.g., NETFLIX"
+                    placeholder={t('rulesPage.patternPlaceholder')}
                   />
                   {formErrors.pattern && (
                     <p className="mt-1 text-xs text-red-600">{formErrors.pattern}</p>
@@ -464,10 +468,10 @@ export function RulesPage() {
             </div>
 
             <div className="border-t pt-4">
-              <h4 className="text-sm font-medium text-white/80 mb-3">Action</h4>
+              <h4 className="text-sm font-medium text-white/80 mb-3">{t('rulesPage.action')}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Action Type</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.actionType')}</label>
                   <select
                     value={formActionType}
                     onChange={(e) => {
@@ -484,17 +488,17 @@ export function RulesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-1">Value</label>
+                  <label className="block text-sm text-white/60 mb-1">{t('rulesPage.value')}</label>
                   {formActionType === 'set_category' ? (
                     <select
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
                       className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select category</option>
+                      <option value="">{t('rulesPage.selectCategory')}</option>
                       {categories.map((cat) => (
                         <option key={cat.id} value={cat.id}>
-                          {cat.name}
+                          {localizeCategoryName(cat.name, currentLanguage)}
                         </option>
                       ))}
                     </select>
@@ -504,7 +508,7 @@ export function RulesPage() {
                       onChange={(e) => setFormActionValue(e.target.value)}
                       className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Select tag</option>
+                      <option value="">{t('rulesPage.selectTag')}</option>
                       {tags.map((tag) => (
                         <option key={tag.id} value={tag.id}>
                           {tag.name}
@@ -516,7 +520,7 @@ export function RulesPage() {
                       type="text"
                       value={formActionValue}
                       onChange={(e) => setFormActionValue(e.target.value)}
-                      placeholder="Value"
+                      placeholder={t('rulesPage.value')}
                     />
                   )}
                   {formErrors.actionValue && (
@@ -535,7 +539,7 @@ export function RulesPage() {
                 className="h-4 w-4 rounded border-white/15"
               />
               <label htmlFor="enabled" className="text-sm text-white/80">
-                Rule enabled
+                {t('rulesPage.ruleEnabled')}
               </label>
             </div>
 
@@ -546,10 +550,10 @@ export function RulesPage() {
             )}
             <div className="flex gap-2">
               <Button onClick={handleSave}>
-                {isCreating ? 'Create' : 'Save'}
+                {isCreating ? t('rulesPage.create') : t('common.save')}
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </div>
           </CardContent>
@@ -559,7 +563,7 @@ export function RulesPage() {
       {/* Test Rule Section */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Test Rules</CardTitle>
+          <CardTitle className="text-lg">{t('rulesPage.testRules')}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
@@ -569,7 +573,7 @@ export function RulesPage() {
               onChange={(e) => {
                 setTestText(e.target.value);
               }}
-              placeholder="Optional: filter test matches by text..."
+              placeholder={t('rulesPage.testPlaceholder')}
               className="flex-1"
             />
           </div>
@@ -585,9 +589,9 @@ export function RulesPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4" />
-                    Rule matched {testResult.matched} of {testResult.tested} recent transactions
+                    {t('rulesPage.ruleMatched', { matched: testResult.matched, tested: testResult.tested })}
                   </div>
-                  <p className="text-xs opacity-90">Predicted outcome: {testResult.actionLabel}</p>
+                  <p className="text-xs opacity-90">{t('rulesPage.predictedOutcome')}: {testResult.actionLabel}</p>
                   <div className="max-h-48 overflow-auto rounded border border-green-200/40 bg-white/40 p-2">
                     <ul className="space-y-1 text-xs">
                       {testResult.matches.map((m) => (
@@ -601,7 +605,7 @@ export function RulesPage() {
               ) : (
                 <div className="flex items-center gap-2">
                   <XCircle className="h-4 w-4" />
-                  No matching transactions found for the selected rule.
+                  {t('rulesPage.noMatches')}
                 </div>
               )}
             </div>
@@ -614,7 +618,7 @@ export function RulesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Workflow className="h-5 w-5" />
-            Rules ({rules.length})
+            {t('rulesPage.title')} ({rules.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -635,11 +639,11 @@ export function RulesPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{rule.name}</span>
                       <Badge variant="outline" className="text-xs">
-                        Priority: {rule.priority}
+                        {t('rulesPage.priority')}: {rule.priority}
                       </Badge>
                       {!rule.enabled && (
                         <Badge variant="secondary" className="text-xs">
-                          Disabled
+                          {t('rulesPage.disabled')}
                         </Badge>
                       )}
                     </div>
@@ -650,7 +654,11 @@ export function RulesPage() {
                       {' then '}
                       <span className="text-blue-600">{rule.action_type.replace('_', ' ')}</span>
                       {': '}
-                      <span className="font-medium">{getActionValueLabel(rule)}</span>
+                      <span className="font-medium">
+                        {rule.action_type === 'set_category'
+                          ? localizeCategoryName(getActionValueLabel(rule), currentLanguage)
+                          : getActionValueLabel(rule)}
+                      </span>
                     </div>
                   </div>
 
@@ -695,7 +703,7 @@ export function RulesPage() {
             </div>
           ) : (
             <p className="text-white/60 text-center py-8">
-              No rules yet. Create one to automatically categorize transactions!
+              {t('rulesPage.noRules')}
             </p>
           )}
         </CardContent>

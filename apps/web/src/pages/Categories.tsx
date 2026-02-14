@@ -15,8 +15,12 @@ import {
   ChevronDown,
   FolderTree,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 export function CategoriesPage() {
+  const { t, i18n } = useTranslation();
+  const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [categories, setCategories] = useState<Category[]>([]);
   const [tree, setTree] = useState<CategoryTree[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,7 +46,7 @@ export function CategoriesPage() {
       setCategories(result.categories);
       setTree(normalizeCategoryTree(result.tree));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch categories');
+      setError(err instanceof Error ? err.message : t('categoriesPage.failedFetch'));
     } finally {
       setIsLoading(false);
     }
@@ -108,7 +112,7 @@ export function CategoriesPage() {
     setFormSubmitError(null);
     const trimmedName = formName.trim();
     if (!trimmedName) {
-      setFormErrors({ name: 'Name is required' });
+      setFormErrors({ name: t('categoriesPage.nameRequired') });
       return;
     }
     setFormErrors({});
@@ -132,12 +136,12 @@ export function CategoriesPage() {
       cancelEdit();
       fetchCategories();
     } catch (err) {
-      setFormSubmitError(err instanceof Error ? err.message : 'Failed to save category');
+      setFormSubmitError(err instanceof Error ? err.message : t('categoriesPage.failedSave'));
     }
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? Transactions will become uncategorized.`)) {
+    if (!confirm(t('categoriesPage.confirmDelete', { name }))) {
       return;
     }
     try {
@@ -178,7 +182,7 @@ export function CategoriesPage() {
             className="h-6 w-6 rounded flex items-center justify-center text-white text-xs"
             style={{ backgroundColor: node.color || '#6b7280' }}
           >
-            {node.icon || node.name.charAt(0)}
+            {node.icon || localizeCategoryName(node.name, currentLanguage).charAt(0)}
           </div>
 
           {isEditing ? (
@@ -189,7 +193,7 @@ export function CategoriesPage() {
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   className="h-8"
-                  placeholder="Category name"
+                  placeholder={t('categoriesPage.namePlaceholder')}
                 />
                 <input
                   type="color"
@@ -198,10 +202,10 @@ export function CategoriesPage() {
                   className="h-8 w-8 rounded cursor-pointer"
                 />
                 <Button size="sm" onClick={handleSave}>
-                  Save
+                  {t('common.save')}
                 </Button>
                 <Button size="sm" variant="outline" onClick={cancelEdit}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
               </div>
               {formErrors.name && (
@@ -213,17 +217,17 @@ export function CategoriesPage() {
             </div>
           ) : (
             <>
-              <span className="flex-1 font-medium">{node.name}</span>
+              <span className="flex-1 font-medium">{localizeCategoryName(node.name, currentLanguage)}</span>
               {node.transaction_count !== undefined && (
                 <Badge variant="secondary" className="text-xs">
-                  {node.transaction_count} transactions
+                  {t('categoriesPage.transactionCount', { count: node.transaction_count })}
                 </Badge>
               )}
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => startCreate(node.id)}
                   className="p-1 hover:bg-white/10 rounded"
-                  title="Add subcategory"
+                  title={t('categoriesPage.addSubcategory')}
                 >
                   <Plus className="h-4 w-4 text-white/45" />
                 </button>
@@ -251,7 +255,7 @@ export function CategoriesPage() {
         )}
         {!hasChildren && isExpanded && (
           <div style={{ paddingLeft: `${(level + 1) * 24 + 12}px` }} className="py-1 text-xs text-white/45">
-            No subcategories yet
+            {t('categoriesPage.noSubcategories')}
           </div>
         )}
       </div>
@@ -272,7 +276,7 @@ export function CategoriesPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold">Categories</h1>
+        <h1 className="text-2xl font-bold">{t('categoriesPage.title')}</h1>
         <Card>
           <CardContent className="pt-6">
             <div className="space-y-3">
@@ -295,7 +299,7 @@ export function CategoriesPage() {
         <h1 className="text-2xl font-bold">Categories</h1>
         <Button onClick={() => startCreate()}>
           <Plus className="h-4 w-4 mr-2" />
-          New Category
+          {t('categoriesPage.newCategory')}
         </Button>
       </div>
 
@@ -309,19 +313,19 @@ export function CategoriesPage() {
       {isCreating && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">New Category</CardTitle>
+            <CardTitle className="text-lg">{t('categoriesPage.newCategory')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Name
+                  {t('categoriesPage.name')}
                 </label>
                 <Input
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="Category name"
+                  placeholder={t('categoriesPage.namePlaceholder')}
                 />
                 {formErrors.name && (
                   <p className="mt-1 text-xs text-red-600">{formErrors.name}</p>
@@ -329,7 +333,7 @@ export function CategoriesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Color
+                  {t('categoriesPage.color')}
                 </label>
                 <input
                   type="color"
@@ -340,19 +344,19 @@ export function CategoriesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
-                  Parent Category
+                  {t('categoriesPage.parentCategory')}
                 </label>
                 <select
                   value={formParentId}
                   onChange={(e) => setFormParentId(e.target.value)}
                   className="w-full h-10 px-3 border border-white/15 rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
                 >
-                  <option value="">None (top level)</option>
+                  <option value="">{t('categoriesPage.noParent')}</option>
                   {categories
                     .filter((c) => !c.parent_id)
                     .map((cat) => (
                       <option key={cat.id} value={cat.id}>
-                        {cat.name}
+                        {localizeCategoryName(cat.name, currentLanguage)}
                       </option>
                     ))}
                 </select>
@@ -364,11 +368,11 @@ export function CategoriesPage() {
               </div>
             )}
             <div className="flex gap-2 mt-4">
-              <Button onClick={handleSave}>
-                Create
+                <Button onClick={handleSave}>
+                {t('categoriesPage.create')}
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
-                Cancel
+                {t('common.cancel')}
               </Button>
             </div>
           </CardContent>
@@ -380,7 +384,7 @@ export function CategoriesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FolderTree className="h-5 w-5" />
-            Category Tree
+            {t('categoriesPage.tree')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -390,7 +394,7 @@ export function CategoriesPage() {
             </div>
           ) : (
             <p className="text-white/60 text-center py-8">
-              No categories yet. Create one to get started!
+              {t('categoriesPage.noCategories')}
             </p>
           )}
         </CardContent>

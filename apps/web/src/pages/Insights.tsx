@@ -12,6 +12,7 @@ import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/
 import { useNavigate } from 'react-router-dom';
 import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 type Lang = 'en' | 'nb';
 
@@ -469,7 +470,9 @@ export function InsightsPage() {
                   onClick={() => openCategoryDrilldown(c.category_id)}
                   title={lang === 'nb' ? 'Vis transaksjoner for kategori' : 'View transactions for category'}
                 >
-                  <span className="text-sm text-white/80">{c.category_name || 'Uncategorized'}</span>
+                  <span className="text-sm text-white/80">
+                    {localizeCategoryName(c.category_name || (lang === 'nb' ? 'Ukategorisert' : 'Uncategorized'), lang)}
+                  </span>
                   <span className="text-sm font-semibold text-white">{formatCompactCurrency(c.total || 0)}</span>
                 </button>
               ))}

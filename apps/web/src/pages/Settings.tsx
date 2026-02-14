@@ -6,8 +6,10 @@ import { AlertTriangle, Settings as SettingsIcon } from 'lucide-react';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { useTranslation } from 'react-i18next';
 
 export function SettingsPage() {
+    const { t } = useTranslation();
     const { showBudgets, setShowBudgets } = useFeatureFlags();
     const [resetDialogOpen, setResetDialogOpen] = useState(false);
     const [resetPhrase, setResetPhrase] = useState('');
@@ -22,10 +24,10 @@ export function SettingsPage() {
         setLoading(true);
         try {
             await api.resetData(true);
-            alert('All data deleted successfully.');
+            alert(t('settingsPage.resetSuccess'));
             window.location.reload();
         } catch (err: any) {
-            alert(`Failed to delete data: ${err.message || 'Unknown error'}`);
+            alert(`${t('settingsPage.resetFailed')}: ${err.message || t('settingsPage.unknownError')}`);
         } finally {
             setLoading(false);
             setResetPhrase('');
@@ -37,19 +39,19 @@ export function SettingsPage() {
         <div className="space-y-6 max-w-3xl mx-auto">
             <div className="flex items-center gap-3 mb-6">
                 <SettingsIcon className="h-8 w-8 text-white/80" />
-                <h1 className="text-3xl font-bold">Settings</h1>
+                <h1 className="text-3xl font-bold">{t('settingsPage.title')}</h1>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>Appearance & Navigation</CardTitle>
-                    <CardDescription>Customize your experience</CardDescription>
+                    <CardTitle>{t('settingsPage.appearanceTitle')}</CardTitle>
+                    <CardDescription>{t('settingsPage.appearanceDescription')}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
                         <div className="space-y-0.5">
-                            <span className="font-medium text-base block">Show Budgets</span>
-                            <p className="text-sm text-white/70">Enable budget tracking features in the sidebar navigation.</p>
+                            <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>
+                            <p className="text-sm text-white/70">{t('settingsPage.showBudgetsHelp')}</p>
                         </div>
                         <div className="flex items-center h-6">
                             <button
@@ -71,15 +73,15 @@ export function SettingsPage() {
                 <CardHeader>
                     <CardTitle className="text-red-600 flex items-center gap-2">
                         <AlertTriangle className="h-5 w-5" />
-                        Danger Zone
+                        {t('settingsPage.dangerZone')}
                     </CardTitle>
-                    <CardDescription className="text-white/70">Irreversible actions. Proceed with caution.</CardDescription>
+                    <CardDescription className="text-white/70">{t('settingsPage.dangerHelp')}</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="flex items-center justify-between p-4 border border-red-300/30 rounded-lg bg-red-500/10">
                         <div className="space-y-0.5">
-                            <p className="font-medium text-red-100">Delete All Data</p>
-                            <p className="text-sm text-red-100/80">Permanently delete all transactions, uploaded files, and metadata.</p>
+                            <p className="font-medium text-red-100">{t('settingsPage.deleteAllData')}</p>
+                            <p className="text-sm text-red-100/80">{t('settingsPage.deleteAllDataHelp')}</p>
                         </div>
                         <Button
                             variant="destructive"
@@ -87,7 +89,7 @@ export function SettingsPage() {
                             disabled={loading}
                             className="bg-red-600 hover:bg-red-700 text-white"
                         >
-                            Delete All Data
+                            {t('settingsPage.deleteAllData')}
                         </Button>
                     </div>
                 </CardContent>
@@ -104,17 +106,18 @@ export function SettingsPage() {
             >
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Confirm full data deletion</DialogTitle>
+                        <DialogTitle>{t('settingsPage.confirmDeleteTitle')}</DialogTitle>
                         <DialogDescription>
-                            This permanently deletes all transactions, uploads and metadata.
-                            Type <span className="font-semibold">DELETE</span> to continue.
+                            {t('settingsPage.confirmDeleteHelp')}{' '}
+                            <span className="font-semibold">{t('settingsPage.deleteKeyword')}</span>{' '}
+                            {t('settingsPage.confirmDeleteHelpSuffix')}
                         </DialogDescription>
                     </DialogHeader>
                     <Input
                         value={resetPhrase}
                         onChange={(e) => setResetPhrase(e.target.value)}
-                        placeholder="Type DELETE"
-                        aria-label="Type DELETE to confirm"
+                        placeholder={t('settingsPage.typeDelete')}
+                        aria-label={t('settingsPage.typeDelete')}
                     />
                     <DialogFooter>
                         <Button
@@ -125,14 +128,14 @@ export function SettingsPage() {
                             }}
                             disabled={loading}
                         >
-                            Cancel
+                            {t('common.cancel')}
                         </Button>
                         <Button
                             variant="destructive"
                             onClick={confirmReset}
                             disabled={loading || resetPhrase.trim().toUpperCase() !== 'DELETE'}
                         >
-                            {loading ? 'Deleting...' : 'Confirm delete all data'}
+                            {loading ? t('settingsPage.deleting') : t('settingsPage.confirmDeleteAction')}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

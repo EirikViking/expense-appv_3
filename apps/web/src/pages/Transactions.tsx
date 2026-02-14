@@ -34,9 +34,11 @@ import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 export function TransactionsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [searchParams] = useSearchParams();
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -347,7 +349,7 @@ export function TransactionsPage() {
                   <option value="">{t('transactions.bulkSelectCategory')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                      {localizeCategoryName(cat.name, currentLanguage)}
                     </option>
                   ))}
                 </select>
@@ -587,7 +589,7 @@ export function TransactionsPage() {
                   <option value="">{t('common.allCategories')}</option>
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
-                      {cat.name}
+                      {localizeCategoryName(cat.name, currentLanguage)}
                     </option>
                   ))}
                 </select>
@@ -786,7 +788,7 @@ export function TransactionsPage() {
                               <option value="">{t('common.uncategorized')}</option>
                               {categories.map((cat) => (
                                 <option key={cat.id} value={cat.id}>
-                                  {cat.name}
+                                  {localizeCategoryName(cat.name, currentLanguage)}
                                 </option>
                               ))}
                             </select>
@@ -867,7 +869,7 @@ export function TransactionsPage() {
                                     color: tx.category_color,
                                   } : { backgroundColor: '#6b728020', color: '#6b7280' }}
                                 >
-                                  {tx.category_name}
+                                  {localizeCategoryName(tx.category_name, currentLanguage)}
                                 </span>
                               </>
                             )}
@@ -909,7 +911,7 @@ export function TransactionsPage() {
                             <Badge
                               variant={tx.status === 'booked' ? 'default' : 'warning'}
                             >
-                              {tx.status}
+                              {tx.status === 'booked' ? t('common.booked') : t('common.pending')}
                             </Badge>
                             <button
                               onClick={(e) => {
@@ -1006,7 +1008,7 @@ export function TransactionsPage() {
                 <option value="">{t('common.uncategorized')}</option>
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
-                    {cat.name}
+                    {localizeCategoryName(cat.name, currentLanguage)}
                   </option>
                 ))}
               </select>
