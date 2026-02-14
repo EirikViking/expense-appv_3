@@ -38,19 +38,46 @@ export function buildPasswordTokenCandidates(rawToken: string): string[] {
   const base = String(rawToken || '').trim();
   if (!base) return [];
 
-  out.add(base);
-  out.add(base.replace(/^["']|["']$/g, ''));
-  out.add(base.replace(/[),.;:!?]+$/, ''));
-  out.add(base.replace(/\s+/g, ''));
+  const addCandidate = (value: string | null | undefined) => {
+    const v = String(value || '').trim();
+    if (!v) return;
+    out.add(v);
+    out.add(v.replace(/^["'<(]+|[>"')]+$/g, ''));
+    out.add(v.replace(/[),.;:!?]+$/, ''));
+    out.add(v.replace(/\s+/g, ''));
+  };
+
+  const addTokenFromUrlLikeString = (value: string) => {
+    const v = String(value || '').trim();
+    if (!v) return;
+
+    const match = v.match(/[?&]token=([^&#\s]+)/i) || v.match(/^token=([^&#\s]+)$/i);
+    if (match?.[1]) {
+      addCandidate(match[1]);
+    }
+
+    try {
+      const parsed = new URL(v);
+      addCandidate(parsed.searchParams.get('token'));
+      if (parsed.hash) {
+        const hashParams = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+        addCandidate(hashParams.get('token'));
+      }
+    } catch {
+      // Ignore invalid URL strings and rely on regex candidates above.
+    }
+  };
+
+  addCandidate(base);
+  addTokenFromUrlLikeString(base);
 
   try {
     const decoded = decodeURIComponent(base);
     if (decoded && decoded !== base) {
-      const decodedTrimmed = decoded.trim();
-      out.add(decodedTrimmed);
-      out.add(decodedTrimmed.replace(/\s+/g, ''));
-      out.add(decodedTrimmed.replace(/ /g, '+'));
-      out.add(decodedTrimmed.replace(/ /g, '-'));
+      addCandidate(decoded);
+      addTokenFromUrlLikeString(decoded);
+      out.add(decoded.trim().replace(/ /g, '+'));
+      out.add(decoded.trim().replace(/ /g, '-'));
     }
   } catch {
     // Ignore invalid URI encoding; we still keep other candidates.

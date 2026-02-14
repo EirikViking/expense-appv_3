@@ -38,6 +38,17 @@ async function readJsonBody(c: any): Promise<{ ok: true; body: unknown } | { ok:
   }
 }
 
+async function consumePasswordTokenFlexible(
+  db: D1Database,
+  token: string,
+  preferredType: 'invite' | 'reset'
+) {
+  const primary = await consumePasswordToken(db, token, preferredType);
+  if (primary) return primary;
+  const fallbackType = preferredType === 'invite' ? 'reset' : 'invite';
+  return consumePasswordToken(db, token, fallbackType);
+}
+
 auth.post('/bootstrap', async (c) => {
   try {
     const userCount = await countUsers(c.env.DB);
@@ -274,7 +285,7 @@ auth.post('/set-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'invite');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'invite');
     if (!used) {
       return c.json(
         {
@@ -311,7 +322,7 @@ auth.post('/reset-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'reset');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'reset');
     if (!used) {
       return c.json(
         {

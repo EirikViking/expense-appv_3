@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import type { AppUser } from '@expense/shared';
 import { api, ApiError } from '../lib/api';
 
@@ -26,10 +26,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [actorUser, setActorUser] = useState<AppUser | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const authRequestSeq = useRef(0);
+
+  const startAuthRequest = useCallback(() => {
+    authRequestSeq.current += 1;
+    return authRequestSeq.current;
+  }, []);
+
+  const isLatestRequest = useCallback((requestId: number) => authRequestSeq.current === requestId, []);
 
   const checkAuth = useCallback(async () => {
+    const requestId = startAuthRequest();
     try {
       const me = await api.authMe();
+      if (!isLatestRequest(requestId)) return;
+
       if (me.bootstrap_required) {
         setBootstrapRequired(true);
         setIsAuthenticated(false);
@@ -58,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsImpersonating(false);
       setNeedsOnboarding(false);
     } catch (err) {
+      if (!isLatestRequest(requestId)) return;
       if (err instanceof ApiError && err.status === 401) {
         setIsAuthenticated(false);
         setBootstrapRequired(false);
@@ -69,49 +81,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     } finally {
-      setIsLoading(false);
+      if (isLatestRequest(requestId)) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [isLatestRequest, startAuthRequest]);
 
   useEffect(() => {
     void checkAuth();
   }, [checkAuth]);
 
   const login = useCallback(async (email: string, password: string, rememberMe: boolean) => {
-    await api.login(email, password, rememberMe);
-    const me = await api.authMe();
+    const requestId = startAuthRequest();
+    setIsLoading(true);
+    try {
+      await api.login(email, password, rememberMe);
+      const me = await api.authMe();
+      if (!isLatestRequest(requestId)) return;
 
-    if (me.bootstrap_required) {
-      setBootstrapRequired(true);
-      setIsAuthenticated(false);
-      setUser(null);
-      setActorUser(null);
-      setIsImpersonating(false);
-      setNeedsOnboarding(false);
-      throw new ApiError('Bootstrap required', 400, me);
-    }
+      if (me.bootstrap_required) {
+        setBootstrapRequired(true);
+        setIsAuthenticated(false);
+        setUser(null);
+        setActorUser(null);
+        setIsImpersonating(false);
+        setNeedsOnboarding(false);
+        throw new ApiError('Bootstrap required', 400, me);
+      }
 
-    if (!me.authenticated || !me.user) {
+      if (!me.authenticated || !me.user) {
+        setBootstrapRequired(false);
+        setIsAuthenticated(false);
+        setUser(null);
+        setActorUser(null);
+        setIsImpersonating(false);
+        setNeedsOnboarding(false);
+        throw new ApiError('Login session was not established. Please try again.', 401, me);
+      }
+
+      const effectiveUser = me.effective_user || me.user;
+      const actualActor = me.actor_user || me.user;
       setBootstrapRequired(false);
-      setIsAuthenticated(false);
-      setUser(null);
-      setActorUser(null);
-      setIsImpersonating(false);
-      setNeedsOnboarding(false);
-      throw new ApiError('Login session was not established. Please try again.', 401, me);
+      setIsAuthenticated(true);
+      setUser(effectiveUser);
+      setActorUser(actualActor);
+      setIsImpersonating(Boolean(me.impersonating));
+      setNeedsOnboarding(Boolean(me.needs_onboarding));
+    } finally {
+      if (isLatestRequest(requestId)) {
+        setIsLoading(false);
+      }
     }
-
-    const effectiveUser = me.effective_user || me.user;
-    const actualActor = me.actor_user || me.user;
-    setBootstrapRequired(false);
-    setIsAuthenticated(true);
-    setUser(effectiveUser);
-    setActorUser(actualActor);
-    setIsImpersonating(Boolean(me.impersonating));
-    setNeedsOnboarding(Boolean(me.needs_onboarding));
-  }, []);
+  }, [isLatestRequest, startAuthRequest]);
 
   const logout = useCallback(async () => {
+    startAuthRequest();
     try {
       await api.logout();
     } finally {
@@ -121,8 +145,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsImpersonating(false);
       setNeedsOnboarding(false);
       setBootstrapRequired(false);
+      setIsLoading(false);
     }
-  }, []);
+  }, [startAuthRequest]);
 
   const completeOnboarding = useCallback(async () => {
     await api.onboardingComplete();
