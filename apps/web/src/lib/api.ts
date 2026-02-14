@@ -138,7 +138,7 @@ async function request<T>(
 
   if (!response.ok) {
     const errObj = data as Partial<ErrorResponse> & { message?: string };
-    const msg = errObj?.error || errObj?.message || `HTTP ${response.status}`;
+    const msg = errObj?.message || errObj?.error || `HTTP ${response.status}`;
     throw new ApiError(String(msg), response.status, data);
   }
 

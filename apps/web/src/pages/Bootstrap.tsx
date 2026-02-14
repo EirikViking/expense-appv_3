@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
@@ -13,6 +13,7 @@ export function BootstrapPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [alreadyExists, setAlreadyExists] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) return <Navigate to="/" replace />;
@@ -21,6 +22,7 @@ export function BootstrapPage() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setAlreadyExists(false);
     if (password !== confirmPassword) {
       setError(t('bootstrap.passwordMismatch'));
       return;
@@ -32,7 +34,12 @@ export function BootstrapPage() {
       await checkAuth();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('bootstrap.failed'));
+      if (err instanceof ApiError && err.status === 409) {
+        setAlreadyExists(true);
+        setError(t('bootstrap.adminExists'));
+      } else {
+        setError(err instanceof Error ? err.message : t('bootstrap.failed'));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -47,6 +54,15 @@ export function BootstrapPage() {
         </div>
         <form className="space-y-4" onSubmit={onSubmit}>
           {error && <div className="rounded-lg border border-red-300/30 bg-red-500/10 px-4 py-3 text-red-100">{error}</div>}
+          {alreadyExists && (
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              className="w-full rounded-md border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+            >
+              {t('bootstrap.goToLogin')}
+            </button>
+          )}
           <input
             type="email"
             required

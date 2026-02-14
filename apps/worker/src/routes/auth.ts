@@ -30,17 +30,49 @@ import {
 
 const auth = new Hono<{ Bindings: Env }>();
 
+async function readJsonBody(c: any): Promise<{ ok: true; body: unknown } | { ok: false }> {
+  try {
+    return { ok: true as const, body: await c.req.json() };
+  } catch {
+    return { ok: false as const };
+  }
+}
+
 auth.post('/bootstrap', async (c) => {
   try {
     const userCount = await countUsers(c.env.DB);
     if (userCount > 0) {
-      return c.json({ error: 'Bootstrap is disabled after first user is created' }, 409);
+      return c.json(
+        {
+          error: 'Bootstrap is disabled after first user is created',
+          message: 'Det finnes allerede en admin. Gå til innlogging.',
+        },
+        409
+      );
     }
 
-    const body = await c.req.json();
+    const parsedBody = await readJsonBody(c);
+    if (!parsedBody.ok) {
+      return c.json(
+        {
+          error: 'Invalid request body',
+          message: 'Ugyldig forespørsel. Sjekk feltene og prøv igjen.',
+        },
+        400
+      );
+    }
+
+    const body = parsedBody.body;
     const parsed = bootstrapRequestSchema.safeParse(body);
     if (!parsed.success) {
-      return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
+      return c.json(
+        {
+          error: 'Invalid request',
+          message: 'Ugyldig e-post eller passord. Passord må være minst 8 tegn.',
+          details: parsed.error.message,
+        },
+        400
+      );
     }
 
     const { email, name, password } = parsed.data;
@@ -48,45 +80,66 @@ auth.post('/bootstrap', async (c) => {
     const userId = generateId();
     const hashed = await hashPassword(password);
 
-    await c.env.DB
-      .prepare(
-        `INSERT INTO users
-          (id, email, name, role, active, password_salt, password_hash, password_iters, created_at, updated_at)
-         VALUES (?, ?, ?, 'admin', 1, ?, ?, ?, ?, ?)`
-      )
-      .bind(
-        userId,
-        normalizeEmail(email),
-        name.trim(),
-        hashed.salt,
-        hashed.hash,
-        hashed.iterations,
-        now,
-        now
-      )
-      .run();
+    try {
+      await c.env.DB
+        .prepare(
+          `INSERT INTO users
+            (id, email, name, role, active, password_salt, password_hash, password_iters, created_at, updated_at)
+           VALUES (?, ?, ?, 'admin', 1, ?, ?, ?, ?, ?)`
+        )
+        .bind(
+          userId,
+          normalizeEmail(email),
+          name.trim(),
+          hashed.salt,
+          hashed.hash,
+          hashed.iterations,
+          now,
+          now
+        )
+        .run();
+    } catch (err: any) {
+      const msg = String(err?.message || '').toLowerCase();
+      if (msg.includes('unique') || msg.includes('constraint')) {
+        return c.json(
+          {
+            error: 'Admin already exists',
+            message: 'Det finnes allerede en admin. Gå til innlogging.',
+          },
+          409
+        );
+      }
+      throw err;
+    }
 
     const sessionId = await createSession(c.env.DB, userId, SESSION_MAX_AGE_LONG_SECONDS);
     setSessionCookie(c, sessionId, SESSION_MAX_AGE_LONG_SECONDS);
 
-    const created = await c.env.DB
-      .prepare(
-        `SELECT id, email, name, role, active, onboarding_done_at, created_at, updated_at
-         FROM users WHERE id = ?`
-      )
-      .bind(userId)
-      .first<any>();
-
     const response: BootstrapResponse = {
       success: true,
-      user: sanitizeUser(created),
+      user: {
+        id: userId,
+        email: normalizeEmail(email),
+        name: name.trim(),
+        role: 'admin',
+        active: true,
+        onboarding_done_at: null,
+        created_at: now,
+        updated_at: now,
+      },
       bootstrap_required: false,
       needs_onboarding: true,
     };
     return c.json(response, 201);
   } catch (error) {
     console.error('Bootstrap error:', error);
-    return c.json({ error: 'Internal server error' }, 500);
+    return c.json(
+      {
+        error: 'Internal server error',
+        message: 'Kunne ikke opprette adminkonto. Prøv igjen, eller kontakt admin.',
+      },
+      500
+    );
   }
 });
 

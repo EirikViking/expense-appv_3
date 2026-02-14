@@ -302,8 +302,8 @@
     "notReady": "Budsjettfunksjonen er ikke produksjonsklar enda."
   },
   "bootstrap": {
-    "title": "Opprett f?rste admin",
-    "subtitle": "Ingen brukere finnes enn?. Opprett f?rste admin-konto.",
+    "title": "Opprett første admin",
+    "subtitle": "Ingen brukere finnes ennå. Opprett første admin-konto.",
     "email": "Admin e-post",
     "name": "Admin navn",
     "password": "Passord",
@@ -311,7 +311,9 @@
     "createAdmin": "Opprett admin-konto",
     "creating": "Oppretter...",
     "passwordMismatch": "Passordene matcher ikke.",
-    "failed": "Kunne ikke opprette admin-konto."
+    "failed": "Kunne ikke opprette admin-konto.",
+    "adminExists": "Det finnes allerede en admin. Gå til innlogging.",
+    "goToLogin": "Gå til innlogging"
   },
   "setPassword": {
     "title": "Sett passord",

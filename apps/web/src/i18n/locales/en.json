@@ -185,7 +185,9 @@
     "createAdmin": "Create admin account",
     "creating": "Creating...",
     "passwordMismatch": "Passwords do not match.",
-    "failed": "Failed to create admin account."
+    "failed": "Failed to create admin account.",
+    "adminExists": "An admin already exists. Go to login.",
+    "goToLogin": "Go to login"
   },
   "setPassword": {
     "title": "Set password",
