@@ -669,6 +669,7 @@ export function RulesPage() {
                       onClick={() => handleTest(rule.id)}
                       disabled={testingRuleId === rule.id}
                       title="Run rule test"
+                      aria-label={`${t('rulesPage.testRules')}: ${rule.name}`}
                     >
                       <Play className="h-4 w-4" />
                     </Button>
@@ -676,6 +677,7 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => toggleEnabled(rule)}
+                      aria-label={rule.enabled ? `${t('rulesPage.disabled')}: ${rule.name}` : `${t('rulesPage.ruleEnabled')}: ${rule.name}`}
                     >
                       {rule.enabled ? (
                         <CheckCircle className="h-4 w-4 text-green-500" />
@@ -687,6 +689,7 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => startEdit(rule)}
+                      aria-label={`${t('transactions.editOne')}: ${rule.name}`}
                     >
                       <Pencil className="h-4 w-4 text-white/45" />
                     </Button>
@@ -694,6 +697,7 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDelete(rule.id)}
+                      aria-label={`${t('transactions.deleteOne')}: ${rule.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-red-400" />
                     </Button>

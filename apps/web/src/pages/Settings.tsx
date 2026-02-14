@@ -56,6 +56,7 @@ export function SettingsPage() {
                         <div className="flex items-center h-6">
                             <button
                                 onClick={toggleBudgets}
+                                aria-label={t('settingsPage.showBudgets')}
                                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-300/60 focus:ring-offset-2 ${showBudgets ? 'bg-blue-600' : 'bg-white/10'
                                     }`}
                             >

@@ -818,6 +818,15 @@ export function TransactionsPage() {
                     key={tx.id}
                     className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
                     onClick={() => !editingId && setSelectedTransaction(tx)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (editingId) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedTransaction(tx);
+                      }
+                    }}
                   >
                     {editingId === tx.id ? (
                       // Edit Mode
@@ -873,6 +882,7 @@ export function TransactionsPage() {
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(tx.id)}
+                          aria-label={`${t('transactions.title')}: ${tx.description}`}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (e.target.checked) setSelectedIds([...selectedIds, tx.id]);
@@ -980,6 +990,7 @@ export function TransactionsPage() {
                                 startEdit(tx);
                               }}
                               className="p-1 hover:bg-white/10 rounded"
+                              aria-label={`${t('transactions.editOne')}: ${tx.description}`}
                             >
                               <Pencil className="h-3 w-3 text-white/45" />
                             </button>

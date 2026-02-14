@@ -167,6 +167,7 @@ export function CategoriesPage() {
             <button
               onClick={() => toggleExpand(node.id)}
               className="p-1 hover:bg-white/10 rounded"
+              aria-label={isExpanded ? (currentLanguage === 'nb' ? 'Skjul underkategorier' : 'Collapse subcategories') : (currentLanguage === 'nb' ? 'Vis underkategorier' : 'Expand subcategories')}
             >
               {isExpanded ? (
                 <ChevronDown className="h-4 w-4 text-white/45" />
@@ -228,18 +229,21 @@ export function CategoriesPage() {
                   onClick={() => startCreate(node.id)}
                   className="p-1 hover:bg-white/10 rounded"
                   title={t('categoriesPage.addSubcategory')}
+                  aria-label={`${t('categoriesPage.addSubcategory')}: ${localizeCategoryName(node.name, currentLanguage)}`}
                 >
                   <Plus className="h-4 w-4 text-white/45" />
                 </button>
                 <button
                   onClick={() => startEdit(node)}
                   className="p-1 hover:bg-white/10 rounded"
+                  aria-label={`${t('transactions.editOne')}: ${localizeCategoryName(node.name, currentLanguage)}`}
                 >
                   <Pencil className="h-4 w-4 text-white/45" />
                 </button>
                 <button
                   onClick={() => handleDelete(node.id, node.name)}
                   className="p-1 hover:bg-red-100 rounded"
+                  aria-label={`${t('transactions.deleteOne')}: ${localizeCategoryName(node.name, currentLanguage)}`}
                 >
                   <Trash2 className="h-4 w-4 text-red-400" />
                 </button>
