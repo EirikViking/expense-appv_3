@@ -268,6 +268,7 @@
     "disabled": "Deaktivert",
     "noRules": "Ingen regler enda. Opprett en for automatisk kategorisering.",
     "setCategoryTo": "Sett kategori ->",
+    "showingCount": "Viser {{shown}} av {{total}}",
     "addTagTo": "Legg til tag ->"
   },
   "settingsPage": {
@@ -297,4 +298,5 @@
     "notReady": "Budsjettfunksjonen er ikke produksjonsklar enda."
   }
 }
+
 

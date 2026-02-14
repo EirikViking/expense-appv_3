@@ -269,6 +269,7 @@
     "disabled": "Disabled",
     "noRules": "No rules yet. Create one to automatically categorize transactions.",
     "setCategoryTo": "Set category ->",
+    "showingCount": "Showing {{shown}} of {{total}}",
     "addTagTo": "Add tag ->"
   },
   "settingsPage": {
@@ -298,3 +299,4 @@
     "notReady": "Budgets are not production-ready yet."
   }
 }
+

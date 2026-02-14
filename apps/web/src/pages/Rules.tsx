@@ -35,6 +35,7 @@ type RuleTestResult = {
 };
 
 export function RulesPage() {
+  const RULES_PAGE_SIZE = 25;
   const { t, i18n } = useTranslation();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [rules, setRules] = useState<Rule[]>([]);
@@ -42,6 +43,7 @@ export function RulesPage() {
   const [tags, setTags] = useState<Tag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [rulesPage, setRulesPage] = useState(0);
 
   // Edit/Create state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -83,6 +85,7 @@ export function RulesPage() {
         api.getTags(),
       ]);
       setRules(rulesRes.rules);
+      setRulesPage(0);
       setCategories(catsRes.categories);
       setTags(tagsRes.tags);
       try {
@@ -309,6 +312,10 @@ export function RulesPage() {
     }
     return rule.action_value;
   };
+
+  const totalRulePages = Math.max(1, Math.ceil(rules.length / RULES_PAGE_SIZE));
+  const visibleRules = rules.slice(rulesPage * RULES_PAGE_SIZE, (rulesPage + 1) * RULES_PAGE_SIZE);
+  const shownCount = visibleRules.length;
 
   if (isLoading) {
     return (
@@ -620,11 +627,14 @@ export function RulesPage() {
             <Workflow className="h-5 w-5" />
             {t('rulesPage.title')} ({rules.length})
           </CardTitle>
+          <p className="text-xs text-white/70">
+            {t('rulesPage.showingCount', { shown: shownCount, total: rules.length })}
+          </p>
         </CardHeader>
         <CardContent>
           {rules.length > 0 ? (
             <div className="space-y-2">
-              {rules.map((rule) => (
+              {visibleRules.map((rule) => (
                 <div
                   key={rule.id}
                   className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -704,6 +714,29 @@ export function RulesPage() {
                   </div>
                 </div>
               ))}
+              {totalRulePages > 1 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRulesPage((p) => Math.max(0, p - 1))}
+                    disabled={rulesPage === 0}
+                  >
+                    {t('common.previous')}
+                  </Button>
+                  <span className="text-xs text-white/70">
+                    {t('transactions.pageOf', { page: rulesPage + 1, total: totalRulePages })}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRulesPage((p) => Math.min(totalRulePages - 1, p + 1))}
+                    disabled={rulesPage >= totalRulePages - 1}
+                  >
+                    {t('common.next')}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-white/60 text-center py-8">
