@@ -425,5 +425,26 @@ describe('Rule Engine', () => {
       const meta = db.getMeta(tx.id);
       expect(meta?.category_id).toBe('cat_food_groceries');
     });
+
+    it('always categorizes Straksbetaling as P2P/Vipps', async () => {
+      const db = new MockD1();
+      const tx = createTransaction({
+        description: 'Straksbetaling',
+        amount: -640,
+        flow_type: 'expense',
+      });
+      const rules = [
+        createRule({
+          match_value: 'STRAKSBETALING',
+          action_value: 'cat_other',
+        }),
+      ];
+
+      const result = await applyRulesToTransaction(db as unknown as D1Database, tx, rules);
+
+      expect(result.updated).toBe(true);
+      const meta = db.getMeta(tx.id);
+      expect(meta?.category_id).toBe('cat_other_p2p');
+    });
   });
 });

@@ -1,5 +1,8 @@
 import type { Rule, Transaction, RuleMatchField, RuleMatchType } from '@expense/shared';
 import { generateId } from '@expense/shared';
+import { isStraksbetalingDescription } from './transfer-detect';
+
+const STRAKSBETALING_CATEGORY_ID = 'cat_other_p2p';
 
 // Safe regex execution with timeout protection
 function safeRegexTest(pattern: string, text: string, timeoutMs: number = 100): boolean {
@@ -192,7 +195,9 @@ export async function applyRulesToTransaction(
     .bind(tx.id)
     .first<{ category_id: string | null; merchant_id: string | null; notes: string | null; is_recurring: number | null }>();
 
-  const desiredCategoryId = categoryAction?.value ?? null;
+  const desiredCategoryId = isStraksbetalingDescription(tx.description)
+    ? STRAKSBETALING_CATEGORY_ID
+    : (categoryAction?.value ?? null);
   const prevCategoryId = existingMeta ? (existingMeta.category_id ?? null) : null;
   const categoryCandidate = Boolean(desiredCategoryId && desiredCategoryId !== prevCategoryId);
 
