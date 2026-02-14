@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -39,7 +39,9 @@ import { localizeCategoryName } from '@/lib/category-localization';
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
-  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
@@ -244,6 +246,8 @@ export function TransactionsPage() {
     const qFlowType = (searchParams.get('flow_type') || '') as FlowType | '';
     const qSortBy = searchParams.get('sort_by') || '';
     const qSortOrder = searchParams.get('sort_order') || '';
+    const qPageRaw = searchParams.get('page');
+    const qPage = qPageRaw ? Number(qPageRaw) : 0;
 
     if (qDateFrom) setDateFrom(qDateFrom);
     if (qDateTo) setDateTo(qDateTo);
@@ -267,6 +271,7 @@ export function TransactionsPage() {
     if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
     if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
     if (qFlowType) setFlowType(qFlowType);
+    if (Number.isInteger(qPage) && qPage >= 0) setPage(qPage);
 
     // Sort init (keep backward compatibility)
     if (qSortBy || qSortOrder) {
@@ -276,8 +281,53 @@ export function TransactionsPage() {
       else if (by === 'amount_abs') setSortKey(order === 'asc' ? 'amount_abs_asc' : 'amount_abs_desc');
       else setSortKey(order === 'asc' ? 'date_asc' : 'date_desc');
     }
+    setFiltersInitialized(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!filtersInitialized) return;
+    const next = new URLSearchParams();
+    if (dateFrom) next.set('date_from', dateFrom);
+    if (dateTo) next.set('date_to', dateTo);
+    if (status) next.set('status', status);
+    if (sourceType) next.set('source_type', sourceType);
+    if (categoryId) next.set('category_id', categoryId);
+    if (merchantId) next.set('merchant_id', merchantId);
+    if (merchantName) next.set('merchant_name', merchantName);
+    if (minAmount) next.set('min_amount', minAmount);
+    if (maxAmount) next.set('max_amount', maxAmount);
+    if (searchQuery) next.set('search', searchQuery);
+    if (!excludeTransfers) next.set('include_transfers', '1');
+    if (showExcluded) next.set('include_excluded', '1');
+    if (flowType) next.set('flow_type', flowType);
+    if (page > 0) next.set('page', String(page));
+
+    if (sortKey.startsWith('amount_abs')) next.set('sort_by', 'amount_abs');
+    else if (sortKey.startsWith('merchant')) next.set('sort_by', 'merchant');
+    else next.set('sort_by', 'date');
+    next.set('sort_order', sortKey.endsWith('_asc') ? 'asc' : 'desc');
+
+    setSearchParams(next, { replace: true });
+  }, [
+    filtersInitialized,
+    dateFrom,
+    dateTo,
+    status,
+    sourceType,
+    categoryId,
+    merchantId,
+    merchantName,
+    minAmount,
+    maxAmount,
+    searchQuery,
+    excludeTransfers,
+    showExcluded,
+    flowType,
+    page,
+    sortKey,
+    setSearchParams,
+  ]);
 
   // Remember last selected date range for next visit.
   useEffect(() => {
@@ -332,9 +382,20 @@ export function TransactionsPage() {
   };
 
   const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const hasDrilldownContext = Boolean(
+    (searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
+      searchParams.get('date_from') &&
+      searchParams.get('date_to')
+  );
 
   return (
     <div className="space-y-6">
+      {hasDrilldownContext && (
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+          <ChevronLeft className="h-4 w-4 mr-1" />
+          {t('common.previous')}
+        </Button>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t('transactions.title')}</h1>
         <div className="flex items-center gap-2">
