@@ -32,6 +32,8 @@ import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
+import { SmartDateInput } from '@/components/SmartDateInput';
+import { validateDateRange } from '@/lib/date-input';
 
 export function TransactionsPage() {
   const { t } = useTranslation();
@@ -46,6 +48,9 @@ export function TransactionsPage() {
   // Filters
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [dateFromError, setDateFromError] = useState<string | null>(null);
+  const [dateToError, setDateToError] = useState<string | null>(null);
+  const [dateRangeError, setDateRangeError] = useState<string | null>(null);
   const [status, setStatus] = useState<TransactionStatus | ''>('');
   const [sourceType, setSourceType] = useState<SourceType | ''>('');
   const [categoryId, setCategoryId] = useState('');
@@ -147,6 +152,15 @@ export function TransactionsPage() {
   };
 
   const fetchData = useCallback(async () => {
+    if (!validateDateRange(dateFrom, dateTo)) {
+      setDateRangeError('Fra-dato kan ikke være etter til-dato.');
+      setTransactions([]);
+      setTotal(0);
+      setAggregates(null);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -202,6 +216,14 @@ export function TransactionsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!dateFrom || !dateTo) {
+      setDateRangeError(null);
+      return;
+    }
+    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : 'Fra-dato kan ikke være etter til-dato.');
+  }, [dateFrom, dateTo]);
 
   // Initialize from URL query params (drilldown support)
   useEffect(() => {
@@ -467,27 +489,35 @@ export function TransactionsPage() {
                 <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.fromDate')}
                 </label>
-                <Input
-                  type="date"
+                <SmartDateInput
                   value={dateFrom}
-                  onChange={(e) => {
-                    setDateFrom(e.target.value);
+                  ariaLabel={t('common.fromDate')}
+                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
+                  invalidDateMessage="Ugyldig dato."
+                  onChange={(next) => {
+                    setDateFrom(next);
                     setPage(0);
                   }}
+                  onErrorChange={setDateFromError}
                 />
+                {dateFromError && <p className="mt-1 text-xs text-red-300">{dateFromError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
                   {t('common.toDate')}
                 </label>
-                <Input
-                  type="date"
+                <SmartDateInput
                   value={dateTo}
-                  onChange={(e) => {
-                    setDateTo(e.target.value);
+                  ariaLabel={t('common.toDate')}
+                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
+                  invalidDateMessage="Ugyldig dato."
+                  onChange={(next) => {
+                    setDateTo(next);
                     setPage(0);
                   }}
+                  onErrorChange={setDateToError}
                 />
+                {dateToError && <p className="mt-1 text-xs text-red-300">{dateToError}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-white/80 mb-1">
@@ -563,6 +593,9 @@ export function TransactionsPage() {
                 </select>
               </div>
             </div>
+            {dateRangeError && (
+              <p className="mt-3 text-sm text-red-300">{dateRangeError}</p>
+            )}
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
