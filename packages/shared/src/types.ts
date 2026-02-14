@@ -438,9 +438,6 @@ export interface AuthMeResponse {
   authenticated: boolean;
   bootstrap_required: boolean;
   user?: AppUser;
-  actor_user?: AppUser;
-  effective_user?: AppUser;
-  impersonating?: boolean;
   needs_onboarding?: boolean;
 }
 
