@@ -14,7 +14,7 @@
 - [x] Accessibility improvements: keyboard opening for transaction rows and ARIA labels on icon/navigation actions.
 - [x] Rules list performance improved with pagination and explicit "showing X of Y".
 - [x] Budgets feature behavior made consistent: hidden by default until production-ready; settings no longer suggests enabling broken flow.
-- [x] Added category `Gaver og veldedighet` via migration with matching seed rules and backfill from `cat_other`/uncategorized rows.
+- [x] Added category `Gaver og veldedighet` via migrations with matching seed rules and applied category to all matching prod transactions (verified count: 25 rows in `transaction_meta`).
 
 ### Remaining TODO
 - [ ] CSV import backend parser is still not enabled. Frontend now provides preview queue + CSV template, but actual CSV ingestion remains TODO in backend ingest routes.
