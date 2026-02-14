@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory';
-import { clearSessionCookie, getSessionUser, readSessionCookie } from '../lib/auth';
+import { clearSessionCookie, getSessionUser, getUserById, readSessionCookie, sanitizeUser } from '../lib/auth';
 import type { Env } from '../types';
 
 export const authMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next) => {
@@ -12,7 +12,34 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next
     return c.json({ error: 'Unauthorized' }, 401);
   }
 
+  let effectiveUser = user;
+  let impersonating = false;
+
+  if (user.role === 'admin') {
+    const sessionRow = await c.env.DB
+      .prepare('SELECT impersonated_user_id FROM sessions WHERE id = ?')
+      .bind(sessionId)
+      .first<{ impersonated_user_id: string | null }>();
+
+    if (sessionRow?.impersonated_user_id) {
+      const target = await getUserById(c.env.DB, sessionRow.impersonated_user_id);
+      if (target) {
+        effectiveUser = sanitizeUser(target);
+        impersonating = true;
+      } else {
+        // Cleanup stale impersonation pointers.
+        await c.env.DB
+          .prepare('UPDATE sessions SET impersonated_user_id = NULL WHERE id = ?')
+          .bind(sessionId)
+          .run();
+      }
+    }
+  }
+
   (c as any).set('authUser', user);
+  (c as any).set('effectiveUser', effectiveUser);
+  (c as any).set('isImpersonating', impersonating);
+  (c as any).set('sessionId', sessionId);
 
   await next();
 });
