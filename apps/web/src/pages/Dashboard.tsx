@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BarChart,
@@ -59,6 +59,10 @@ export function DashboardPage() {
   const { t, i18n } = useTranslation();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [loadingMerchants, setLoadingMerchants] = useState(true);
+  const [loadingAnomalies, setLoadingAnomalies] = useState(true);
+  const [loadingTrend, setLoadingTrend] = useState(true);
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
@@ -70,6 +74,9 @@ export function DashboardPage() {
   const [flatCategories, setFlatCategories] = useState<Category[]>([]);
   // Default ON: this is the main value of the dashboard for most users.
   const [showCategoryDetails, setShowCategoryDetails] = useState(true);
+  const baseRequestIdRef = useRef(0);
+  const merchantRequestIdRef = useRef(0);
+  const trendRequestIdRef = useRef(0);
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -155,7 +162,7 @@ export function DashboardPage() {
 
   const openKPIDrilldown = (title: string, opts: { status?: TransactionStatus, flowType?: FlowType } = {}) => {
     setDrilldownTitle(title);
-    setDrilldownSubtitle(`${overview?.period.start} - ${overview?.period.end}`);
+    setDrilldownSubtitle(`${overview?.period.start ?? dateFrom} - ${overview?.period.end ?? dateTo}`);
     setDrilldownStatus(opts.status);
     setDrilldownFlowType(opts.flowType);
     setDrilldownIncludeTransfers(!excludeTransfers);
@@ -201,11 +208,23 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    async function loadData() {
-      setLoading(true);
+    const requestId = ++baseRequestIdRef.current;
+    const hasLoadedOnce = Boolean(overview);
+    if (hasLoadedOnce) setIsRefreshing(true);
+    else setLoading(true);
+
+    async function loadBaseData() {
+      setLoadingAnomalies(true);
       try {
-        const [overviewRes, categoriesRes, merchantsRes, timeseriesRes, anomaliesRes, trendRes] =
-          await Promise.all([
+        const anomaliesPromise = api.getAnalyticsAnomalies({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+        });
+
+        const [overviewRes, categoriesRes, timeseriesRes] =
+          await Promise.allSettled([
             api.getAnalyticsOverview({
               date_from: dateFrom,
               date_to: dateTo,
@@ -218,14 +237,6 @@ export function DashboardPage() {
               status: statusFilter || undefined,
               include_transfers: !excludeTransfers,
             }),
-            api.getAnalyticsByMerchant({
-              date_from: dateFrom,
-              date_to: dateTo,
-              limit: 20,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-              category_id: selectedCategoryId || undefined,
-            }),
             api.getAnalyticsTimeseries({
               date_from: dateFrom,
               date_to: dateTo,
@@ -233,36 +244,97 @@ export function DashboardPage() {
               granularity: 'day',
               include_transfers: !excludeTransfers,
             }),
-            api.getAnalyticsAnomalies({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-            }),
-            api.getAnalyticsTimeseries({
-              ...trailingMonthsRange(trendMonths),
-              status: statusFilter || undefined,
-              granularity: 'month',
-              include_transfers: false,
-              category_id: trendCategoryId,
-            }),
           ]);
 
-        setOverview(overviewRes);
-        setCategories(categoriesRes.categories);
-        setMerchants(merchantsRes.merchants);
-        setTimeseries(timeseriesRes.series);
+        if (requestId !== baseRequestIdRef.current) return;
+
+        if (overviewRes.status === 'fulfilled') {
+          setOverview(overviewRes.value);
+        }
+        if (categoriesRes.status === 'fulfilled') {
+          setCategories(categoriesRes.value.categories);
+        }
+        if (timeseriesRes.status === 'fulfilled') {
+          setTimeseries(timeseriesRes.value.series);
+        }
+
+        setLoading(false);
+        setIsRefreshing(false);
+
+        const anomaliesRes = await anomaliesPromise;
+        if (requestId !== baseRequestIdRef.current) return;
         setAnomalies(anomaliesRes.anomalies.slice(0, 5));
-        setTrendSeries(trendRes.series);
       } catch (err) {
+        if (requestId !== baseRequestIdRef.current) return;
         console.error('Failed to load dashboard data:', err);
       } finally {
-        setLoading(false);
+        if (requestId === baseRequestIdRef.current) {
+          setLoading(false);
+          setIsRefreshing(false);
+          setLoadingAnomalies(false);
+        }
       }
     }
 
-    loadData();
-  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, trendMonths, trendCategoryId]);
+    void loadBaseData();
+  }, [excludeTransfers, dateFrom, dateTo, statusFilter]);
+
+  useEffect(() => {
+    const requestId = ++merchantRequestIdRef.current;
+    setLoadingMerchants(true);
+
+    async function loadMerchants() {
+      try {
+        const merchantsRes = await api.getAnalyticsByMerchant({
+          date_from: dateFrom,
+          date_to: dateTo,
+          limit: 20,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+          category_id: selectedCategoryId || undefined,
+        });
+        if (requestId !== merchantRequestIdRef.current) return;
+        setMerchants(merchantsRes.merchants);
+      } catch (err) {
+        if (requestId !== merchantRequestIdRef.current) return;
+        console.error('Failed to load dashboard merchants:', err);
+      } finally {
+        if (requestId === merchantRequestIdRef.current) {
+          setLoadingMerchants(false);
+        }
+      }
+    }
+
+    void loadMerchants();
+  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter]);
+
+  useEffect(() => {
+    const requestId = ++trendRequestIdRef.current;
+    setLoadingTrend(true);
+
+    async function loadTrend() {
+      try {
+        const trendRes = await api.getAnalyticsTimeseries({
+          ...trailingMonthsRange(trendMonths),
+          status: statusFilter || undefined,
+          granularity: 'month',
+          include_transfers: false,
+          category_id: trendCategoryId,
+        });
+        if (requestId !== trendRequestIdRef.current) return;
+        setTrendSeries(trendRes.series);
+      } catch (err) {
+        if (requestId !== trendRequestIdRef.current) return;
+        console.error('Failed to load dashboard trend:', err);
+      } finally {
+        if (requestId === trendRequestIdRef.current) {
+          setLoadingTrend(false);
+        }
+      }
+    }
+
+    void loadTrend();
+  }, [trendMonths, trendCategoryId, statusFilter]);
 
   const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
@@ -283,7 +355,7 @@ export function DashboardPage() {
       .slice(0, 4);
   }, [categories]);
 
-  if (loading) {
+  if (loading && !overview) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
@@ -321,8 +393,9 @@ export function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
           <div className="text-sm text-white/60">
-            {overview?.period.start} - {overview?.period.end}
+            {overview?.period.start ?? dateFrom} - {overview?.period.end ?? dateTo}
           </div>
+          {isRefreshing && <div className="text-xs text-white/45">{currentLanguage === 'nb' ? 'Oppdaterer...' : 'Updating...'}</div>}
           {selectedCategory && (
             <div className="mt-1 text-sm">
               <button
@@ -710,7 +783,12 @@ export function DashboardPage() {
         </div>
         </CardHeader>
         <CardContent>
-          {trendSeries.length > 0 ? (
+          {loadingTrend && trendSeries.length === 0 ? (
+            <div className="space-y-3">
+              <Skeleton className="h-[200px] w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          ) : trendSeries.length > 0 ? (
             <div className="space-y-4">
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart
@@ -790,7 +868,13 @@ export function DashboardPage() {
             </Link>
           </CardHeader>
           <CardContent>
-            {merchants.length > 0 ? (
+            {loadingMerchants && merchants.length === 0 ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4].map((i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : merchants.length > 0 ? (
               <div className="space-y-4">
                 {merchants.map((merchant, i) => (
                   <div
@@ -844,7 +928,13 @@ export function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {anomalies.length > 0 ? (
+            {loadingAnomalies && anomalies.length === 0 ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-14 w-full" />
+                ))}
+              </div>
+            ) : anomalies.length > 0 ? (
               <div className="space-y-3">
                 {anomalies.map((anomaly, i) => (
                   <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
