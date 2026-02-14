@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { collectCategoryTreeIds, normalizeCategoryTree } from '@/lib/category-tree';
 import {
   Plus,
   Pencil,
@@ -39,7 +40,7 @@ export function CategoriesPage() {
     try {
       const result = await api.getCategories();
       setCategories(result.categories);
-      setTree(result.tree);
+      setTree(normalizeCategoryTree(result.tree));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch categories');
     } finally {
@@ -72,6 +73,13 @@ export function CategoriesPage() {
     setFormParentId(parentId);
     setFormErrors({});
     setFormSubmitError(null);
+    if (parentId) {
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        next.add(parentId);
+        return next;
+      });
+    }
   };
 
   const startEdit = (cat: Category) => {
@@ -141,7 +149,7 @@ export function CategoriesPage() {
   };
 
   const renderCategoryItem = (node: CategoryTree, level = 0) => {
-    const hasChildren = node.children && node.children.length > 0;
+    const hasChildren = node.children.length > 0;
     const isExpanded = expanded.has(node.id);
     const isEditing = editingId === node.id;
 
@@ -241,9 +249,25 @@ export function CategoriesPage() {
             {node.children.map((child: CategoryTree) => renderCategoryItem(child, level + 1))}
           </div>
         )}
+        {!hasChildren && isExpanded && (
+          <div style={{ paddingLeft: `${(level + 1) * 24 + 12}px` }} className="py-1 text-xs text-white/45">
+            No subcategories yet
+          </div>
+        )}
       </div>
     );
   };
+
+  useEffect(() => {
+    const validIds = collectCategoryTreeIds(tree);
+    setExpanded((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (validIds.has(id)) next.add(id);
+      }
+      return next;
+    });
+  }, [tree]);
 
   if (isLoading) {
     return (
