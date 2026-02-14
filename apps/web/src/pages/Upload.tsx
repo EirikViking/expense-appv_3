@@ -42,6 +42,9 @@ export function UploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [results, setResults] = useState<FileResult[]>([]);
   const [detailsOpen, setDetailsOpen] = useState<Record<string, boolean>>({});
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState({ total: 0, completed: 0 });
 
   const updateResult = (filename: string, update: Partial<FileResult>) => {
     setResults((prev) =>
@@ -315,24 +318,69 @@ export function UploadPage() {
     }
   }, []);
 
+  const queueFiles = useCallback((files: File[]) => {
+    setPendingFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}|${f.size}|${f.lastModified}`));
+      const next = [...prev];
+      for (const file of files) {
+        const key = `${file.name}|${file.size}|${file.lastModified}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          next.push(file);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const startImport = useCallback(async () => {
+    if (pendingFiles.length === 0) return;
+    setImporting(true);
+    setImportProgress({ total: pendingFiles.length, completed: 0 });
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const file = pendingFiles[i];
+      // eslint-disable-next-line no-await-in-loop
+      await processFile(file);
+      setImportProgress({ total: pendingFiles.length, completed: i + 1 });
+    }
+    setPendingFiles([]);
+    setImporting(false);
+  }, [pendingFiles, processFile]);
+
+  const downloadCsvTemplate = () => {
+    const template = [
+      'tx_date,description,amount,currency,booked_date,merchant',
+      '2026-02-14,Example purchase,-123.45,NOK,2026-02-15,Example Merchant',
+    ].join('\n');
+    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'expense_import_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault();
       setIsDragging(false);
 
       const files = Array.from(e.dataTransfer.files);
-      files.forEach(processFile);
+      queueFiles(files);
     },
-    [processFile]
+    [queueFiles]
   );
 
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
-      files.forEach(processFile);
+      queueFiles(files);
       e.target.value = ''; // Reset input
     },
-    [processFile]
+    [queueFiles]
   );
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
@@ -367,7 +415,7 @@ export function UploadPage() {
           <label className="inline-block">
             <input
               type="file"
-              accept=".xlsx,.pdf"
+              accept=".xlsx,.pdf,.csv"
               multiple
               onChange={handleFileInput}
               className="hidden"
@@ -381,6 +429,70 @@ export function UploadPage() {
           </p>
         </div>
       </div>
+
+      {pendingFiles.length > 0 && (
+        <div className="mt-6 rounded-lg border border-white/15 bg-white/5 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-white">Import preview ({pendingFiles.length} files)</p>
+              <p className="text-xs text-white/60">
+                Review files before import. CSV preview/template is available, but CSV parsing is not enabled yet.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={downloadCsvTemplate}
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs text-white hover:bg-white/10"
+              >
+                Download CSV template
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingFiles([])}
+                disabled={importing}
+                className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs text-white hover:bg-white/10 disabled:opacity-50"
+              >
+                Clear queue
+              </button>
+              <button
+                type="button"
+                onClick={startImport}
+                disabled={importing}
+                className="rounded-md bg-blue-600 px-3 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {importing ? 'Importing...' : 'Confirm import'}
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 space-y-2">
+            {pendingFiles.map((file) => (
+              <div key={`${file.name}-${file.lastModified}`} className="flex items-center justify-between rounded border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                <span className="truncate text-white/85">{file.name}</span>
+                <span className="ml-3 shrink-0 text-white/60">
+                  {Math.max(1, Math.round(file.size / 1024))} KB
+                </span>
+              </div>
+            ))}
+          </div>
+          {importing && importProgress.total > 0 && (
+            <div className="mt-3">
+              <div className="mb-1 flex items-center justify-between text-xs text-white/70">
+                <span>Progress</span>
+                <span>
+                  {importProgress.completed}/{importProgress.total}
+                </span>
+              </div>
+              <div className="h-2 rounded bg-white/10">
+                <div
+                  className="h-2 rounded bg-cyan-400"
+                  style={{ width: `${Math.min(100, (importProgress.completed / importProgress.total) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Results */}
       {results.length > 0 && (
