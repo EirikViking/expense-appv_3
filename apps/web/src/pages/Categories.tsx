@@ -14,9 +14,90 @@ import {
   ChevronRight,
   ChevronDown,
   FolderTree,
+  Utensils,
+  Car,
+  ShoppingBag,
+  Repeat,
+  MoreHorizontal,
+  ShoppingCart,
+  Store,
+  Coffee,
+  Fuel,
+  Train,
+  ParkingCircle,
+  Shirt,
+  Laptop,
+  House,
+  Film,
+  Tv,
+  Gamepad2,
+  Ticket,
+  FileText,
+  Zap,
+  Wifi,
+  Shield,
+  Heart,
+  Pill,
+  Dumbbell,
+  Stethoscope,
+  Plane,
+  BedDouble,
+  Wallet,
+  Banknote,
+  RotateCcw,
+  Wine,
+  Landmark,
+  Sparkles,
+  Badge as BadgeIcon,
+  Users,
+  Gift,
+  Scissors,
+  Circle,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
+
+const CATEGORY_ICON_MAP = {
+  utensils: Utensils,
+  car: Car,
+  'shopping-bag': ShoppingBag,
+  repeat: Repeat,
+  'more-horizontal': MoreHorizontal,
+  'shopping-cart': ShoppingCart,
+  store: Store,
+  coffee: Coffee,
+  fuel: Fuel,
+  train: Train,
+  parking: ParkingCircle,
+  shirt: Shirt,
+  laptop: Laptop,
+  home: House,
+  film: Film,
+  tv: Tv,
+  gamepad: Gamepad2,
+  ticket: Ticket,
+  'file-text': FileText,
+  zap: Zap,
+  wifi: Wifi,
+  shield: Shield,
+  heart: Heart,
+  pill: Pill,
+  dumbbell: Dumbbell,
+  stethoscope: Stethoscope,
+  plane: Plane,
+  bed: BedDouble,
+  'plane-takeoff': Plane,
+  wallet: Wallet,
+  banknote: Banknote,
+  'rotate-ccw': RotateCcw,
+  wine: Wine,
+  bank: Landmark,
+  sparkles: Sparkles,
+  badge: BadgeIcon,
+  users: Users,
+  gift: Gift,
+  scissors: Scissors,
+} as const;
 
 export function CategoriesPage() {
   const { t, i18n } = useTranslation();
@@ -156,6 +237,8 @@ export function CategoriesPage() {
     const hasChildren = node.children.length > 0;
     const isExpanded = expanded.has(node.id);
     const isEditing = editingId === node.id;
+    const iconKey = (node.icon || '').toLowerCase();
+    const IconComponent = CATEGORY_ICON_MAP[iconKey as keyof typeof CATEGORY_ICON_MAP] || Circle;
 
     return (
       <div key={node.id}>
@@ -183,7 +266,7 @@ export function CategoriesPage() {
             className="h-6 w-6 rounded flex items-center justify-center text-white text-xs"
             style={{ backgroundColor: node.color || '#6b7280' }}
           >
-            {node.icon || localizeCategoryName(node.name, currentLanguage).charAt(0)}
+            <IconComponent className="h-3.5 w-3.5" aria-hidden="true" />
           </div>
 
           {isEditing ? (
