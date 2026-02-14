@@ -332,7 +332,7 @@ export function SettingsPage() {
                         {t('settingsUsers.active')}
                       </label>
                     </div>
-                    <div className="flex items-end gap-2 md:justify-end">
+                    <div className="flex flex-wrap items-end gap-2 md:col-span-7 md:justify-end">
                       <Button size="sm" variant="outline" onClick={() => void createResetLink(u.id)}>
                         {t('settingsUsers.resetLink')}
                       </Button>

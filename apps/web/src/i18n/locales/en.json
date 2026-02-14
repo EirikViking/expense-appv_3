@@ -27,7 +27,7 @@
     "booked": "Booked",
     "pending": "Pending",
     "creditCardXlsx": "Credit Card (XLSX)",
-    "bankStatementPdf": "Bank Statement (PDF)",
+    "bankStatementPdf": "Bank statement",
     "excludeTransfers": "Exclude transfers",
     "thisMonth": "This month",
     "lastMonth": "Last month",
@@ -214,10 +214,12 @@
   "onboarding": {
     "title": "Welcome",
     "titleWithName": "Welcome, {{name}}.",
-    "description": "Quick start:",
-    "stepUpload": "1. Go to Upload, and import XLSX or PDF.",
+    "description": "Here is how the app helps you:",
+    "purpose": "Expense Analytics gives you one place to understand spending, clean up transactions, and build better habits over time.",
+    "stepUpload": "1. Go to Upload and import your XLSX file.",
     "stepReview": "2. Review imported transactions and fix any issues.",
     "stepCategorize": "3. Use Categories and Rules to improve insights.",
+    "tip": "Tip: The more accurately transactions are categorized, the more useful Dashboard and Insights become.",
     "goToUpload": "Go to Upload",
     "close": "Close"
   },
@@ -226,7 +228,7 @@
     "dragDrop": "Drag and drop files here",
     "or": "or",
     "browse": "Browse Files",
-    "supportedFormats": "Supported formats: .xlsx (credit card exports), .pdf (bank statements)",
+    "supportedFormats": "Supported format: .xlsx",
     "results": "Upload Results",
     "processing": "Processing...",
     "duplicate": "File already uploaded (duplicate)",
@@ -264,7 +266,8 @@
         "groceries_income_leak": "Groceries contains income rows (should be expenses)"
       }
     },
-    "pdfNoTransactionsHelp": "If this PDF clearly contains transactions, it may be the Storebrand \"Detaljer\" layout. Try again after updating the backend parser.",
+    "unsupportedFileType": "Unsupported file type. Please upload .xlsx files.",
+    "pdfNoTransactionsHelp": "No transactions were found in the uploaded file.",
     "showErrorDetails": "Show error details"
   },
   "categoriesPage": {

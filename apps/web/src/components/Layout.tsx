@@ -211,10 +211,14 @@ export function Layout({ children }: LayoutProps) {
             <DialogTitle>{userName ? t('onboarding.titleWithName', { name: userName }) : t('onboarding.title')}</DialogTitle>
             <DialogDescription>{t('onboarding.description')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 text-sm text-white/80">
-            <p>{t('onboarding.stepUpload')}</p>
-            <p>{t('onboarding.stepReview')}</p>
-            <p>{t('onboarding.stepCategorize')}</p>
+          <div className="space-y-3 text-sm text-white/80">
+            <p className="text-white/90">{t('onboarding.purpose')}</p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>{t('onboarding.stepUpload')}</li>
+              <li>{t('onboarding.stepReview')}</li>
+              <li>{t('onboarding.stepCategorize')}</li>
+            </ul>
+            <p className="text-xs text-white/65">{t('onboarding.tip')}</p>
           </div>
           <DialogFooter>
             <Button
