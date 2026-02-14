@@ -1,5 +1,34 @@
 # QA Report: Personal Expense Analytics Application
 
+## QA Fixes Applied (2026-02-14)
+
+### Done
+- [x] Date filters in `Insights` and `Transactions` now support manual input + picker and validate invalid/range input.
+- [x] Category tree expansion stabilized with tree normalization and expansion-state guards.
+- [x] Destructive actions now have stronger confirmations (Settings delete-all typed confirm, Rules apply confirm + preview count, named confirms on delete).
+- [x] Rules testing now returns visible match output with predicted outcome.
+- [x] UI localization consistency improved for Norwegian mode (labels, statuses, placeholders, category display mapping without data migration).
+- [x] Transactions filters now persist in URL and restore on navigation/back-forward.
+- [x] Insights leaderboard and Daily drama now include clearer drilldowns to transactions.
+- [x] Upload flow now has pre-import preview queue, progress indicator, and safer explicit confirm import.
+- [x] Accessibility improvements: keyboard opening for transaction rows and ARIA labels on icon/navigation actions.
+- [x] Rules list performance improved with pagination and explicit "showing X of Y".
+- [x] Budgets feature behavior made consistent: hidden by default until production-ready; settings no longer suggests enabling broken flow.
+- [x] Added category `Gaver og veldedighet` via migration with matching seed rules and backfill from `cat_other`/uncategorized rows.
+
+### Remaining TODO
+- [ ] CSV import backend parser is still not enabled. Frontend now provides preview queue + CSV template, but actual CSV ingestion remains TODO in backend ingest routes.
+
+### Rollback
+- Revert individual commits:
+  - `git revert <commit_sha>`
+  - `git push`
+- Revert all QA fixes (branch merge scenario):
+  - `git revert <merge_commit_sha>`
+  - `git push`
+- Worker rollback:
+  - Revert migration commit(s), redeploy worker, and re-run migrations according to deployment policy.
+
 **Date:** 2026-02-09  
 **Reviewer:** AI Code Review  
 **Repository:** expense-appv_3  
