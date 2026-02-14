@@ -18,6 +18,7 @@ import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, is
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
+import { ensureAdmin, getScopeUserId } from '../lib/request-scope';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -30,7 +31,8 @@ type DbTransactionRow = Omit<Transaction, 'is_excluded' | 'is_transfer'> & {
 // Helper to enrich transactions with metadata
 async function enrichTransactions(
   db: D1Database,
-  txs: DbTransactionRow[]
+  txs: DbTransactionRow[],
+  scopeUserId?: string | null
 ): Promise<TransactionWithMeta[]> {
   if (txs.length === 0) return [];
 
@@ -123,8 +125,12 @@ async function enrichTransactions(
   if (fileHashes.length > 0) {
     for (const hashes of chunk(fileHashes, CHUNK_SIZE)) {
       const filePlaceholders = hashes.map(() => '?').join(',');
-      const filesQuery = `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
-      const filesResult = await db.prepare(filesQuery).bind(...hashes).all<{ file_hash: string; original_filename: string }>();
+      const filesQuery = scopeUserId
+        ? `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders}) AND user_id = ?`
+        : `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
+      const filesResult = scopeUserId
+        ? await db.prepare(filesQuery).bind(...hashes, scopeUserId).all<{ file_hash: string; original_filename: string }>()
+        : await db.prepare(filesQuery).bind(...hashes).all<{ file_hash: string; original_filename: string }>();
       for (const f of filesResult.results || []) {
         filesMap.set(f.file_hash, f.original_filename);
       }
@@ -154,8 +160,16 @@ async function enrichTransactions(
   });
 }
 
+transactions.use('/admin/*', async (c, next) => {
+  if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
+  await next();
+});
+
 transactions.get('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = transactionsQuerySchema.safeParse(query);
 
@@ -187,6 +201,8 @@ transactions.get('/', async (c) => {
     // Build query dynamically
     const conditions: string[] = [];
     const params: (string | number)[] = [];
+    conditions.push('t.user_id = ?');
+    params.push(scopeUserId);
 
     if (date_from) {
       conditions.push('t.tx_date >= ?');
@@ -380,7 +396,7 @@ transactions.get('/', async (c) => {
       .all<DbTransactionRow>();
 
     // Enrich with metadata
-    const enrichedTransactions = await enrichTransactions(c.env.DB, results.results || []);
+    const enrichedTransactions = await enrichTransactions(c.env.DB, results.results || [], scopeUserId);
 
     const response: TransactionsResponse = {
       transactions: enrichedTransactions,
@@ -404,17 +420,20 @@ transactions.get('/', async (c) => {
 // Get single transaction with full details
 transactions.get('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'SELECT * FROM transactions WHERE id = ?'
-    ).bind(id).first<DbTransactionRow>();
+      'SELECT * FROM transactions WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).first<DbTransactionRow>();
 
     if (!result) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
 
-    const enriched = await enrichTransactions(c.env.DB, [result]);
+    const enriched = await enrichTransactions(c.env.DB, [result], scopeUserId);
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction get error:', error);
@@ -425,6 +444,9 @@ transactions.get('/:id', async (c) => {
 // Patch transaction core fields (transfer/excluded flags, merchant override, and optional category_id)
 transactions.patch('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const body = await c.req.json();
     const parsed = updateTransactionSchema.safeParse(body);
@@ -434,7 +456,7 @@ transactions.patch('/:id', async (c) => {
     }
 
     // Ensure transaction exists
-    const existing = await c.env.DB.prepare('SELECT 1 FROM transactions WHERE id = ?').bind(id).first();
+    const existing = await c.env.DB.prepare('SELECT 1 FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first();
     if (!existing) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
@@ -469,8 +491,8 @@ transactions.patch('/:id', async (c) => {
         // Recompute flow_type from amount sign for non-transfer rows.
         // This makes "was incorrectly marked transfer" immediately show up in Expenses/Travel etc.
         const amtRow = await c.env.DB
-          .prepare('SELECT amount FROM transactions WHERE id = ?')
-          .bind(id)
+          .prepare('SELECT amount FROM transactions WHERE id = ? AND user_id = ?')
+          .bind(id, scopeUserId)
           .first<{ amount: number }>();
         const amount = Number(amtRow?.amount ?? 0);
         const inferred = amount < 0 ? 'expense' : amount > 0 ? 'income' : 'unknown';
@@ -489,7 +511,7 @@ transactions.patch('/:id', async (c) => {
 
     if (updates.length > 0) {
       params.push(id);
-      await c.env.DB.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run();
+      await c.env.DB.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).bind(...params, scopeUserId).run();
     }
 
     // Optional category update via transaction_meta (keeps existing meta endpoint working)
@@ -512,9 +534,9 @@ transactions.patch('/:id', async (c) => {
       }
     }
 
-    const updated = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
+    const updated = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first<DbTransactionRow>();
     if (!updated) return c.json({ error: 'Transaction not found' }, 404);
-    const enriched = await enrichTransactions(c.env.DB, [updated]);
+    const enriched = await enrichTransactions(c.env.DB, [updated], scopeUserId);
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction patch error:', error);
@@ -525,6 +547,9 @@ transactions.patch('/:id', async (c) => {
 // Create manual transaction
 transactions.post('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = createTransactionSchema.safeParse(body);
 
@@ -556,34 +581,35 @@ transactions.post('/', async (c) => {
 
     const id = generateId();
     const now = new Date().toISOString();
-    const txHash = await computeTxHash(date, description, amount, 'manual');
-    const sourceFileHash = await computeTxHash(date, `${description}-manual`, amount, 'manual');
+    const txHash = `${scopeUserId}:${await computeTxHash(date, description, amount, 'manual')}`;
+    const sourceFileHash = `${scopeUserId}:${await computeTxHash(date, `${description}-manual`, amount, 'manual')}`;
 
     const duplicate = await c.env.DB
-      .prepare('SELECT 1 FROM transactions WHERE tx_hash = ?')
-      .bind(txHash)
+      .prepare('SELECT 1 FROM transactions WHERE tx_hash = ? AND user_id = ?')
+      .bind(txHash, scopeUserId)
       .first();
     if (duplicate) {
       return c.json({ error: 'Duplicate transaction', code: 'duplicate_transaction' }, 409);
     }
 
     await c.env.DB.prepare(`
-      INSERT OR IGNORE INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json)
-      VALUES (?, ?, 'manual', ?, ?, ?)
+      INSERT OR IGNORE INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json, user_id)
+      VALUES (?, ?, 'manual', ?, ?, ?, ?)
     `).bind(
       generateId(),
       sourceFileHash,
       'Manual entry',
       now,
-      JSON.stringify({ source: 'manual', created_at: now })
+      JSON.stringify({ source: 'manual', created_at: now }),
+      scopeUserId
     ).run();
 
     // Insert transaction
     const flowType: 'expense' | 'income' = amount < 0 ? 'expense' : 'income';
     await c.env.DB.prepare(`
       INSERT INTO transactions
-        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0)
+        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0, ?)
     `).bind(
       id,
       txHash,
@@ -595,7 +621,8 @@ transactions.post('/', async (c) => {
       sourceFileHash,
       JSON.stringify({ source: 'manual', notes: notes || null }),
       now,
-      flowType
+      flowType,
+      scopeUserId
     ).run();
 
     // Insert meta
@@ -605,7 +632,7 @@ transactions.post('/', async (c) => {
         VALUES (?, ?, ?, ?, 0, ?)
       `).bind(id, category_id || null, merchant_id || null, notes || null, now).run();
     } else {
-      const rules = await getEnabledRules(c.env.DB);
+      const rules = await getEnabledRules(c.env.DB, scopeUserId);
       if (rules.length > 0) {
         await applyRulesToTransaction(c.env.DB, {
           id,
@@ -629,12 +656,12 @@ transactions.post('/', async (c) => {
     }
 
     // Return the enriched transaction
-    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
+    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first<DbTransactionRow>();
     if (!newTx) {
       return c.json({ error: 'Failed to create transaction' }, 500);
     }
 
-    const enriched = await enrichTransactions(c.env.DB, [newTx]);
+    const enriched = await enrichTransactions(c.env.DB, [newTx], scopeUserId);
     return c.json(enriched[0], 201);
   } catch (error) {
     console.error('Create transaction error:', error);
@@ -645,10 +672,13 @@ transactions.post('/', async (c) => {
 // Delete specific transaction
 transactions.delete('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     // Check if exists
-    const exists = await c.env.DB.prepare('SELECT id FROM transactions WHERE id = ?').bind(id).first();
+    const exists = await c.env.DB.prepare('SELECT id FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first();
     if (!exists) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
@@ -657,7 +687,7 @@ transactions.delete('/:id', async (c) => {
     await c.env.DB.batch([
       c.env.DB.prepare('DELETE FROM transaction_meta WHERE transaction_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM transaction_tags WHERE transaction_id = ?').bind(id),
-      c.env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(id)
+      c.env.DB.prepare('DELETE FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId)
     ]);
 
     return c.json({ success: true });
@@ -670,11 +700,14 @@ transactions.delete('/:id', async (c) => {
 // Exclude a single transaction from analytics
 transactions.post('/:id/exclude', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'UPDATE transactions SET is_excluded = 1 WHERE id = ?'
-    ).bind(id).run();
+      'UPDATE transactions SET is_excluded = 1 WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).run();
 
     if (result.meta.changes === 0) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -690,11 +723,14 @@ transactions.post('/:id/exclude', async (c) => {
 // Include a transaction back into analytics
 transactions.post('/:id/include', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'UPDATE transactions SET is_excluded = 0 WHERE id = ?'
-    ).bind(id).run();
+      'UPDATE transactions SET is_excluded = 0 WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).run();
 
     if (result.meta.changes === 0) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -710,6 +746,9 @@ transactions.post('/:id/include', async (c) => {
 // Bulk exclude transactions by criteria
 transactions.post('/bulk/exclude', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json() as {
       transaction_ids?: string[];
       amount_threshold?: number; // Exclude transactions >= this absolute amount
@@ -724,20 +763,20 @@ transactions.post('/bulk/exclude', async (c) => {
       // Exclude specific transactions
       const placeholders = transaction_ids.map(() => '?').join(',');
       const result = await c.env.DB.prepare(
-        `UPDATE transactions SET is_excluded = 1 WHERE id IN (${placeholders})`
-      ).bind(...transaction_ids).run();
+        `UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND id IN (${placeholders})`
+      ).bind(scopeUserId, ...transaction_ids).run();
       updated = result.meta.changes || 0;
     } else if (amount_threshold !== undefined) {
       // Exclude by amount threshold (absolute value)
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 1 WHERE ABS(amount) >= ?'
-      ).bind(amount_threshold).run();
+        'UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND ABS(amount) >= ?'
+      ).bind(scopeUserId, amount_threshold).run();
       updated = result.meta.changes || 0;
     } else if (merchant_name) {
       // Exclude by merchant name (matches description)
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 1 WHERE description LIKE ?'
-      ).bind(`%${merchant_name}%`).run();
+        'UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND description LIKE ?'
+      ).bind(scopeUserId, `%${merchant_name}%`).run();
       updated = result.meta.changes || 0;
     } else {
       return c.json({ error: 'No criteria provided. Use transaction_ids, amount_threshold, or merchant_name.' }, 400);
@@ -753,6 +792,9 @@ transactions.post('/bulk/exclude', async (c) => {
 // Bulk include (un-exclude) transactions
 transactions.post('/bulk/include', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json() as {
       transaction_ids?: string[];
       all?: boolean; // Include all excluded transactions back
@@ -765,15 +807,15 @@ transactions.post('/bulk/include', async (c) => {
     if (all === true) {
       // Un-exclude all transactions
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 0 WHERE is_excluded = 1'
-      ).run();
+        'UPDATE transactions SET is_excluded = 0 WHERE user_id = ? AND is_excluded = 1'
+      ).bind(scopeUserId).run();
       updated = result.meta.changes || 0;
     } else if (transaction_ids && transaction_ids.length > 0) {
       // Include specific transactions
       const placeholders = transaction_ids.map(() => '?').join(',');
       const result = await c.env.DB.prepare(
-        `UPDATE transactions SET is_excluded = 0 WHERE id IN (${placeholders})`
-      ).bind(...transaction_ids).run();
+        `UPDATE transactions SET is_excluded = 0 WHERE user_id = ? AND id IN (${placeholders})`
+      ).bind(scopeUserId, ...transaction_ids).run();
       updated = result.meta.changes || 0;
     } else {
       return c.json({ error: 'No criteria provided. Use transaction_ids or all=true.' }, 400);

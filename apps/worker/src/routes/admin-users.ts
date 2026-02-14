@@ -4,28 +4,18 @@ import {
   generateId,
   updateUserRequestSchema,
   type AdminUsersResponse,
-  type AppUser,
   type CreateUserResponse,
   type ResetLinkResponse,
 } from '@expense/shared';
 import type { Env } from '../types';
-import { issuePasswordToken, sanitizeUser, type SessionUser } from '../lib/auth';
+import { issuePasswordToken, sanitizeUser } from '../lib/auth';
+import { ensureAdmin, getSessionId } from '../lib/request-scope';
 
 const adminUsers = new Hono<{ Bindings: Env }>();
 
-function getAuthUser(c: any): SessionUser | null {
-  return (c.get('authUser') as SessionUser | undefined) ?? null;
-}
-
-function ensureAdmin(c: any): SessionUser | null {
-  const user = getAuthUser(c);
-  if (!user || user.role !== 'admin') return null;
-  return user;
-}
-
 adminUsers.get('/users', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const result = await c.env.DB
       .prepare(
@@ -46,7 +36,7 @@ adminUsers.get('/users', async (c) => {
 
 adminUsers.post('/users', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const body = await c.req.json();
     const parsed = createUserRequestSchema.safeParse(body);
@@ -97,7 +87,7 @@ adminUsers.post('/users', async (c) => {
 
 adminUsers.patch('/users/:id', async (c) => {
   try {
-    const authUser = ensureAdmin(c);
+    const authUser = ensureAdmin(c as any);
     if (!authUser) return c.json({ error: 'Forbidden' }, 403);
 
     const id = c.req.param('id');
@@ -169,7 +159,7 @@ adminUsers.patch('/users/:id', async (c) => {
 
 adminUsers.post('/users/:id/reset-link', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const id = c.req.param('id');
     const existing = await c.env.DB
@@ -183,6 +173,83 @@ adminUsers.post('/users/:id/reset-link', async (c) => {
     return c.json(response);
   } catch (error) {
     console.error('Create reset link error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+adminUsers.post('/users/:id/impersonate', async (c) => {
+  try {
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
+
+    const sessionId = getSessionId(c as any);
+    if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
+
+    const id = c.req.param('id');
+    const existing = await c.env.DB
+      .prepare('SELECT id FROM users WHERE id = ?')
+      .bind(id)
+      .first<{ id: string }>();
+    if (!existing) return c.json({ error: 'User not found' }, 404);
+
+    await c.env.DB
+      .prepare('UPDATE sessions SET impersonated_user_id = ? WHERE id = ?')
+      .bind(id, sessionId)
+      .run();
+
+    return c.json({ success: true, impersonated_user_id: id });
+  } catch (error) {
+    console.error('Impersonate user error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+adminUsers.post('/impersonation/clear', async (c) => {
+  try {
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
+
+    const sessionId = getSessionId(c as any);
+    if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
+
+    await c.env.DB
+      .prepare('UPDATE sessions SET impersonated_user_id = NULL WHERE id = ?')
+      .bind(sessionId)
+      .run();
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Clear impersonation error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+adminUsers.delete('/users/:id', async (c) => {
+  try {
+    const admin = ensureAdmin(c as any);
+    if (!admin) return c.json({ error: 'Forbidden' }, 403);
+
+    const id = c.req.param('id');
+    if (id === admin.id) {
+      return c.json({ error: 'Cannot delete your own admin account' }, 400);
+    }
+
+    const existing = await c.env.DB
+      .prepare('SELECT id FROM users WHERE id = ?')
+      .bind(id)
+      .first<{ id: string }>();
+    if (!existing) return c.json({ error: 'User not found' }, 404);
+
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM ingested_files WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM password_tokens WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('UPDATE sessions SET impersonated_user_id = NULL WHERE impersonated_user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id),
+    ]);
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Delete user error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

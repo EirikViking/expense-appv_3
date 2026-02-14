@@ -7,6 +7,8 @@ interface AuthContextType {
   isLoading: boolean;
   bootstrapRequired: boolean;
   user: AppUser | null;
+  actorUser: AppUser | null;
+  isImpersonating: boolean;
   needsOnboarding: boolean;
   login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   logout: () => Promise<void>;
@@ -21,6 +23,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
+  const [actorUser, setActorUser] = useState<AppUser | null>(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
   const checkAuth = useCallback(async () => {
@@ -30,26 +34,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBootstrapRequired(true);
         setIsAuthenticated(false);
         setUser(null);
+        setActorUser(null);
+        setIsImpersonating(false);
         setNeedsOnboarding(false);
         return;
       }
 
       if (me.authenticated && me.user) {
+        const effectiveUser = me.effective_user || me.user;
+        const actualActor = me.actor_user || me.user;
         setBootstrapRequired(false);
         setIsAuthenticated(true);
-        setUser(me.user);
+        setUser(effectiveUser);
+        setActorUser(actualActor);
+        setIsImpersonating(Boolean(me.impersonating));
         setNeedsOnboarding(Boolean(me.needs_onboarding));
         return;
       }
 
       setIsAuthenticated(false);
       setUser(null);
+      setActorUser(null);
+      setIsImpersonating(false);
       setNeedsOnboarding(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setIsAuthenticated(false);
         setBootstrapRequired(false);
         setUser(null);
+        setActorUser(null);
+        setIsImpersonating(false);
         setNeedsOnboarding(false);
       } else {
         throw err;
@@ -71,6 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBootstrapRequired(true);
       setIsAuthenticated(false);
       setUser(null);
+      setActorUser(null);
+      setIsImpersonating(false);
       setNeedsOnboarding(false);
       throw new ApiError('Bootstrap required', 400, me);
     }
@@ -79,13 +95,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBootstrapRequired(false);
       setIsAuthenticated(false);
       setUser(null);
+      setActorUser(null);
+      setIsImpersonating(false);
       setNeedsOnboarding(false);
       throw new ApiError('Login session was not established. Please try again.', 401, me);
     }
 
+    const effectiveUser = me.effective_user || me.user;
+    const actualActor = me.actor_user || me.user;
     setBootstrapRequired(false);
     setIsAuthenticated(true);
-    setUser(me.user);
+    setUser(effectiveUser);
+    setActorUser(actualActor);
+    setIsImpersonating(Boolean(me.impersonating));
     setNeedsOnboarding(Boolean(me.needs_onboarding));
   }, []);
 
@@ -95,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsAuthenticated(false);
       setUser(null);
+      setActorUser(null);
+      setIsImpersonating(false);
       setNeedsOnboarding(false);
       setBootstrapRequired(false);
     }
@@ -113,6 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         bootstrapRequired,
         user,
+        actorUser,
+        isImpersonating,
         needsOnboarding,
         login,
         logout,

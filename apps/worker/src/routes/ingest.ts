@@ -14,6 +14,7 @@ import { detectIsTransfer } from '../lib/transfer-detect';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import type { Env } from '../types';
+import { getScopeUserId } from '../lib/request-scope';
 
 const ingest = new Hono<{ Bindings: Env }>();
 
@@ -47,10 +48,10 @@ async function storeFileInR2(
 }
 
 // Check if file already exists
-async function checkFileDuplicate(db: D1Database, fileHash: string): Promise<boolean> {
+async function checkFileDuplicate(db: D1Database, fileHash: string, userId: string): Promise<boolean> {
   const result = await db
-    .prepare('SELECT 1 FROM ingested_files WHERE file_hash = ?')
-    .bind(fileHash)
+    .prepare('SELECT 1 FROM ingested_files WHERE file_hash = ? AND user_id = ?')
+    .bind(fileHash, userId)
     .first();
   return result !== null;
 }
@@ -58,6 +59,7 @@ async function checkFileDuplicate(db: D1Database, fileHash: string): Promise<boo
 // Insert file record
 async function insertFileRecord(
   db: D1Database,
+  userId: string,
   fileHash: string,
   sourceType: string,
   filename: string,
@@ -68,17 +70,17 @@ async function insertFileRecord(
 
   await db
     .prepare(
-      'INSERT INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
-    .bind(id, fileHash, sourceType, filename, now, metadata ? JSON.stringify(metadata) : null)
+    .bind(id, fileHash, sourceType, filename, now, metadata ? JSON.stringify(metadata) : null, userId)
     .run();
 }
 
 // Check if transaction exists
-async function checkTxDuplicate(db: D1Database, txHash: string): Promise<boolean> {
+async function checkTxDuplicate(db: D1Database, txHash: string, userId: string): Promise<boolean> {
   const result = await db
-    .prepare('SELECT 1 FROM transactions WHERE tx_hash = ?')
-    .bind(txHash)
+    .prepare('SELECT 1 FROM transactions WHERE tx_hash = ? AND user_id = ?')
+    .bind(txHash, userId)
     .first();
   return result !== null;
 }
@@ -107,16 +109,17 @@ function summarizeSkippedLines(skippedLines?: SkippedLine[]): IngestResponse['sk
 
 async function applyRulesForFile(
   db: D1Database,
+  userId: string,
   fileHash: string
 ): Promise<{ processed: number; updated: number; errors: number }> {
-  const enabledRules = await getEnabledRules(db);
+  const enabledRules = await getEnabledRules(db, userId);
   if (enabledRules.length === 0) {
     return { processed: 0, updated: 0, errors: 0 };
   }
 
   const txResult = await db
-    .prepare('SELECT * FROM transactions WHERE source_file_hash = ?')
-    .bind(fileHash)
+    .prepare('SELECT * FROM transactions WHERE source_file_hash = ? AND user_id = ?')
+    .bind(fileHash, userId)
     .all<Transaction>();
 
   const transactions = txResult.results || [];
@@ -129,6 +132,7 @@ async function applyRulesForFile(
 
 async function getCategorizationCountsForFile(
   db: D1Database,
+  userId: string,
   fileHash: string
 ): Promise<{ total: number; categorized: number; uncategorized: number }> {
   const row = await db
@@ -143,10 +147,10 @@ async function getCategorizationCountsForFile(
           END) as categorized
         FROM transactions t
         LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
-        WHERE t.source_file_hash = ?
+        WHERE t.source_file_hash = ? AND t.user_id = ?
       `
     )
-    .bind(fileHash)
+    .bind(fileHash, userId)
     .first<{ total: number; categorized: number }>();
 
   const total = Number(row?.total || 0);
@@ -156,6 +160,7 @@ async function getCategorizationCountsForFile(
 
 async function fillDefaultExpenseCategoriesForFile(
   db: D1Database,
+  userId: string,
   fileHash: string,
   defaultCategoryId: string
 ): Promise<{ meta_inserts: number; meta_updates: number; split_updates: number }> {
@@ -172,6 +177,7 @@ async function fillDefaultExpenseCategoriesForFile(
             SELECT t.id
             FROM transactions t
             WHERE t.source_file_hash = ?
+              AND t.user_id = ?
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
@@ -179,7 +185,7 @@ async function fillDefaultExpenseCategoriesForFile(
           )
       `
     )
-    .bind(defaultCategoryId, fileHash)
+    .bind(defaultCategoryId, fileHash, userId)
     .run();
 
   // 2) Insert transaction_meta for uncategorized expense rows (no splits).
@@ -191,6 +197,7 @@ async function fillDefaultExpenseCategoriesForFile(
         FROM transactions t
         LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
         WHERE t.source_file_hash = ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
@@ -201,7 +208,7 @@ async function fillDefaultExpenseCategoriesForFile(
           )
       `
     )
-    .bind(defaultCategoryId, now, fileHash)
+    .bind(defaultCategoryId, now, fileHash, userId)
     .run();
 
   // 3) Update existing meta rows that are still uncategorized (no splits).
@@ -215,6 +222,7 @@ async function fillDefaultExpenseCategoriesForFile(
           FROM transactions t
           LEFT JOIN transaction_meta tm2 ON tm2.transaction_id = t.id
           WHERE t.source_file_hash = ?
+            AND t.user_id = ?
             AND COALESCE(t.is_excluded, 0) = 0
             AND COALESCE(t.is_transfer, 0) = 0
             AND t.flow_type != 'transfer'
@@ -226,7 +234,7 @@ async function fillDefaultExpenseCategoriesForFile(
         )
       `
     )
-    .bind(defaultCategoryId, now, fileHash)
+    .bind(defaultCategoryId, now, fileHash, userId)
     .run();
 
   return {
@@ -238,6 +246,7 @@ async function fillDefaultExpenseCategoriesForFile(
 
 async function applyCategoryRulesSqlForFile(
   db: D1Database,
+  userId: string,
   fileHash: string,
   defaultCategoryId: string
 ): Promise<{ rules_considered: number; updates: number }> {
@@ -264,6 +273,7 @@ async function applyCategoryRulesSqlForFile(
             SELECT t.id
             FROM transactions t
             WHERE t.source_file_hash = ?
+              AND t.user_id = ?
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
@@ -271,7 +281,7 @@ async function applyCategoryRulesSqlForFile(
           )
       `
     )
-    .bind(defaultCategoryId, fileHash)
+    .bind(defaultCategoryId, fileHash, userId)
     .run();
 
   // 2) Insert missing meta rows for eligible non-split active rows (default category).
@@ -283,6 +293,7 @@ async function applyCategoryRulesSqlForFile(
         FROM transactions t
         LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
         WHERE t.source_file_hash = ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
@@ -292,7 +303,7 @@ async function applyCategoryRulesSqlForFile(
           )
       `
     )
-    .bind(defaultCategoryId, now, fileHash)
+    .bind(defaultCategoryId, now, fileHash, userId)
     .run();
 
   // 2b) Ensure existing meta rows are never left NULL/empty (default them).
@@ -306,6 +317,7 @@ async function applyCategoryRulesSqlForFile(
             SELECT t.id
             FROM transactions t
             WHERE t.source_file_hash = ?
+              AND t.user_id = ?
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
@@ -315,7 +327,7 @@ async function applyCategoryRulesSqlForFile(
           )
       `
     )
-    .bind(defaultCategoryId, now, fileHash)
+    .bind(defaultCategoryId, now, fileHash, userId)
     .run();
 
   // 3) Update default/unset categories from rules (best match by priority).
@@ -336,7 +348,9 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(r.match_value, '') != ''
               AND COALESCE(r.action_value, '') != ''
               AND r.action_value != ?
+              AND (r.user_id IS NULL OR r.user_id = ?)
               AND t2.source_file_hash = ?
+              AND t2.user_id = ?
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
               AND t2.flow_type != 'transfer'
@@ -350,6 +364,7 @@ async function applyCategoryRulesSqlForFile(
             SELECT t.id
             FROM transactions t
             WHERE t.source_file_hash = ?
+              AND t.user_id = ?
               AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
@@ -368,7 +383,9 @@ async function applyCategoryRulesSqlForFile(
               AND COALESCE(r.match_value, '') != ''
               AND COALESCE(r.action_value, '') != ''
               AND r.action_value != ?
+              AND (r.user_id IS NULL OR r.user_id = ?)
               AND t2.source_file_hash = ?
+              AND t2.user_id = ?
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
               AND t2.flow_type != 'transfer'
@@ -379,7 +396,7 @@ async function applyCategoryRulesSqlForFile(
       `
     )
     // defaultCategoryId used twice: (1) r.action_value != ? in SET, (2) r.action_value != ? in guard subquery
-    .bind(defaultCategoryId, fileHash, now, defaultCategoryId, fileHash, defaultCategoryId, fileHash)
+    .bind(defaultCategoryId, userId, fileHash, userId, now, defaultCategoryId, fileHash, userId, defaultCategoryId, userId, fileHash, userId)
     .run();
 
   const updates =
@@ -394,6 +411,7 @@ async function applyCategoryRulesSqlForFile(
 // Insert transaction
 async function insertTransaction(
   db: D1Database,
+  userId: string,
   txHash: string,
   txDate: string,
   bookedDate: string | null,
@@ -414,8 +432,8 @@ async function insertTransaction(
   await db
     .prepare(
       `INSERT INTO transactions
-       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -433,7 +451,8 @@ async function insertTransaction(
       now,
       flowType,
       flags?.is_excluded ?? 0,
-      flags?.is_transfer ?? 0
+      flags?.is_transfer ?? 0,
+      userId
     )
     .run();
 
@@ -452,6 +471,7 @@ type XlsxIngestTx = {
 
 async function insertXlsxTransactionsBatch(
   db: D1Database,
+  userId: string,
   fileHash: string,
   filename: string,
   txs: XlsxIngestTx[]
@@ -572,13 +592,13 @@ async function insertXlsxTransactionsBatch(
     const statements: D1PreparedStatement[] = [];
     for (let idx = 0; idx < prepared.length; idx++) {
       const p = prepared[idx]!;
-      const txHash = hashes[idx]!;
+      const txHash = `${userId}:${hashes[idx]!}`;
       statements.push(
         db
           .prepare(
             `INSERT OR IGNORE INTO transactions
-             (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             p.id,
@@ -596,7 +616,8 @@ async function insertXlsxTransactionsBatch(
             now,
             p.flow_type,
             p.flags?.is_excluded ?? 0,
-            p.flags?.is_transfer ?? 0
+            p.flags?.is_transfer ?? 0,
+            userId
           )
       );
     }
@@ -615,6 +636,9 @@ async function insertXlsxTransactionsBatch(
 // XLSX ingestion endpoint
 ingest.post('/xlsx', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
     if (!bodyResult.ok) {
       return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
@@ -628,12 +652,13 @@ ingest.post('/xlsx', async (c) => {
     }
 
     const { file_hash, filename, transactions } = parsed.data;
+    const scopedFileHash = `${scopeUserId}:${file_hash}`;
 
     // Check file-level duplicate
-    const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
+    const isFileDuplicate = await checkFileDuplicate(c.env.DB, scopedFileHash, scopeUserId);
     if (!isFileDuplicate) {
       // Insert file record once (FK target for transactions.source_file_hash).
-      await insertFileRecord(c.env.DB, file_hash, 'xlsx', filename, {
+      await insertFileRecord(c.env.DB, scopeUserId, scopedFileHash, 'xlsx', filename, {
         transaction_count: transactions.length,
       });
     }
@@ -642,7 +667,8 @@ ingest.post('/xlsx', async (c) => {
     // This lets users re-upload the same file to "complete" a partial import if a prior ingest timed out.
     const { inserted, skipped_duplicates, skipped_invalid } = await insertXlsxTransactionsBatch(
       c.env.DB,
-      file_hash,
+      scopeUserId,
+      scopedFileHash,
       filename,
       transactions
     );
@@ -650,8 +676,8 @@ ingest.post('/xlsx', async (c) => {
     let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
     // Apply categorization in SQL (fast, avoids Worker CPU timeouts on large files).
     try {
-      await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
-      categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+      await applyCategoryRulesSqlForFile(c.env.DB, scopeUserId, scopedFileHash, 'cat_other');
+      categorization_counts = await getCategorizationCountsForFile(c.env.DB, scopeUserId, scopedFileHash);
       console.log(
         `[XLSX Ingest] Categorization counts for ${filename}: ` +
           JSON.stringify(categorization_counts)
@@ -663,7 +689,7 @@ ingest.post('/xlsx', async (c) => {
     }
 
     // Store in R2 if available
-    await storeFileInR2(c.env.BUCKET, 'xlsx', file_hash, filename, JSON.stringify(bodyResult.data));
+    await storeFileInR2(c.env.BUCKET, 'xlsx', scopedFileHash, filename, JSON.stringify(bodyResult.data));
 
     const response: IngestResponse = {
       inserted,
@@ -685,6 +711,9 @@ ingest.post('/xlsx', async (c) => {
 // PDF ingestion endpoint
 ingest.post('/pdf', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const bodyResult = await parseJsonBody<Record<string, unknown>>(c);
     if (!bodyResult.ok) {
       return c.json({ error: bodyResult.error, code: 'invalid_json', details: bodyResult.details }, 400);
@@ -698,16 +727,17 @@ ingest.post('/pdf', async (c) => {
     }
 
     const { file_hash, filename, extracted_text } = parsed.data;
+    const scopedFileHash = `${scopeUserId}:${file_hash}`;
 
     // Check file-level duplicate
-    const isFileDuplicate = await checkFileDuplicate(c.env.DB, file_hash);
+    const isFileDuplicate = await checkFileDuplicate(c.env.DB, scopedFileHash, scopeUserId);
     if (isFileDuplicate) {
       // Even when the *file* is a duplicate, we still want to be able to re-run categorization.
       // This is critical when historical ingests happened before rules/normalization fixes.
       let categorization_counts: { total: number; categorized: number; uncategorized: number } | undefined;
       try {
-        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
-        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        await applyCategoryRulesSqlForFile(c.env.DB, scopeUserId, scopedFileHash, 'cat_other');
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, scopeUserId, scopedFileHash);
         console.log(
           `[PDF Ingest] Reprocessed duplicate ${filename}: ` +
             JSON.stringify(categorization_counts)
@@ -756,7 +786,7 @@ ingest.post('/pdf', async (c) => {
     }
 
     // Insert file record
-    await insertFileRecord(c.env.DB, file_hash, 'pdf', filename, {
+    await insertFileRecord(c.env.DB, scopeUserId, scopedFileHash, 'pdf', filename, {
       extracted_text_length: extracted_text.length,
       parsed_count: parsedTxs.length,
       ...stats,
@@ -780,8 +810,8 @@ ingest.post('/pdf', async (c) => {
           source_type: 'pdf',
           source_file: filename,
           source_filename: filename,
-          source_file_hash: file_hash,
-          source_fingerprint: file_hash,
+          source_file_hash: scopedFileHash,
+          source_fingerprint: scopedFileHash,
           raw_line: tx.raw_line,
           ...(tx.raw_block ? { raw_block: tx.raw_block } : {}),
           ...(tx.detaljer ? { detaljer: tx.detaljer } : {}),
@@ -823,10 +853,10 @@ ingest.post('/pdf', async (c) => {
           return rawJson;
         })();
 
-        const txHash = await computeTxHash(tx.tx_date, description, amount, 'pdf');
+        const txHash = `${scopeUserId}:${await computeTxHash(tx.tx_date, description, amount, 'pdf')}`;
 
         // Check transaction-level duplicate
-        const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash);
+        const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash, scopeUserId);
         if (isTxDuplicate) {
           skipped_duplicates++;
           continue;
@@ -835,6 +865,7 @@ ingest.post('/pdf', async (c) => {
         // Insert transaction with correct status from PDF section
         await insertTransaction(
           c.env.DB,
+          scopeUserId,
           txHash,
           tx.tx_date,
           null, // PDF doesn't have separate booked date
@@ -844,7 +875,7 @@ ingest.post('/pdf', async (c) => {
           'NOK',
           tx.status,
           'pdf',
-          file_hash,
+          scopedFileHash,
           enrichedRawJson,
           flowType,
           flags
@@ -860,8 +891,8 @@ ingest.post('/pdf', async (c) => {
     // Same as XLSX: even when all rows are transaction-level duplicates, re-apply rules for the file hash.
     if (inserted > 0 || skipped_duplicates > 0) {
       try {
-        await applyCategoryRulesSqlForFile(c.env.DB, file_hash, 'cat_other');
-        categorization_counts = await getCategorizationCountsForFile(c.env.DB, file_hash);
+        await applyCategoryRulesSqlForFile(c.env.DB, scopeUserId, scopedFileHash, 'cat_other');
+        categorization_counts = await getCategorizationCountsForFile(c.env.DB, scopeUserId, scopedFileHash);
         console.log(
           `[PDF Ingest] Categorization counts for ${filename}: ` +
             JSON.stringify(categorization_counts)
@@ -872,7 +903,7 @@ ingest.post('/pdf', async (c) => {
     }
 
     // Store in R2 if available
-    await storeFileInR2(c.env.BUCKET, 'pdf', file_hash, filename, extracted_text);
+    await storeFileInR2(c.env.BUCKET, 'pdf', scopedFileHash, filename, extracted_text);
 
     const response: IngestResponse = {
       inserted,

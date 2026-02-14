@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 interface TransactionDetailsDialogProps {
     transaction: TransactionWithMeta | null;
@@ -17,7 +18,8 @@ interface TransactionDetailsDialogProps {
 }
 
 export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDeleteSuccess, onUpdateSuccess }: TransactionDetailsDialogProps) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+    const currentLanguage = i18n.resolvedLanguage || i18n.language;
     const [isDeleting, setIsDeleting] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
@@ -140,7 +142,7 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                         <div className="flex items-center gap-2 flex-wrap">
                             {tx.category_name && (
                                 <Badge variant="outline">
-                                    {tx.category_name}
+                                    {localizeCategoryName(tx.category_name, currentLanguage)}
                                 </Badge>
                             )}
                             {tx.is_transfer && (
@@ -219,12 +221,12 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                                     <option value="">{t('common.uncategorized')}</option>
                                     {categoryOptions.map((cat) => (
                                         <option key={cat.id} value={cat.id}>
-                                            {cat.name}
+                                            {localizeCategoryName(cat.name, currentLanguage)}
                                         </option>
                                     ))}
                                 </select>
                             ) : (
-                                <p>{tx.category_name || t('common.uncategorized')}</p>
+                                <p>{tx.category_name ? localizeCategoryName(tx.category_name, currentLanguage) : t('common.uncategorized')}</p>
                             )}
                         </div>
                         <div className="space-y-1">
