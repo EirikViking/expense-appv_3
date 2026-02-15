@@ -70,4 +70,43 @@ describe('parseXlsxFile (header section scan)', () => {
     expect(kiwi?.amount).toBe(-10);
     expect(kiwi?.merchant).toBe('KIWI');
   });
+
+  it('parses DNB rows with Excel serial dates and uses "Ut fra konto" as negative amount', () => {
+    const rows: unknown[][] = [
+      ['Dato', 'Forklaring', 'Rentedato', 'Ut fra konto', 'Inn på konto'],
+      [46041, 'Kortkjøp dagligvarer', 46043, 205.75, ''],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    const arrayBuffer = workbookToArrayBuffer(wb);
+    const result = parseXlsxFile(arrayBuffer);
+
+    expect(result.error).toBeUndefined();
+    expect(result.transactions.length).toBe(1);
+    expect(result.transactions[0].tx_date).toBe('2026-01-19');
+    expect(result.transactions[0].booked_date).toBe('2026-01-21');
+    expect(result.transactions[0].amount).toBe(-205.75);
+    expect(result.transactions[0].amount).not.toBe(46041);
+  });
+
+  it('parses DNB incoming rows with "Inn på konto" as positive amount', () => {
+    const rows: unknown[][] = [
+      ['Dato', 'Forklaring', 'Rentedato', 'Ut fra konto', 'Inn på konto'],
+      [46041, 'Lønn', 46043, '', 7350],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    const arrayBuffer = workbookToArrayBuffer(wb);
+    const result = parseXlsxFile(arrayBuffer);
+
+    expect(result.error).toBeUndefined();
+    expect(result.transactions.length).toBe(1);
+    expect(result.transactions[0].amount).toBe(7350);
+  });
 });

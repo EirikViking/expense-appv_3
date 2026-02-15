@@ -22,11 +22,11 @@ const MAX_HEADER_SCAN_ROWS = 50;
 const DATE_VALUE_PATTERN = /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/;
 
 const SUMMARY_LABEL_PATTERNS: RegExp[] = [
-  /^saldo\s+fra\s+forrige\s+m[aå]ned$/i,
+  /^saldo\s+fra\s+forrige\s+m[a\u00e5]ned$/i,
   /^saldo\s+hendelser$/i,
-  /^totalbel[oø]p$/i,
-  /^utg[aå]ende\s+saldo$/i,
-  /^inng[aå]ende\s+saldo$/i,
+  /^totalbel[o\u00f8]p$/i,
+  /^utg[a\u00e5]ende\s+saldo$/i,
+  /^inng[a\u00e5]ende\s+saldo$/i,
   /^saldo$/i,
 ];
 
@@ -41,15 +41,18 @@ const SECTION_TERMINATOR_PATTERNS: RegExp[] = [
 // EXPANDED to cover Storebrand, DNB, Skandiabanken, Nordea, Sparebank1, etc.
 const COLUMN_VARIATIONS = {
   DATE: [
-    'Dato', 'Transaksjonsdato', 'Bokføringsdato', 'Date', 'Utført dato',
-    'Valuteringsdato', 'Handledato', 'Trans.dato', 'Bokført', 'Rentedato',
-    'Kjøpsdato', 'Posteringsdato', 'Forfall', 'Transaksjon dato',
+    'Dato', 'Transaksjonsdato', 'Bokf\u00f8ringsdato', 'Date', 'Utf\u00f8rt dato',
+    'Valuteringsdato', 'Handledato', 'Trans.dato', 'Bokf\u00f8rt', 'Rentedato',
+    'Kj\u00f8psdato', 'Posteringsdato', 'Forfall', 'Transaksjon dato',
+    // Common mojibake aliases seen in exported headers
+    'BokfÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ringsdato', 'UtfÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸rt dato', 'BokfÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸rt', 'KjÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸psdato',
     // Storebrand specific
-    'Transaksjons dato', 'Betalingsdato', 'Oppgjørsdato',
+    'Transaksjons dato', 'Betalingsdato', 'Oppgj\u00f8rsdato',
   ],
   BOOKED_DATE: [
-    'Bokført', 'Bokført dato', 'Regnskapsdato', 'Rentedato', 'Booked date',
-    'Posteringsdato', 'Oppgjørsdato',
+    'Bokf\u00f8rt', 'Bokf\u00f8rt dato', 'Regnskapsdato', 'Rentedato', 'Booked date',
+    'BokfÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸rt', 'BokfÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸rt dato',
+    'Posteringsdato', 'Oppgj\u00f8rsdato',
   ],
   DESCRIPTION: [
     'Spesifikasjon', 'Beskrivelse', 'Tekst', 'Forklaring', 'Melding',
@@ -60,11 +63,15 @@ const COLUMN_VARIATIONS = {
     'Transaksjonstype', 'Merknad', 'Kommentar', 'Detaljer',
   ],
   AMOUNT: [
-    'Beløp', 'Belop', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn',
-    'Transaksjonsbeløp', 'NOK', 'Utbetalt', 'Innskudd', 'Belastet',
+    'Bel\u00f8p', 'Belop', 'Sum', 'Kroner', 'Amount', 'Inn/Ut', 'Ut', 'Inn',
+    'Transaksjonsbel\u00f8p', 'NOK', 'Utbetalt', 'Innskudd', 'Belastet',
     'Kreditert', 'Debitert', 'Saldo endring', 'Kr', 'Verdi',
+    'BelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p', 'TransaksjonsbelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p',
     // Storebrand specific
-    'Transaksjons beløp', 'Beløp NOK', 'Beløp (NOK)', 'NOK beløp',
+    'Transaksjons bel\u00f8p', 'Bel\u00f8p NOK', 'Bel\u00f8p (NOK)', 'NOK bel\u00f8p',
+    'Transaksjons belÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p', 'BelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p NOK', 'BelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p (NOK)', 'NOK belÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p',
+    // DNB account statement dual-amount layout
+    'Ut fra konto', 'Inn p\u00e5 konto', 'Inn pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ konto',
   ],
   CURRENCY: ['Valuta', 'Currency', 'Valutakode', 'Myntslag'],
   MERCHANT: [
@@ -86,6 +93,16 @@ const ALL_NORMALIZED_HEADERS = new Set(
 );
 
 const STOREBRAND_CURRENCY_CODES = new Set(['NOK', 'SEK', 'EUR', 'USD']);
+const INVALID_XLSX_AMOUNT_COLUMN_ERROR =
+  'Importfeil: Ugyldig bel\u00f8pskolonne i XLSX. Sjekk at filen er en kontoutskrift med kolonnene Ut fra konto/Inn p\u00e5 konto.';
+
+const DNB_HEADER_NORMALIZED = {
+  DATE: new Set(['dato']),
+  DESCRIPTION: new Set(['forklaring']),
+  BOOKED_DATE: new Set(['rentedato']),
+  OUT: new Set(['utfrakonto']),
+  IN: new Set(['innpakonto']),
+};
 
 function normalizeCellText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -222,14 +239,75 @@ function parseNorwegianAmount(value: unknown): number | null {
   return null;
 }
 
+function parseMoney(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (typeof value !== 'string') return null;
+
+  let cleaned = value.trim();
+  if (!cleaned) return null;
+
+  cleaned = cleaned
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s*(kr|nok)\.?$/i, '')
+    .trim();
+
+  if (!cleaned) return null;
+
+  // Preserve negative amounts in parenthesis format, e.g. "(123,45)".
+  let sign = 1;
+  if (/^\(.*\)$/.test(cleaned)) {
+    sign = -1;
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  cleaned = cleaned.replace(/\s/g, '');
+
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+      cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+    } else {
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  } else if (cleaned.includes(',')) {
+    cleaned = cleaned.replace(',', '.');
+  }
+
+  const num = Number.parseFloat(cleaned);
+  if (!Number.isFinite(num)) return null;
+  return num * sign;
+}
+
+function isLikelyExcelDateSerialAmount(value: number): boolean {
+  const rounded = Math.round(value);
+  const isInteger = Math.abs(value - rounded) < 0.000001;
+  return isInteger && value >= 30000 && value <= 60000;
+}
+
+function resolveDnbAmount(outRaw: unknown, inRaw: unknown): number | null {
+  const out = parseMoney(outRaw);
+  if (out !== null) {
+    return -Math.abs(out);
+  }
+
+  const incoming = parseMoney(inRaw);
+  if (incoming !== null) {
+    return Math.abs(incoming);
+  }
+
+  return null;
+}
+
 function parsePreferredAmount(belopRaw: unknown, utlBelopRaw: unknown): number | null {
   const belop = parseNorwegianAmount(belopRaw);
   const utl = parseNorwegianAmount(utlBelopRaw);
 
-  // Prefer Beløp if present and non-zero (most exports put signed amount here).
+  // Prefer BelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p if present and non-zero (most exports put signed amount here).
   if (belop !== null && belop !== 0) return belop;
 
-  // Fall back to Utl. beløp if Beløp is missing/zero but Utl. beløp is non-zero.
+  // Fall back to Utl. belÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p if BelÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p is missing/zero but Utl. belÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p is non-zero.
   if (utl !== null && utl !== 0) return utl;
 
   // Never default to 0 on parse failure or empty cells.
@@ -271,8 +349,8 @@ function deriveMerchantFromSpesifikasjon(description: string): string | undefine
     return vippsMatch[1].toUpperCase();
   }
 
-  // Varekjøp - extract merchant name
-  const varekjopMatch = s.match(/Varekjøp\s+([A-ZÆØÅ0-9]+(?:\s+[A-ZÆØÅ0-9]+)?)/i);
+  // VarekjÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p - extract merchant name
+  const varekjopMatch = s.match(/Varekj[\u00f8o]p\\s+([A-Z\\u00c6\\u00d8\\u00c50-9]+(?:\\s+[A-Z\\u00c6\\u00d8\\u00c50-9]+)?)/i);
   if (varekjopMatch) {
     const merchantName = varekjopMatch[1].toUpperCase();
     // Map common abbreviations
@@ -286,7 +364,7 @@ function deriveMerchantFromSpesifikasjon(description: string): string | undefine
 
   // Strip common prefixes from bank exports.
   cleaned = cleaned
-    .replace(/^(VISA|BANKAXEPT|BANKAXEPT\/VISA|KORTKJØP|KORTKJOP|KJØP|KJOP|VISA\s+VARE)\s+/i, '')
+    .replace(/^(VISA|BANKAXEPT|BANKAXEPT\/VISA|KORTKJ[\u00d8O]P|KJ[\u00d8O]P|VISA\s+VARE)\s+/i, '')
     .trim();
 
   // Strip currency and exchange rate info (e.g., "USD 5,80 Kurs 986,72")
@@ -431,6 +509,11 @@ type SectionColumnIndexMapping = {
   foreignAmountColIdx?: number;
   currencyColIdx?: number;
   merchantColIdx?: number;
+  dnbDateHeader?: string;
+  dnbDescriptionHeader?: string;
+  dnbBookedDateHeader?: string;
+  dnbOutHeader?: string;
+  dnbInHeader?: string;
   section_label?: string;
 };
 
@@ -455,6 +538,14 @@ function findHeaderIndex(headers: string[], headerSet: Set<string>): number | un
   return undefined;
 }
 
+function findHeaderIndexByNormalizedValues(headers: string[], normalizedHeaders: Set<string>): number | undefined {
+  for (let i = 0; i < headers.length; i++) {
+    const normalized = normalizeHeaderValue(headers[i] || '');
+    if (normalized && normalizedHeaders.has(normalized)) return i;
+  }
+  return undefined;
+}
+
 function detectHeaderSectionAtRow(
   sheet: XLSX.WorkSheet,
   range: XLSX.Range,
@@ -468,6 +559,40 @@ function detectHeaderSectionAtRow(
   const dateIdx = findHeaderIndex(headers, HEADER_SETS.DATE);
   const amountIdx = findHeaderIndex(headers, HEADER_SETS.AMOUNT);
   const descIdx = findHeaderIndex(headers, HEADER_SETS.DESCRIPTION);
+
+  const dnbDateIdx = findHeaderIndexByNormalizedValues(headers, DNB_HEADER_NORMALIZED.DATE);
+  const dnbDescIdx = findHeaderIndexByNormalizedValues(headers, DNB_HEADER_NORMALIZED.DESCRIPTION);
+  const dnbBookedIdx = findHeaderIndexByNormalizedValues(headers, DNB_HEADER_NORMALIZED.BOOKED_DATE);
+  const dnbOutIdx = findHeaderIndexByNormalizedValues(headers, DNB_HEADER_NORMALIZED.OUT);
+  const dnbInIdx = findHeaderIndexByNormalizedValues(headers, DNB_HEADER_NORMALIZED.IN);
+
+  if (
+    dnbDateIdx !== undefined &&
+    dnbDescIdx !== undefined &&
+    dnbOutIdx !== undefined &&
+    dnbInIdx !== undefined
+  ) {
+    const analysis = analyzeRowValues(rowValues);
+    const looksLikeDataRow = analysis.dateCount > 0 && analysis.amountCount > 0;
+    if (looksLikeDataRow) return null;
+
+    return {
+      headerRow: row,
+      headers,
+      dateColIdx: dnbDateIdx,
+      bookedDateColIdx: dnbBookedIdx,
+      descColIdx: dnbDescIdx,
+      amountColIdx: dnbOutIdx,
+      foreignAmountColIdx: dnbInIdx,
+      currencyColIdx: undefined,
+      merchantColIdx: undefined,
+      dnbDateHeader: headers[dnbDateIdx],
+      dnbDescriptionHeader: headers[dnbDescIdx],
+      dnbBookedDateHeader: dnbBookedIdx !== undefined ? headers[dnbBookedIdx] : undefined,
+      dnbOutHeader: headers[dnbOutIdx],
+      dnbInHeader: headers[dnbInIdx],
+    };
+  }
 
   // Must have at least Date + Amount to be a usable section.
   if (dateIdx === undefined || amountIdx === undefined) return null;
@@ -483,7 +608,10 @@ function detectHeaderSectionAtRow(
   const merchantIdx = findHeaderIndex(headers, HEADER_SETS.MERCHANT);
 
   // Try to locate "Utl. beløp" style column if present (we treat it as a foreign amount candidate).
-  const foreignIdx = headers.findIndex((h) => /utl/i.test(h) && /bel[oø]p/i.test(h));
+  const foreignIdx = headers.findIndex((h) => {
+    const normalized = normalizeHeaderValue(h);
+    return normalized.includes('utl') && normalized.includes('bel');
+  });
   const foreignAmountColIdx = foreignIdx >= 0 ? foreignIdx : undefined;
 
   return {
@@ -527,7 +655,7 @@ function parseSheetByHeaderSections(
     if (!t) return false;
     // Common credit card/bank export section names.
     // We only use this to annotate context, not to decide what to insert.
-    return /kj(o|ø)p\s*\/\s*uttak/i.test(t)
+    return /kj(o|\u00f8)p\s*\/\s*uttak/i.test(t)
       || /\binnbetaling\b/i.test(t)
       || /\bbankgiro\b/i.test(t)
       || /\bbetaling\b/i.test(t)
@@ -536,7 +664,7 @@ function parseSheetByHeaderSections(
 
   for (let r = range.s.r; r <= range.e.r; r++) {
     // Track section labels that appear as standalone rows above each header block.
-    // (Typical export: "Kjøp/uttak", then a header row, then transactions.)
+    // (Typical export: "KjÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸p/uttak", then a header row, then transactions.)
     const rowValuesForSection = getRowValues(sheet, range, r);
     const rowTextsForSection = rowValuesForSection.map((v) => normalizeCellText(v)).filter(Boolean);
     if (rowTextsForSection.length === 1 && looksLikeSectionLabel(rowTextsForSection[0])) {
@@ -567,6 +695,12 @@ function parseSheetByHeaderSections(
       continue;
     }
 
+    const rawRow: Record<string, unknown> = {};
+    for (let i = 0; i < current.headers.length && i < rowValues.length; i++) {
+      const key = current.headers[i] || `col_${i}`;
+      rawRow[key] = rowValues[i];
+    }
+
     const descRaw = current.descColIdx !== undefined ? rowValues[current.descColIdx] : undefined;
     const descText = normalizeCellText(descRaw);
 
@@ -581,17 +715,33 @@ function parseSheetByHeaderSections(
       continue;
     }
 
-    const txDateRaw = rowValues[current.dateColIdx];
+    const txDateRaw = current.dnbDateHeader ? rawRow[current.dnbDateHeader] : rowValues[current.dateColIdx];
     const txDate = parseNorwegianDate(txDateRaw);
     if (!txDate) {
       debug.rows_skipped_no_date++;
       continue;
     }
 
-    const amountRaw = rowValues[current.amountColIdx];
-    const foreignAmountRaw =
-      current.foreignAmountColIdx !== undefined ? rowValues[current.foreignAmountColIdx] : undefined;
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    let amount: number | null = null;
+    if (current.dnbOutHeader && current.dnbInHeader) {
+      amount = resolveDnbAmount(rawRow[current.dnbOutHeader], rawRow[current.dnbInHeader]);
+    } else {
+      const amountRaw = rowValues[current.amountColIdx];
+      const foreignAmountRaw =
+        current.foreignAmountColIdx !== undefined ? rowValues[current.foreignAmountColIdx] : undefined;
+      amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+
+      // Guard against treating Excel date serial values as money.
+      if (
+        amount !== null &&
+        isLikelyExcelDateSerialAmount(amount) &&
+        parseNorwegianDate(amountRaw) !== null &&
+        current.dnbOutHeader === undefined &&
+        current.dnbInHeader === undefined
+      ) {
+        throw new Error(INVALID_XLSX_AMOUNT_COLUMN_ERROR);
+      }
+    }
     if (amount === null) {
       debug.rows_skipped_no_amount++;
       continue;
@@ -601,8 +751,9 @@ function parseSheetByHeaderSections(
       continue;
     }
 
-    const bookedRaw =
-      current.bookedDateColIdx !== undefined ? rowValues[current.bookedDateColIdx] : undefined;
+    const bookedRaw = current.dnbBookedDateHeader
+      ? rawRow[current.dnbBookedDateHeader]
+      : (current.bookedDateColIdx !== undefined ? rowValues[current.bookedDateColIdx] : undefined);
     const bookedDate = parseNorwegianDate(bookedRaw) || undefined;
 
     const currencyRaw =
@@ -621,19 +772,15 @@ function parseSheetByHeaderSections(
       }
     }
 
-    const description = descText;
+    const description = current.dnbDescriptionHeader
+      ? normalizeCellText(rawRow[current.dnbDescriptionHeader])
+      : descText;
     if (!description) {
       debug.rows_skipped_no_description++;
       continue;
     }
 
     const merchant = merchantFromCol || deriveMerchantFromSpesifikasjon(description);
-
-    const rawRow: Record<string, unknown> = {};
-    for (let i = 0; i < current.headers.length && i < rowValues.length; i++) {
-      const key = current.headers[i] || `col_${i}`;
-      rawRow[key] = rowValues[i];
-    }
 
     transactions.push({
       tx_date: txDate,
@@ -682,6 +829,16 @@ function findColumnName(headers: string[], variations: string[]): string | null 
   return null;
 }
 
+function findColumnNameByNormalized(headers: string[], normalizedHeaders: Set<string>): string | null {
+  for (const header of headers) {
+    const normalized = normalizeHeaderValue(header);
+    if (normalized && normalizedHeaders.has(normalized)) {
+      return header;
+    }
+  }
+  return null;
+}
+
 function detectStorebrandHeaderlessFormat(
   sheet: XLSX.WorkSheet,
   range: XLSX.Range
@@ -721,6 +878,8 @@ interface ColumnMapping {
   bookedDateCol: string | null;
   currencyCol: string | null;
   merchantCol: string | null;
+  outAmountCol?: string | null;
+  inAmountCol?: string | null;
   headerRow: number;
   foundHeaders: string[];
 }
@@ -763,6 +922,29 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
 
     const dateCol = findColumnName(headers, COLUMN_VARIATIONS.DATE);
     const amountCol = findColumnName(headers, COLUMN_VARIATIONS.AMOUNT);
+    const dnbDateCol = findColumnNameByNormalized(headers, DNB_HEADER_NORMALIZED.DATE);
+    const dnbDescriptionCol = findColumnNameByNormalized(headers, DNB_HEADER_NORMALIZED.DESCRIPTION);
+    const dnbBookedDateCol = findColumnNameByNormalized(headers, DNB_HEADER_NORMALIZED.BOOKED_DATE);
+    const dnbOutCol = findColumnNameByNormalized(headers, DNB_HEADER_NORMALIZED.OUT);
+    const dnbInCol = findColumnNameByNormalized(headers, DNB_HEADER_NORMALIZED.IN);
+
+    if (dnbDateCol && dnbDescriptionCol && dnbOutCol && dnbInCol && !looksLikeDataRow) {
+      console.log(
+        `[XLSX Parser] Found DNB header row ${row}: Date="${dnbDateCol}", Out="${dnbOutCol}", In="${dnbInCol}"`
+      );
+      return {
+        dateCol: dnbDateCol,
+        amountCol: dnbOutCol,
+        outAmountCol: dnbOutCol,
+        inAmountCol: dnbInCol,
+        descriptionCol: dnbDescriptionCol,
+        bookedDateCol: dnbBookedDateCol,
+        currencyCol: null,
+        merchantCol: null,
+        headerRow: row,
+        foundHeaders: nonEmptyHeaders,
+      };
+    }
 
     if (dateCol && amountCol && !looksLikeDataRow) {
       console.log(`[XLSX Parser] Found header row ${row}: Date="${dateCol}", Amount="${amountCol}"`);
@@ -1078,6 +1260,13 @@ function parseFileWithHeaders(
 ): ParsedXlsxTransaction[] {
   const transactions: ParsedXlsxTransaction[] = [];
 
+  const getRowValueByNormalizedHeader = (row: Record<string, unknown>, normalizedHeader: string): unknown => {
+    for (const key of Object.keys(row)) {
+      if (normalizeHeaderValue(key) === normalizedHeader) return row[key];
+    }
+    return undefined;
+  };
+
   // Use sheet_to_json starting from the header row
   const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
     range: mapping.headerRow,
@@ -1090,8 +1279,12 @@ function parseFileWithHeaders(
     // Get values using detected column names
     const txDateRaw = row[mapping.dateCol];
     const amountRaw = row[mapping.amountCol];
+    const outAmountRaw =
+      (mapping.outAmountCol ? row[mapping.outAmountCol] : undefined) ?? getRowValueByNormalizedHeader(row, 'utfrakonto');
+    const inAmountRaw =
+      (mapping.inAmountCol ? row[mapping.inAmountCol] : undefined) ?? getRowValueByNormalizedHeader(row, 'innpakonto');
     const foreignAmountRaw =
-      row['Utl. beløp'] ?? row['Utl beløp'] ?? row['Utl. belop'] ?? row['Utl belop'];
+      row['Utl. bel\u00f8p'] ?? row['Utl bel\u00f8p'] ?? row['Utl. belop'] ?? row['Utl belop'] ?? row['Utl. belÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¸p'] ?? row['Utl belÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¸p'];
 
     // Optional columns - try mapped column or fallback to standard
     const bookedDateRaw = mapping.bookedDateCol ? row[mapping.bookedDateCol] : row[XLSX_COLUMNS.BOOKED_DATE];
@@ -1110,8 +1303,21 @@ function parseFileWithHeaders(
     const txDate = parseNorwegianDate(txDateRaw);
     if (!txDate) continue;
 
-    // Parse amount (required)
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    // Parse amount (required). For DNB account exports we must use
+    // "Ut fra konto"/"Inn pÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¥ konto" and avoid date/serial mixups.
+    const dnbAmount = resolveDnbAmount(outAmountRaw, inAmountRaw);
+    const amount = dnbAmount !== null ? dnbAmount : parsePreferredAmount(amountRaw, foreignAmountRaw);
+
+    if (
+      amount !== null &&
+      isLikelyExcelDateSerialAmount(amount) &&
+      parseNorwegianDate(amountRaw) !== null &&
+      parseMoney(outAmountRaw) === null &&
+      parseMoney(inAmountRaw) === null
+    ) {
+      throw new Error(INVALID_XLSX_AMOUNT_COLUMN_ERROR);
+    }
+
     if (amount === null) continue;
 
     // Parse optional fields
@@ -1241,6 +1447,10 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[XLSX Parser] Error:`, err);
+    if (message.startsWith('Importfeil:')) {
+      return { transactions: [], error: message };
+    }
     return { transactions: [], error: `Failed to parse XLSX: ${message}` };
   }
 }
+
