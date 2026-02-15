@@ -21,6 +21,8 @@ import {
   AlertTriangle,
   ArrowRight,
   Tag,
+  Sparkles,
+  Palette,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -54,6 +56,57 @@ import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
+
+const BASE_CATEGORY_COLORS = [
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#6366f1',
+  '#a855f7',
+  '#ec4899',
+  '#14b8a6',
+  '#84cc16',
+  '#f43f5e',
+];
+
+function hashString(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function generateCategoryColor(seed: string, index: number): string {
+  const hue = (hashString(seed) + index * 41) % 360;
+  return `hsl(${hue} 72% 56%)`;
+}
+
+function ensureUniqueColor(preferred: string | null | undefined, fallbackSeed: string, index: number, used: Set<string>): string {
+  const normalizedPreferred = String(preferred || '').trim().toLowerCase();
+  if (normalizedPreferred && !used.has(normalizedPreferred)) {
+    used.add(normalizedPreferred);
+    return String(preferred);
+  }
+
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const candidate = attempt === 0
+      ? BASE_CATEGORY_COLORS[index % BASE_CATEGORY_COLORS.length]
+      : generateCategoryColor(`${fallbackSeed}-${attempt}`, index + attempt);
+    const normalized = candidate.toLowerCase();
+    if (!used.has(normalized)) {
+      used.add(normalized);
+      return candidate;
+    }
+  }
+
+  const lastResort = generateCategoryColor(`${fallbackSeed}-last`, index + used.size);
+  used.add(lastResort.toLowerCase());
+  return lastResort;
+}
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -200,6 +253,23 @@ export function DashboardPage() {
     setDrilldownOpen(true);
   };
 
+  const openCategoryDrilldown = (category: { category_id: string | null; category_name: string }) => {
+    const categoryName = localizeCategoryName(category.category_name || t('common.uncategorized'), currentLanguage);
+    setDrilldownTitle(categoryName);
+    setDrilldownSubtitle(`${overview?.period.start ?? dateFrom} - ${overview?.period.end ?? dateTo}`);
+    setDrilldownCategory(category.category_id || undefined);
+    setDrilldownMerchantId(undefined);
+    setDrilldownMerchantName(undefined);
+    setDrilldownDateFrom(overview?.period.start ?? dateFrom);
+    setDrilldownDateTo(overview?.period.end ?? dateTo);
+    setDrilldownStatus(statusFilter ? (statusFilter as TransactionStatus) : undefined);
+    setDrilldownFlowType('expense');
+    setDrilldownIncludeTransfers(!excludeTransfers);
+    setDrilldownMinAmount(undefined);
+    setDrilldownMaxAmount(undefined);
+    setDrilldownOpen(true);
+  };
+
   useEffect(() => {
     api
       .getCategoriesFlat()
@@ -336,13 +406,34 @@ export function DashboardPage() {
     void loadTrend();
   }, [trendMonths, trendCategoryId, statusFilter]);
 
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;
 
   const selectedCategory = selectedCategoryId
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
+
+  const categoryPieData = useMemo(() => {
+    const usedColors = new Set<string>();
+    return categories
+      .filter((c) => Boolean(c.category_id))
+      .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+      .slice(0, 8)
+      .map((c, index) => {
+        const label = localizeCategoryName(c.category_name || t('common.uncategorized'), currentLanguage);
+        const color = ensureUniqueColor(
+          c.category_color || undefined,
+          `${c.category_id || label}-${index}`,
+          index,
+          usedColors
+        );
+        return {
+          ...c,
+          name: label,
+          color,
+        };
+      });
+  }, [categories, currentLanguage, t]);
 
   const topExpenseCategoryTiles = useMemo(() => {
     const rows = categories
@@ -388,36 +479,42 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
-          <div className="text-sm text-white/60">
-            {overview?.period.start ?? dateFrom} - {overview?.period.end ?? dateTo}
-          </div>
-          {isRefreshing && <div className="text-xs text-white/45">{currentLanguage === 'nb' ? 'Oppdaterer...' : 'Updating...'}</div>}
-          {selectedCategory && (
-            <div className="mt-1 text-sm">
-              <button
-                type="button"
-                className="text-blue-600 hover:underline"
-                onClick={() => {
-                  updateSearch((next) => next.delete('category_id'));
-                }}
-              >
-                {t('dashboard.allCategories')}
-              </button>
-              <span className="text-white/25 mx-2">/</span>
-              <span className="font-medium">{localizeCategoryName(selectedCategory.category_name, currentLanguage)}</span>
+    <div className="space-y-6 pb-4">
+      <section className="relative overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-[#0f172a] via-[#102033] to-[#12263b] p-5 shadow-[0_30px_80px_rgba(0,0,0,.45)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-fuchsia-400/15 blur-2xl" />
+        <div className="relative flex items-start justify-between gap-6 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-cyan-300" />
+              <h1 className="text-2xl font-bold">{t('nav.dashboard')}</h1>
             </div>
-          )}
-        </div>
+            <div className="mt-1 text-sm text-white/70">
+              {overview?.period.start ?? dateFrom} - {overview?.period.end ?? dateTo}
+            </div>
+            {isRefreshing && <div className="text-xs text-white/45">{currentLanguage === 'nb' ? 'Oppdaterer...' : 'Updating...'}</div>}
+            {selectedCategory && (
+              <div className="mt-2 text-sm">
+                <button
+                  type="button"
+                  className="text-cyan-300 hover:underline"
+                  onClick={() => {
+                    updateSearch((next) => next.delete('category_id'));
+                  }}
+                >
+                  {t('dashboard.allCategories')}
+                </button>
+                <span className="text-white/25 mx-2">/</span>
+                <span className="font-medium">{localizeCategoryName(selectedCategory.category_name, currentLanguage)}</span>
+              </div>
+            )}
+          </div>
 
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-col items-end gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 bg-white/5 hover:bg-white/10"
               onClick={() => {
                 const r = getMonthRange();
                 updateSearch((next) => {
@@ -430,7 +527,7 @@ export function DashboardPage() {
             </button>
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 bg-white/5 hover:bg-white/10"
               onClick={() => {
                 const r = getPreviousMonthRange();
                 updateSearch((next) => {
@@ -443,7 +540,7 @@ export function DashboardPage() {
             </button>
             <button
               type="button"
-              className="px-2 py-1 text-xs font-medium rounded border border-white/15 hover:bg-white/10"
+              className="px-2 py-1 text-xs font-medium rounded border border-white/15 bg-white/5 hover:bg-white/10"
               onClick={() => {
                 const r = getYearToDateRange();
                 updateSearch((next) => {
@@ -454,78 +551,78 @@ export function DashboardPage() {
             >
               {t('common.yearToDate')}
             </button>
-          </div>
-
+            </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
-            <div className="flex items-center gap-2 text-sm text-white/80">
-              <span className="text-white/60">{t('common.fromDate')}</span>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => {
-                  updateSearch((next) => {
-                    if (e.target.value) next.set('date_from', e.target.value);
-                    else next.delete('date_from');
-                  });
-                }}
-                className="h-9 px-2 rounded border border-white/15"
-              />
-              <span className="text-white/60">{t('common.toDate')}</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => {
-                  updateSearch((next) => {
-                    if (e.target.value) next.set('date_to', e.target.value);
-                    else next.delete('date_to');
-                  });
-                }}
-                className="h-9 px-2 rounded border border-white/15"
-              />
-            </div>
+              <div className="flex items-center gap-2 text-sm text-white/80">
+                <span className="text-white/60">{t('common.fromDate')}</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    updateSearch((next) => {
+                      if (e.target.value) next.set('date_from', e.target.value);
+                      else next.delete('date_from');
+                    });
+                  }}
+                  className="h-9 px-2 rounded border border-white/15 bg-white/5"
+                />
+                <span className="text-white/60">{t('common.toDate')}</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    updateSearch((next) => {
+                      if (e.target.value) next.set('date_to', e.target.value);
+                      else next.delete('date_to');
+                    });
+                  }}
+                  className="h-9 px-2 rounded border border-white/15 bg-white/5"
+                />
+              </div>
 
-            <div className="flex items-center gap-2 text-sm text-white/80">
-              <span className="text-white/60">{t('common.status')}</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  updateSearch((next) => {
-                    if (v) next.set('status', v);
-                    else next.delete('status');
-                  });
-                }}
-                className="h-9 px-2 rounded border border-white/15"
-              >
-                <option value="">{t('common.all')}</option>
-                <option value="booked">{t('common.booked')}</option>
-                <option value="pending">{t('common.pending')}</option>
-              </select>
-            </div>
+              <div className="flex items-center gap-2 text-sm text-white/80">
+                <span className="text-white/60">{t('common.status')}</span>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    updateSearch((next) => {
+                      if (v) next.set('status', v);
+                      else next.delete('status');
+                    });
+                  }}
+                  className="h-9 px-2 rounded border border-white/15 bg-white/5"
+                >
+                  <option value="">{t('common.all')}</option>
+                  <option value="booked">{t('common.booked')}</option>
+                  <option value="pending">{t('common.pending')}</option>
+                </select>
+              </div>
 
-            <label className="flex items-center gap-2 text-sm text-white/80">
-              <input
-                type="checkbox"
-                checked={excludeTransfers}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  updateSearch((next) => {
-                    if (checked) next.delete('include_transfers');
-                    else next.set('include_transfers', '1');
-                  });
-                }}
-                className="h-4 w-4 rounded border-white/15 text-cyan-300 focus:ring-cyan-300/60"
-              />
-              {t('common.excludeTransfers')}
-            </label>
+              <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={excludeTransfers}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    updateSearch((next) => {
+                      if (checked) next.delete('include_transfers');
+                      else next.set('include_transfers', '1');
+                    });
+                  }}
+                  className="h-4 w-4 rounded border-white/15 text-cyan-300 focus:ring-cyan-300/60"
+                />
+                {t('common.excludeTransfers')}
+              </label>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* KPI Cards */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card
-          className="cursor-pointer hover:bg-white/5 transition-colors"
+          className="cursor-pointer border-white/15 bg-gradient-to-br from-red-500/20 to-rose-500/5 hover:from-red-500/25 hover:to-rose-500/10 transition-colors shadow-[0_16px_30px_rgba(239,68,68,.18)]"
           onClick={() => openKPIDrilldown(t('dashboard.spending'), { flowType: 'expense' })}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -541,7 +638,7 @@ export function DashboardPage() {
         </Card>
 
         <Card
-          className="cursor-pointer hover:bg-white/5 transition-colors"
+          className="cursor-pointer border-white/15 bg-gradient-to-br from-cyan-500/20 to-sky-500/5 hover:from-cyan-500/25 hover:to-sky-500/10 transition-colors shadow-[0_16px_30px_rgba(34,211,238,.15)]"
           onClick={() => {
             const qs = new URLSearchParams();
             qs.set('date_from', dateFrom);
@@ -575,7 +672,7 @@ export function DashboardPage() {
             {topExpenseCategoryTiles.map((cat) => (
               <Card
                 key={String(cat.category_id)}
-                className="cursor-pointer hover:bg-white/5 transition-colors"
+                className="cursor-pointer border-white/10 bg-gradient-to-b from-white/[0.08] to-white/[0.02] hover:from-white/[0.12] hover:to-white/[0.04] transition-colors"
                 onClick={() => {
                   const qs = new URLSearchParams();
                   qs.set('date_from', dateFrom);
@@ -606,7 +703,7 @@ export function DashboardPage() {
       {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Spending Trend */}
-        <Card>
+        <Card className="border-white/12 bg-gradient-to-b from-white/[0.04] to-white/[0.01]">
           <CardHeader>
             <CardTitle>{t('dashboard.spendingTrend')}</CardTitle>
           </CardHeader>
@@ -668,10 +765,13 @@ export function DashboardPage() {
         </Card>
 
         {/* Category Breakdown */}
-        <Card>
+        <Card className="border-white/12 bg-gradient-to-b from-white/[0.04] to-white/[0.01]">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
-              <CardTitle>{t('dashboard.spendingByCategory')}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="h-4 w-4 text-cyan-300" />
+                {t('dashboard.spendingByCategory')}
+              </CardTitle>
               <button
                 type="button"
                 onClick={() => setShowCategoryDetails((prev) => !prev)}
@@ -686,47 +786,81 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             {showCategoryDetails && hasCategorization ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={2}
-                    dataKey="total"
-                    nameKey="name"
-                    label={({ name, percent }) =>
-                      (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ''
-                    }
-                    labelLine={false}
-                    className="cursor-pointer outline-none"
-                  >
-                    {categories.slice(0, 8).map((entry, index) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={entry.category_color || COLORS[index % COLORS.length]}
-                        className="cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => {
-                          updateSearch((next) => {
-                            if (entry.category_id) {
-                              next.set('category_id', entry.category_id);
-                            } else {
-                              next.delete('category_id');
-                            }
-                          });
-                        }}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    content={(
-                      <ChartTooltip valueFormatter={(value) => formatCurrency(value)} />
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="space-y-4">
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <defs>
+                      <filter id="pieShadow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feDropShadow dx="0" dy="7" stdDeviation="6" floodColor="#000" floodOpacity="0.35" />
+                      </filter>
+                    </defs>
+                    <Pie
+                      data={categoryPieData}
+                      cx="50%"
+                      cy="53%"
+                      innerRadius={62}
+                      outerRadius={102}
+                      dataKey="total"
+                      stroke="none"
+                    >
+                      {categoryPieData.map((entry, index) => (
+                        <Cell key={`slice-shadow-${entry.category_id || index}`} fill={entry.color} fillOpacity={0.35} />
+                      ))}
+                    </Pie>
+                    <Pie
+                      data={categoryPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={100}
+                      paddingAngle={2}
+                      dataKey="total"
+                      nameKey="name"
+                      label={({ name, percent }) =>
+                        (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ''
+                      }
+                      labelLine={false}
+                      className="cursor-pointer outline-none"
+                      style={{ filter: 'url(#pieShadow)' }}
+                    >
+                      {categoryPieData.map((entry, index) => (
+                        <Cell
+                          key={`slice-${entry.category_id || index}`}
+                          fill={entry.color}
+                          className="cursor-pointer hover:opacity-85 transition-opacity"
+                          onClick={() => openCategoryDrilldown(entry)}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      content={(
+                        <ChartTooltip
+                          valueFormatter={(value) => formatCurrency(value)}
+                          labelFormatter={(value) => String(value)}
+                        />
+                      )}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {categoryPieData.map((entry) => (
+                    <button
+                      key={`legend-${entry.category_id || entry.name}`}
+                      type="button"
+                      className="flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-left hover:bg-white/[0.09] transition-colors"
+                      onClick={() => openCategoryDrilldown(entry)}
+                      title={currentLanguage === 'nb' ? 'Åpne drilldown' : 'Open drilldown'}
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+                        <span className="truncate text-sm text-white/90">{entry.name}</span>
+                      </div>
+                      <span className="ml-3 shrink-0 text-sm font-semibold text-white">{formatCurrency(Math.abs(entry.total))}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
               <div className="flex h-[300px] items-center justify-center text-white/60">
                 {hasCategorization ? t('dashboard.useShowDetailsHint') : t('dashboard.noCategorizedTransactions')}
