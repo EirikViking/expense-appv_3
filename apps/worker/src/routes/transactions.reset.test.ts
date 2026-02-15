@@ -21,9 +21,24 @@ describe('transactions reset endpoint scoping', () => {
             first: async () => {
               if (sql.includes('FROM sessions s')) {
                 return {
-                  id: 'u_test',
-                  email: 'user@example.com',
-                  name: 'User',
+                  id: 'admin_1',
+                  email: 'admin@example.com',
+                  name: 'Admin',
+                  role: 'admin',
+                  active: 1,
+                  onboarding_done_at: null,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                };
+              }
+              if (sql.includes('SELECT impersonated_user_id FROM sessions WHERE id = ?')) {
+                return { impersonated_user_id: 'user_anja' };
+              }
+              if (sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
+                return {
+                  id: 'user_anja',
+                  email: 'anja@example.com',
+                  name: 'Anja',
                   role: 'user',
                   active: 1,
                   onboarding_done_at: null,
@@ -70,7 +85,7 @@ describe('transactions reset endpoint scoping', () => {
 
     for (const stmt of executed) {
       expect(stmt.__sql.toLowerCase()).toContain('user_id = ?');
-      expect(stmt.__params).toContain('u_test');
+      expect(stmt.__params).toContain('user_anja');
       expect(stmt.__sql.toLowerCase()).not.toBe('delete from transactions');
       expect(stmt.__sql.toLowerCase()).not.toBe('delete from ingested_files');
       expect(stmt.__sql.toLowerCase()).not.toBe('delete from transaction_meta');
