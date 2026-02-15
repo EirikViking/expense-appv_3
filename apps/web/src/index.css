@@ -170,14 +170,27 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   100% { transform: translate3d(0, 0, 0); }
 }
 
+@keyframes onboardingStepIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(14px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 .animate-float { animation: float 8s ease-in-out infinite; }
 .animate-floatSlow { animation: floatSlow 12s ease-in-out infinite; }
 .animate-floatSlower { animation: floatSlower 16s ease-in-out infinite; }
+.animate-onboarding-step-in { animation: onboardingStepIn 280ms ease-out both; }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-float,
   .animate-floatSlow,
-  .animate-floatSlower {
+  .animate-floatSlower,
+  .animate-onboarding-step-in {
     animation: none !important;
   }
 }

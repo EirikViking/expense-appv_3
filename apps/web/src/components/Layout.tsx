@@ -13,7 +13,7 @@ import {
   X,
   Settings,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getVersionString, getApiBaseUrl } from '@/lib/version';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
@@ -21,9 +21,9 @@ import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Atmosphere } from '@/components/Atmosphere';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
+import { OnboardingWizard } from '@/components/OnboardingWizard';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -46,12 +46,19 @@ export function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const { t } = useTranslation();
   const userName = (user?.name || '').trim();
   const appTitle = useMemo(
     () => (userName ? `${userName}'s ${t('appNameOwnedSuffix')}` : t('appName')),
     [userName, t]
   );
+
+  useEffect(() => {
+    if (!needsOnboarding) {
+      setOnboardingDismissed(false);
+    }
+  }, [needsOnboarding]);
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -198,48 +205,13 @@ export function Layout({ children }: LayoutProps) {
         </footer>
       </div>
 
-      <Dialog
-        open={isAuthenticated && needsOnboarding}
-        onOpenChange={(open) => {
-          if (!open && needsOnboarding) {
-            void completeOnboarding();
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{userName ? t('onboarding.titleWithName', { name: userName }) : t('onboarding.title')}</DialogTitle>
-            <DialogDescription>{t('onboarding.description')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 text-sm text-white/80">
-            <p className="text-white/90">{t('onboarding.purpose')}</p>
-            <ul className="list-disc space-y-1 pl-5">
-              <li>{t('onboarding.stepUpload')}</li>
-              <li>{t('onboarding.stepReview')}</li>
-              <li>{t('onboarding.stepCategorize')}</li>
-            </ul>
-            <p className="text-xs text-white/65">{t('onboarding.tip')}</p>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                await completeOnboarding();
-              }}
-            >
-              {t('onboarding.close')}
-            </Button>
-            <Button
-              onClick={async () => {
-                await completeOnboarding();
-                navigate('/upload');
-              }}
-            >
-              {t('onboarding.goToUpload')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <OnboardingWizard
+        open={isAuthenticated && needsOnboarding && !onboardingDismissed}
+        name={userName}
+        onDismiss={() => setOnboardingDismissed(true)}
+        onComplete={completeOnboarding}
+        onGoToUpload={() => navigate('/upload')}
+      />
     </div>
   );
 }
