@@ -473,6 +473,8 @@ export interface IngestResponse {
   skipped_duplicates: number;
   skipped_invalid: number;
   file_duplicate: boolean;
+  min_tx_date?: string;
+  max_tx_date?: string;
   /**
    * For PDF parsing: summary of skipped lines by reason
    * This helps users understand why some lines weren't parsed as transactions

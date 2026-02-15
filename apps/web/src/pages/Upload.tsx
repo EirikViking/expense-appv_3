@@ -5,6 +5,7 @@ import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
 import type { IngestResponse } from '@expense/shared';
 import { useTranslation } from 'react-i18next';
+import { buildTransactionsLinkForRange, getRangeFromIngestResponse } from '@/lib/upload-range';
 
 const DEV_LOGS = import.meta.env.VITE_DEV_LOGS === 'true';
 
@@ -233,13 +234,13 @@ export function UploadPage() {
           console.log(`[DEV] Ingest result:`, result);
         }
 
-        updateResult(filename, { status: 'success', result });
+        const ingestRange = getRangeFromIngestResponse(result) ?? rangeFromXlsxTransactions(transactions);
+        updateResult(filename, { status: 'success', result, validation_range: ingestRange });
         if (!result.file_duplicate && result.inserted > 0) {
-          const range = rangeFromXlsxTransactions(transactions);
-          void runValidation(filename, range);
+          void runValidation(filename, ingestRange);
           // After validation, run an automatic "Other"/uncategorized reduction scoped to this file.
           // This keeps the app usable even when rules are incomplete.
-          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, ingestRange));
         }
       } else {
         updateResult(filename, {
@@ -517,16 +518,9 @@ export function UploadPage() {
                               </div>
                               {result.validation_range && (
                                 <Link
-                                 to={
-                                    '/transactions?' +
-                                    new URLSearchParams({
-                                      date_from: result.validation_range.date_from,
-                                      date_to: result.validation_range.date_to,
-                                      include_excluded: 'true',
-                                    }).toString()
-                                  }
-                                   className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
-                                 >
+                                 to={buildTransactionsLinkForRange(result.validation_range)}
+                                    className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
+                                  >
                                    {t('upload.validation.viewTransactions')}
                                  </Link>
                                )}

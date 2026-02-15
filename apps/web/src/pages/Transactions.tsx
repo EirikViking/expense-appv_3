@@ -31,10 +31,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
-import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
+import { clearLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
 import { localizeCategoryName } from '@/lib/category-localization';
+import {
+  clearDateFiltersInSearchParams,
+  hasNarrowingFilters,
+  isDateFilterActive,
+  resolveDateFiltersFromSearchParams,
+} from '@/lib/transactions-filters';
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
@@ -45,6 +51,7 @@ export function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [total, setTotal] = useState(0);
+  const [overallTotal, setOverallTotal] = useState(0);
   const [aggregates, setAggregates] = useState<{ sum_amount: number; total_spent: number; total_income: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -160,6 +167,7 @@ export function TransactionsPage() {
       setDateRangeError('Fra-dato kan ikke være etter til-dato.');
       setTransactions([]);
       setTotal(0);
+      setOverallTotal(0);
       setAggregates(null);
       setIsLoading(false);
       return;
@@ -169,7 +177,21 @@ export function TransactionsPage() {
     setError(null);
 
     try {
-      const [txResult, catResult] = await Promise.all([
+      const shouldFetchOverallTotal = hasNarrowingFilters({
+        dateFrom,
+        dateTo,
+        status,
+        sourceType,
+        categoryId,
+        merchantId,
+        merchantName,
+        minAmount,
+        maxAmount,
+        searchQuery,
+        flowType,
+      });
+
+      const [txResult, catResult, overallResult] = await Promise.all([
         api.getTransactions({
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
@@ -202,10 +224,19 @@ export function TransactionsPage() {
           sort_order: sortKey.endsWith('_asc') ? 'asc' : 'desc',
         }),
         categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
+        shouldFetchOverallTotal
+          ? api.getTransactions({
+              include_transfers: !excludeTransfers,
+              include_excluded: showExcluded ? true : undefined,
+              limit: 1,
+              offset: 0,
+            })
+          : Promise.resolve(null),
       ]);
 
       setTransactions(txResult.transactions);
       setTotal(txResult.total);
+      setOverallTotal(overallResult?.total ?? txResult.total);
       setAggregates(txResult.aggregates ?? null);
       if ('categories' in catResult && catResult.categories) {
         setCategories(catResult.categories);
@@ -231,8 +262,7 @@ export function TransactionsPage() {
 
   // Initialize from URL query params (drilldown support)
   useEffect(() => {
-    const qDateFrom = searchParams.get('date_from') || '';
-    const qDateTo = searchParams.get('date_to') || '';
+    const { dateFrom: qDateFrom, dateTo: qDateTo } = resolveDateFiltersFromSearchParams(searchParams);
     const qStatus = (searchParams.get('status') || '') as TransactionStatus | '';
     const qSource = (searchParams.get('source_type') || '') as SourceType | '';
     const qCategory = searchParams.get('category_id') || '';
@@ -249,29 +279,20 @@ export function TransactionsPage() {
     const qPageRaw = searchParams.get('page');
     const qPage = qPageRaw ? Number(qPageRaw) : 0;
 
-    if (qDateFrom) setDateFrom(qDateFrom);
-    if (qDateTo) setDateTo(qDateTo);
-
-    // If URL doesn't specify dates, fall back to last used range.
-    if (!qDateFrom && !qDateTo) {
-      const stored = loadLastDateRange();
-      if (stored) {
-        setDateFrom(stored.start);
-        setDateTo(stored.end);
-      }
-    }
-    if (qStatus) setStatus(qStatus);
-    if (qSource) setSourceType(qSource);
-    if (qCategory) setCategoryId(qCategory);
-    if (qMerchantId) setMerchantId(qMerchantId);
-    if (qMerchantName) setMerchantName(qMerchantName);
-    if (qMinAmount) setMinAmount(qMinAmount);
-    if (qMaxAmount) setMaxAmount(qMaxAmount);
-    if (qSearch) setSearchQuery(qSearch);
-    if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
-    if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
-    if (qFlowType) setFlowType(qFlowType);
-    if (Number.isInteger(qPage) && qPage >= 0) setPage(qPage);
+    setDateFrom(qDateFrom);
+    setDateTo(qDateTo);
+    setStatus(qStatus);
+    setSourceType(qSource);
+    setCategoryId(qCategory);
+    setMerchantId(qMerchantId);
+    setMerchantName(qMerchantName);
+    setMinAmount(qMinAmount);
+    setMaxAmount(qMaxAmount);
+    setSearchQuery(qSearch);
+    setExcludeTransfers(!(qIncludeTransfers === '1' || qIncludeTransfers === 'true'));
+    setShowExcluded(qIncludeExcluded === '1' || qIncludeExcluded === 'true');
+    setFlowType(qFlowType);
+    setPage(Number.isInteger(qPage) && qPage >= 0 ? qPage : 0);
 
     // Sort init (keep backward compatibility)
     if (qSortBy || qSortOrder) {
@@ -280,10 +301,11 @@ export function TransactionsPage() {
       if (by === 'merchant') setSortKey(order === 'asc' ? 'merchant_asc' : 'merchant_desc');
       else if (by === 'amount_abs') setSortKey(order === 'asc' ? 'amount_abs_asc' : 'amount_abs_desc');
       else setSortKey(order === 'asc' ? 'date_asc' : 'date_desc');
+    } else {
+      setSortKey('date_desc');
     }
-    setFiltersInitialized(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!filtersInitialized) setFiltersInitialized(true);
+  }, [filtersInitialized, searchParams]);
 
   useEffect(() => {
     if (!filtersInitialized) return;
@@ -381,7 +403,15 @@ export function TransactionsPage() {
     setPage(0);
   };
 
+  const clearDateFilter = () => {
+    setDateFrom('');
+    setDateTo('');
+    setPage(0);
+    setSearchParams(clearDateFiltersInSearchParams(searchParams), { replace: true });
+  };
+
   const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const hasActiveDateRange = isDateFilterActive(dateFrom, dateTo);
   const hasDrilldownContext = Boolean(
     (searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
       searchParams.get('date_from') &&
@@ -799,9 +829,26 @@ export function TransactionsPage() {
         </Card>
       ) : (
         <>
+          {hasActiveDateRange && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
+              <span>
+                {t('transactions.dateFilterActive', {
+                  from: dateFrom || t('transactions.dateOpenStart'),
+                  to: dateTo || t('transactions.dateOpenEnd'),
+                })}
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearDateFilter} className="h-7 px-2">
+                {t('transactions.clearDateFilter')}
+              </Button>
+            </div>
+          )}
+
           {/* Results count */}
           <p className="text-sm text-white/70">
             {t('transactions.showingCount', { shown: transactions.length, total })}
+          </p>
+          <p className="text-sm text-white/70">
+            {t('transactions.filteredVsTotal', { filtered: total, total: overallTotal })}
           </p>
           {aggregates && (
             <p className="text-sm text-white/70">
