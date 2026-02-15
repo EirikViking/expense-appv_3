@@ -21,7 +21,8 @@ describe('nb locale encoding and required strings', () => {
     ];
 
     for (const str of candidates) {
-      expect(str).not.toContain('ï¿½');
+      expect(str).not.toContain('\uFFFD');
+      expect(str).not.toContain('Ã');
       expect(str).not.toContain('?');
     }
   });

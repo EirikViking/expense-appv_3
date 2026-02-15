@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 function normalizeTokenFromQuery(value: string): string {
@@ -15,6 +16,7 @@ function normalizeTokenFromQuery(value: string): string {
 
 export function SetPasswordPage() {
   const { t } = useTranslation();
+  const { logout } = useAuth();
   const [searchParams] = useSearchParams();
   const token = useMemo(() => normalizeTokenFromQuery(searchParams.get('token') || ''), [searchParams]);
   const navigate = useNavigate();
@@ -23,6 +25,12 @@ export function SetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Invite links are frequently opened while another user is signed in on the same device.
+    // Force a clean auth state so the invited user can complete setup and then sign in correctly.
+    void logout();
+  }, [logout]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

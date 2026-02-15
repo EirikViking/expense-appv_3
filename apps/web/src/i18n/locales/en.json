@@ -169,7 +169,12 @@
     "rememberMe": "Remember me",
     "signIn": "Sign in",
     "signingIn": "Signing in...",
-    "failed": "Login failed"
+    "failed": "Login failed",
+    "alreadySignedInTitle": "You are already signed in",
+    "alreadySignedInAs": "Signed in as {{name}}",
+    "continueAsCurrent": "Continue as current user",
+    "switchAccount": "Switch account",
+    "signingOut": "Signing out..."
   },
   "bootstrap": {
     "title": "Create First Admin",
