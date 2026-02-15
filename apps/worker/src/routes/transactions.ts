@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import {
   transactionsQuerySchema,
   createTransactionSchema,
@@ -1457,10 +1457,13 @@ transactions.get('/admin/diagnostics/suspicious-positive-purchases', async (c) =
   }
 });
 
-// Validate the integrity of ingested data for a date range (read-only; admin-protected by auth middleware).
+// Validate the integrity of ingested data for a date range (read-only; scoped to effective user).
 // This is designed to be fast and summary-only so scripts/UI can fail fast after imports.
-transactions.get('/admin/validate-ingest', async (c) => {
+const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
   try {
+    const scopeUserId = getScopeUserId(c);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const q = c.req.query();
     const dateFrom = q.date_from;
     const dateTo = q.date_to;
@@ -1476,9 +1479,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
         SELECT t.flow_type as flow_type, COUNT(*) as count
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
         GROUP BY t.flow_type
       `
-    ).bind(dateFrom, dateTo).all<{ flow_type: string; count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).all<{ flow_type: string; count: number }>();
 
     const flow_counts: Record<string, number> = {};
     for (const r of flowCountsRes.results || []) {
@@ -1495,8 +1499,9 @@ transactions.get('/admin/validate-ingest', async (c) => {
           SUM(CASE WHEN t.amount = 0 AND COALESCE(t.is_excluded, 0) = 0 THEN 1 ELSE 0 END) as zero_amount_active
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
       `
-    ).bind(dateFrom, dateTo).first<{
+    ).bind(dateFrom, dateTo, scopeUserId).first<{
       total: number;
       excluded: number;
       zero_amount_excluded: number;
@@ -1508,9 +1513,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
         SELECT t.source_type as source_type, COUNT(*) as count
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
         GROUP BY t.source_type
       `
-    ).bind(dateFrom, dateTo).all<{ source_type: string; count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).all<{ source_type: string; count: number }>();
 
     const source_counts: Record<string, number> = {};
     for (const r of sourceCountsRes.results || []) {
@@ -1527,11 +1533,12 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND t.flow_type = 'expense'
       `
-    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ tx_count: number; sum_abs: number }>();
 
     const groceriesFallback = await c.env.DB.prepare(
       `
@@ -1541,6 +1548,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND (
@@ -1548,7 +1556,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
             (t.flow_type = 'unknown' AND t.amount < 0)
           )
       `
-    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ tx_count: number; sum_abs: number }>();
 
     const groceriesIncomeLeak = await c.env.DB.prepare(
       `
@@ -1556,11 +1564,12 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND t.flow_type = 'income'
       `
-    ).bind(dateFrom, dateTo).first<{ count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
 
     // Match /analytics/by-category behavior for groceries, including splits and excluding transfers by default.
     const groceriesAnalytics = await c.env.DB.prepare(
@@ -1573,6 +1582,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           FROM transactions t
           LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
           WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND t.user_id = ?
             AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
             AND COALESCE(t.is_excluded, 0) = 0
             AND COALESCE(t.is_transfer, 0) = 0
@@ -1588,6 +1598,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           FROM transactions t
           JOIN transaction_splits ts ON ts.parent_transaction_id = t.id
           WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND t.user_id = ?
             AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
             AND COALESCE(t.is_excluded, 0) = 0
             AND COALESCE(t.is_transfer, 0) = 0
@@ -1598,7 +1609,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM categorized
         WHERE categorized.category_id = 'cat_food_groceries'
       `
-    ).bind(dateFrom, dateTo, dateFrom, dateTo).first<{ total: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId, dateFrom, dateTo, scopeUserId).first<{ total: number }>();
 
     // Base-transaction sum (matches /transactions listing without splits).
     const groceriesTxBase = await c.env.DB.prepare(
@@ -1607,13 +1618,14 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
           AND tm.category_id = 'cat_food_groceries'
           AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
       `
-    ).bind(dateFrom, dateTo).first<{ total: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ total: number }>();
 
     const groceries_strict_sum = Number(groceriesStrict?.sum_abs || 0);
     const groceries_fallback_sum = Number(groceriesFallback?.sum_abs || 0);
@@ -1645,6 +1657,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND t.flow_type = 'income'
           AND (${keywordClause})
@@ -1652,7 +1665,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         ORDER BY count DESC, total_abs DESC
         LIMIT 20
       `
-    ).bind(dateFrom, dateTo, ...keywordParams).all<{ description: string; count: number; total_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId, ...keywordParams).all<{ description: string; count: number; total_abs: number }>();
 
     const suspicious_income = (suspiciousIncomeRes.results || []).map((r) => ({
       description: r.description,
@@ -1665,11 +1678,12 @@ transactions.get('/admin/validate-ingest', async (c) => {
         SELECT COUNT(*) as count
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND ABS(t.amount) BETWEEN 30000 AND 60000
           AND CAST(ABS(t.amount) AS INTEGER) = ABS(t.amount)
       `
-    ).bind(dateFrom, dateTo).first<{ count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
     const suspicious_serial_amounts = Number(suspiciousSerialAmountRes?.count || 0);
 
     const zero_active = Number(statsRes?.zero_amount_active || 0);
@@ -1719,7 +1733,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
     console.error('Validate ingest error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-});
+};
+
+transactions.get('/validate/ingest', handleValidateIngest);
+transactions.get('/admin/validate-ingest', handleValidateIngest);
 
 // Hard D1 diagnostics for categorization within a date range (admin-only; source of truth).
 // This intentionally uses the same join shape as analytics (transaction_meta.category_id),

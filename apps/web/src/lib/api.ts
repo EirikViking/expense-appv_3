@@ -341,7 +341,7 @@ export const api = {
 
   validateIngest: (params: { date_from: string; date_to: string }) => {
     const qs = buildQuery(params);
-    return request<ValidateIngestResponse>(`/transactions/admin/validate-ingest${qs}`);
+    return request<ValidateIngestResponse>(`/transactions/validate/ingest${qs}`);
   },
 
   reclassifyOther: (body: {
