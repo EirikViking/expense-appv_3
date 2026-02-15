@@ -27,7 +27,7 @@ export function getCategoryHint(combinedText: unknown, amount: number): string |
   if (hasAny(text, ['clasohlson', 'clas ohlson', 'clas ohl'])) return 'cat_shopping_home';
   if (hasAny(text, ['eivind heggedal'])) return 'cat_other_p2p';
   if (hasAny(text, ['flamingotours', 'flamingo tours'])) return 'cat_travel';
-  if (hasAny(text, ['omkostninger']) && hasAny(text, ['innbet utland'])) return 'cat_bills';
+  if (hasAny(text, ['omkostninger']) && hasAny(text, ['innbet utland', 'utlandsbetaling'])) return 'cat_bills';
   if (hasAny(text, ['visa-kostnad', 'arspris kort med visa', 'kort med visa -'])) return 'cat_bills';
   if (hasAny(text, ['vita', 'arnika'])) return 'cat_health_personal_care';
   if (hasAny(text, ['pensjon eller trygd']) && amount > 0) return 'cat_income_salary';
@@ -41,4 +41,3 @@ export function getCategoryHint(combinedText: unknown, amount: number): string |
 
   return null;
 }
-

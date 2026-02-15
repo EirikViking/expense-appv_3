@@ -10,6 +10,7 @@ describe('category hints', () => {
     expect(getCategoryHint('Visa 100021 Arnika AS', -1478.4)).toBe('cat_health_personal_care');
     expect(getCategoryHint('Overførsel Utland 50243359 Flamingotours Aps Nok 929,00', -929)).toBe('cat_travel');
     expect(getCategoryHint('Omkostninger ... Innbet Utland ...', -50)).toBe('cat_bills');
+    expect(getCategoryHint('Omkostninger utlandsbetaling 30,00 NOK STFB...', -30)).toBe('cat_bills');
     expect(getCategoryHint('Pensjon Eller Trygd 221840176 Nav', 15248)).toBe('cat_income_salary');
     expect(getCategoryHint('Visa 100321 Eivind Heggedal', -299)).toBe('cat_other_p2p');
     expect(getCategoryHint('Visa 100021 Paypal :tidalmusica', -59)).toBe('cat_entertainment_streaming');
@@ -21,4 +22,3 @@ describe('category hints', () => {
     expect(getCategoryHint('Ukjent leverandør abc123', -42)).toBeNull();
   });
 });
-
