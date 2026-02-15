@@ -176,7 +176,7 @@
     "dragDrop": "Dra og slipp filer her",
     "or": "eller",
     "browse": "Velg filer",
-    "supportedFormats": "Støttede formater: .xlsx (kredittkort-eksport), .pdf (kontoutskrift)",
+    "supportedFormats": "Støttede formater: .xlsx og .csv",
     "results": "Resultat",
     "processing": "Behandler...",
     "duplicate": "Fil er allerede lastet opp (duplikat)",

@@ -70,4 +70,29 @@ describe('parseXlsxFile (header section scan)', () => {
     expect(kiwi?.amount).toBe(-10);
     expect(kiwi?.merchant).toBe('KIWI');
   });
+
+  it('supports debit/credit column layouts without breaking amount parsing', () => {
+    const rows: unknown[][] = [
+      ['Dato', 'Beskrivelse', 'Debet', 'Kredit', 'Valuta'],
+      ['02.01.2026', 'REMA 1000', '540,25', '', 'NOK'],
+      ['03.01.2026', 'Lønn', '', '25000,00', 'NOK'],
+      ['04.01.2026', 'ATM uttak', 1000, 0, 'NOK'],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    const result = parseXlsxFile(workbookToArrayBuffer(wb));
+    expect(result.error).toBeUndefined();
+    expect(result.transactions.length).toBe(3);
+
+    const grocery = result.transactions.find((t) => t.description.includes('REMA'));
+    const salary = result.transactions.find((t) => t.description.includes('Lønn'));
+    const atm = result.transactions.find((t) => t.description.includes('ATM'));
+
+    expect(grocery?.amount).toBe(-540.25);
+    expect(salary?.amount).toBe(25000);
+    expect(atm?.amount).toBe(-1000);
+  });
 });

@@ -66,6 +66,14 @@ const COLUMN_VARIATIONS = {
     // Storebrand specific
     'Transaksjons beløp', 'Beløp NOK', 'Beløp (NOK)', 'NOK beløp',
   ],
+  DEBIT: [
+    'Debet', 'Debit', 'Ut', 'Utgift', 'Belastning', 'Belastet', 'Debit amount',
+    'Ut av konto', 'Utbetaling', 'Withdrawal', 'Belop ut', 'Beløp ut',
+  ],
+  CREDIT: [
+    'Kredit', 'Credit', 'Inn', 'Inntekt', 'Innbetaling', 'Innskudd', 'Kreditert',
+    'Inn på konto', 'Deposit', 'Belop inn', 'Beløp inn',
+  ],
   CURRENCY: ['Valuta', 'Currency', 'Valutakode', 'Myntslag'],
   MERCHANT: [
     'Sted', 'Mottaker', 'Avsender', 'Fra/Til', 'Recipient', 'Location',
@@ -172,6 +180,13 @@ function parseNorwegianDate(dateValue: unknown): string | null {
     return str;
   }
 
+  // Match YYYY/MM/DD format
+  const isoSlashMatch = str.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+  if (isoSlashMatch) {
+    const [, year, month, day] = isoSlashMatch;
+    return `${year}-${month}-${day}`;
+  }
+
   // Match DD/MM/YYYY format
   const slashMatch = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (slashMatch) {
@@ -200,23 +215,41 @@ function parseNorwegianAmount(value: unknown): number | null {
   if (typeof value === 'string') {
     let cleaned = value.trim();
     if (!cleaned) return null;
+    const isNegativeByParens = /^\(.*\)$/.test(cleaned);
+    const isNegativeBySuffix = /-$/.test(cleaned);
 
-    const hasComma = cleaned.includes(',');
-    const hasDot = cleaned.includes('.');
-
-    // Remove spaces (thousands separators)
+    cleaned = cleaned.replace(/[()]/g, '');
+    cleaned = cleaned.replace(/-$/, '');
+    cleaned = cleaned.replace(/\s?(kr|nok|sek|eur|usd)$/i, '');
+    cleaned = cleaned.replace(/^[+]/, '');
     cleaned = cleaned.replace(/\s/g, '');
+    cleaned = cleaned.replace(/'/g, '');
 
-    // If both comma and dot are present, assume dot is thousands separator
-    if (hasComma && hasDot) {
-      cleaned = cleaned.replace(/\./g, '');
+    const commaCount = (cleaned.match(/,/g) || []).length;
+    const dotCount = (cleaned.match(/\./g) || []).length;
+
+    if (commaCount > 0 && dotCount > 0) {
+      const lastComma = cleaned.lastIndexOf(',');
+      const lastDot = cleaned.lastIndexOf('.');
+      if (lastComma > lastDot) {
+        cleaned = cleaned.replace(/\./g, '');
+        cleaned = cleaned.replace(',', '.');
+      } else {
+        cleaned = cleaned.replace(/,/g, '');
+      }
+    } else if (commaCount > 1 && dotCount === 0) {
+      const last = cleaned.lastIndexOf(',');
+      cleaned = cleaned.slice(0, last).replace(/,/g, '') + '.' + cleaned.slice(last + 1);
+    } else if (commaCount === 1 && dotCount === 0) {
+      cleaned = cleaned.replace(',', '.');
+    } else if (dotCount > 1 && commaCount === 0) {
+      const last = cleaned.lastIndexOf('.');
+      cleaned = cleaned.slice(0, last).replace(/\./g, '') + '.' + cleaned.slice(last + 1);
     }
 
-    // Replace comma with dot for decimals
-    cleaned = cleaned.replace(',', '.');
-
     const num = parseFloat(cleaned);
-    return isNaN(num) ? null : num;
+    if (isNaN(num)) return null;
+    return isNegativeByParens || isNegativeBySuffix ? -Math.abs(num) : num;
   }
 
   return null;
@@ -233,6 +266,18 @@ function parsePreferredAmount(belopRaw: unknown, utlBelopRaw: unknown): number |
   if (utl !== null && utl !== 0) return utl;
 
   // Never default to 0 on parse failure or empty cells.
+  return null;
+}
+
+function parseAmountFromDebitCredit(debitRaw: unknown, creditRaw: unknown): number | null {
+  const debit = parseNorwegianAmount(debitRaw);
+  const credit = parseNorwegianAmount(creditRaw);
+  const hasDebit = debit !== null && debit !== 0;
+  const hasCredit = credit !== null && credit !== 0;
+
+  if (hasDebit && !hasCredit) return -Math.abs(debit!);
+  if (hasCredit && !hasDebit) return Math.abs(credit!);
+  if (hasDebit && hasCredit) return Math.abs(credit!) - Math.abs(debit!);
   return null;
 }
 
@@ -427,7 +472,9 @@ type SectionColumnIndexMapping = {
   dateColIdx: number;
   bookedDateColIdx?: number;
   descColIdx?: number;
-  amountColIdx: number;
+  amountColIdx?: number;
+  debitColIdx?: number;
+  creditColIdx?: number;
   foreignAmountColIdx?: number;
   currencyColIdx?: number;
   merchantColIdx?: number;
@@ -443,6 +490,8 @@ const HEADER_SETS = {
   BOOKED_DATE: buildNormalizedSet(COLUMN_VARIATIONS.BOOKED_DATE),
   DESCRIPTION: buildNormalizedSet(COLUMN_VARIATIONS.DESCRIPTION),
   AMOUNT: buildNormalizedSet(COLUMN_VARIATIONS.AMOUNT),
+  DEBIT: buildNormalizedSet(COLUMN_VARIATIONS.DEBIT),
+  CREDIT: buildNormalizedSet(COLUMN_VARIATIONS.CREDIT),
   CURRENCY: buildNormalizedSet(COLUMN_VARIATIONS.CURRENCY),
   MERCHANT: buildNormalizedSet(COLUMN_VARIATIONS.MERCHANT),
 };
@@ -467,10 +516,14 @@ function detectHeaderSectionAtRow(
 
   const dateIdx = findHeaderIndex(headers, HEADER_SETS.DATE);
   const amountIdx = findHeaderIndex(headers, HEADER_SETS.AMOUNT);
+  const debitIdx = findHeaderIndex(headers, HEADER_SETS.DEBIT);
+  const creditIdx = findHeaderIndex(headers, HEADER_SETS.CREDIT);
   const descIdx = findHeaderIndex(headers, HEADER_SETS.DESCRIPTION);
 
-  // Must have at least Date + Amount to be a usable section.
-  if (dateIdx === undefined || amountIdx === undefined) return null;
+  // Must have at least Date + (Amount OR Debit/Credit pair) to be usable.
+  if (dateIdx === undefined || (amountIdx === undefined && debitIdx === undefined && creditIdx === undefined)) {
+    return null;
+  }
 
   // Heuristic: reject rows that look like data rows (date+amount values), not headers.
   const analysis = analyzeRowValues(rowValues);
@@ -493,6 +546,8 @@ function detectHeaderSectionAtRow(
     bookedDateColIdx: bookedIdx,
     descColIdx: descIdx,
     amountColIdx: amountIdx,
+    debitColIdx: debitIdx,
+    creditColIdx: creditIdx,
     foreignAmountColIdx,
     currencyColIdx: currencyIdx,
     merchantColIdx: merchantIdx,
@@ -588,10 +643,17 @@ function parseSheetByHeaderSections(
       continue;
     }
 
-    const amountRaw = rowValues[current.amountColIdx];
+    const amountRaw =
+      current.amountColIdx !== undefined ? rowValues[current.amountColIdx] : undefined;
     const foreignAmountRaw =
       current.foreignAmountColIdx !== undefined ? rowValues[current.foreignAmountColIdx] : undefined;
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    const debitRaw =
+      current.debitColIdx !== undefined ? rowValues[current.debitColIdx] : undefined;
+    const creditRaw =
+      current.creditColIdx !== undefined ? rowValues[current.creditColIdx] : undefined;
+    const amount = amountRaw !== undefined
+      ? parsePreferredAmount(amountRaw, foreignAmountRaw)
+      : parseAmountFromDebitCredit(debitRaw, creditRaw);
     if (amount === null) {
       debug.rows_skipped_no_amount++;
       continue;
@@ -704,6 +766,8 @@ function detectStorebrandHeaderlessFormat(
   return {
     dateCol: '__COL_0',
     amountCol: '__COL_2',
+    debitCol: null,
+    creditCol: null,
     descriptionCol: '__COL_1',
     bookedDateCol: null,
     currencyCol: '__COL_3',
@@ -716,7 +780,9 @@ function detectStorebrandHeaderlessFormat(
 // Detailed header row finder with column mapping
 interface ColumnMapping {
   dateCol: string;
-  amountCol: string;
+  amountCol: string | null;
+  debitCol: string | null;
+  creditCol: string | null;
   descriptionCol: string | null;
   bookedDateCol: string | null;
   currencyCol: string | null;
@@ -763,12 +829,18 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
 
     const dateCol = findColumnName(headers, COLUMN_VARIATIONS.DATE);
     const amountCol = findColumnName(headers, COLUMN_VARIATIONS.AMOUNT);
+    const debitCol = findColumnName(headers, COLUMN_VARIATIONS.DEBIT);
+    const creditCol = findColumnName(headers, COLUMN_VARIATIONS.CREDIT);
+    const hasAmountColumns = Boolean(amountCol || debitCol || creditCol);
 
-    if (dateCol && amountCol && !looksLikeDataRow) {
-      console.log(`[XLSX Parser] Found header row ${row}: Date="${dateCol}", Amount="${amountCol}"`);
+    if (dateCol && hasAmountColumns && !looksLikeDataRow) {
+      const amountLabel = amountCol || `${debitCol || '-'} / ${creditCol || '-'}`;
+      console.log(`[XLSX Parser] Found header row ${row}: Date="${dateCol}", Amount="${amountLabel}"`);
       return {
         dateCol,
         amountCol,
+        debitCol,
+        creditCol,
         descriptionCol: findColumnName(headers, COLUMN_VARIATIONS.DESCRIPTION),
         bookedDateCol: findColumnName(headers, COLUMN_VARIATIONS.BOOKED_DATE),
         currencyCol: findColumnName(headers, COLUMN_VARIATIONS.CURRENCY),
@@ -778,7 +850,7 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
       };
     }
 
-    if (isHeaderCandidate && (!dateCol || !amountCol)) {
+    if (isHeaderCandidate && (!dateCol || !hasAmountColumns)) {
       const dataMapping = detectColumnsFromData(sheet, { startRow: row + 1, maxRows: 20 });
       if (dataMapping) {
         console.log(`[XLSX Parser] Header row inferred at ${row} using data heuristics`);
@@ -836,6 +908,8 @@ function detectColumnsFromData(
       return {
         dateCol: `__COL_${range.s.c + 0}`,
         amountCol: `__COL_${range.s.c + 2}`,
+        debitCol: null,
+        creditCol: null,
         descriptionCol: `__COL_${range.s.c + 1}`,
         bookedDateCol: null,
         currencyCol: `__COL_${range.s.c + 4}`,
@@ -945,6 +1019,8 @@ function detectColumnsFromData(
     return {
       dateCol: `__COL_${dateColIdx}`,
       amountCol: `__COL_${amountColIdx}`,
+      debitCol: null,
+      creditCol: null,
       descriptionCol: descColIdx >= 0 ? `__COL_${descColIdx}` : null,
       bookedDateCol: null,
       currencyCol: currencyColIdx >= 0 ? `__COL_${currencyColIdx}` : null,
@@ -968,6 +1044,11 @@ function parseHeaderlessFile(
   startRow: number = range.s.r
 ): ParsedXlsxTransaction[] {
   const transactions: ParsedXlsxTransaction[] = [];
+
+  if (!mapping.amountCol) {
+    console.log('[XLSX Parser] Headerless parsing requires amount column mapping');
+    return transactions;
+  }
 
   const dateColIdx = parseInt(mapping.dateCol.replace('__COL_', ''));
   const amountColIdx = parseInt(mapping.amountCol.replace('__COL_', ''));
@@ -1089,7 +1170,9 @@ function parseFileWithHeaders(
   for (const row of jsonData) {
     // Get values using detected column names
     const txDateRaw = row[mapping.dateCol];
-    const amountRaw = row[mapping.amountCol];
+    const amountRaw = mapping.amountCol ? row[mapping.amountCol] : undefined;
+    const debitRaw = mapping.debitCol ? row[mapping.debitCol] : undefined;
+    const creditRaw = mapping.creditCol ? row[mapping.creditCol] : undefined;
     const foreignAmountRaw =
       row['Utl. beløp'] ?? row['Utl beløp'] ?? row['Utl. belop'] ?? row['Utl belop'];
 
@@ -1111,7 +1194,9 @@ function parseFileWithHeaders(
     if (!txDate) continue;
 
     // Parse amount (required)
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    const amount = amountRaw !== undefined
+      ? parsePreferredAmount(amountRaw, foreignAmountRaw)
+      : parseAmountFromDebitCredit(debitRaw, creditRaw);
     if (amount === null) continue;
 
     // Parse optional fields
@@ -1218,10 +1303,11 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
     }
 
     const fullMapping = mapping as ColumnMapping;
-    const usesIndexMapping = fullMapping.dateCol.startsWith('__COL_') || fullMapping.amountCol.startsWith('__COL_');
+    const usesIndexMapping = fullMapping.dateCol.startsWith('__COL_')
+      || Boolean(fullMapping.amountCol && fullMapping.amountCol.startsWith('__COL_'));
     const detectedFormat = usesIndexMapping
-      ? `Index mapping - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol}${fullMapping.headerRow >= 0 ? ` (header row ${fullMapping.headerRow + 1})` : ''}`
-      : `Date: "${fullMapping.dateCol}", Amount: "${fullMapping.amountCol}"${fullMapping.descriptionCol ? `, Desc: "${fullMapping.descriptionCol}"` : ''}`;
+      ? `Index mapping - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol || `${fullMapping.debitCol || '-'} / ${fullMapping.creditCol || '-'}`}${fullMapping.headerRow >= 0 ? ` (header row ${fullMapping.headerRow + 1})` : ''}`
+      : `Date: "${fullMapping.dateCol}", Amount: "${fullMapping.amountCol || `${fullMapping.debitCol || '-'} / ${fullMapping.creditCol || '-'}`}"${fullMapping.descriptionCol ? `, Desc: "${fullMapping.descriptionCol}"` : ''}`;
     console.log(`[XLSX Parser] Detected format: ${detectedFormat}`);
 
     // Parse transactions based on file type

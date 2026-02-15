@@ -226,7 +226,7 @@
     "dragDrop": "Drag and drop files here",
     "or": "or",
     "browse": "Browse Files",
-    "supportedFormats": "Supported formats: .xlsx (credit card exports), .pdf (bank statements)",
+    "supportedFormats": "Supported formats: .xlsx and .csv",
     "results": "Upload Results",
     "processing": "Processing...",
     "duplicate": "File already uploaded (duplicate)",

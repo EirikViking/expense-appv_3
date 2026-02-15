@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, type ValidateIngestResponse } from '../lib/api';
 import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
+import { parseCsvFile } from '../lib/csv-parser';
 import { extractPdfText } from '../lib/pdf-extractor';
 import type { IngestResponse } from '@expense/shared';
 import { useTranslation } from 'react-i18next';
@@ -260,6 +261,36 @@ export function UploadPage() {
           // This keeps the app usable even when rules are incomplete.
           void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
         }
+      } else if (file.name.toLowerCase().endsWith('.csv')) {
+        const { transactions, error, debugInfo, detectedFormat } = parseCsvFile(arrayBuffer);
+
+        if (error) {
+          console.error(`[CSV Parse Error] ${filename}: ${error}`);
+          if (debugInfo) {
+            console.error(`[CSV Debug] ${debugInfo}`);
+          }
+          updateResult(filename, { status: 'error', error });
+          return;
+        }
+
+        if (DEV_LOGS || detectedFormat) {
+          console.log(`[CSV Parser] ${filename}: Detected format: ${detectedFormat}`);
+          console.log(`[CSV Parser] Parsed ${transactions.length} transactions from CSV`);
+        }
+
+        const result = await api.ingestXlsx({
+          file_hash: fileHash,
+          filename,
+          source: 'xlsx',
+          transactions,
+        });
+
+        updateResult(filename, { status: 'success', result });
+        if (!result.file_duplicate && result.inserted > 0) {
+          const range = rangeFromXlsxTransactions(transactions);
+          void runValidation(filename, range);
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
+        }
       } else if (file.name.toLowerCase().endsWith('.pdf')) {
         // Extract text from PDF in browser
         const { text, error } = await extractPdfText(arrayBuffer);
@@ -294,7 +325,7 @@ export function UploadPage() {
       } else {
         updateResult(filename, {
           status: 'error',
-          error: 'Unsupported file type. Please upload .xlsx or .pdf files.',
+          error: 'Unsupported file type. Please upload .xlsx, .csv or .pdf files.',
         });
       }
     } catch (err) {
@@ -436,7 +467,7 @@ export function UploadPage() {
             <div>
               <p className="text-sm font-semibold text-white">Import preview ({pendingFiles.length} files)</p>
               <p className="text-xs text-white/60">
-                Review files before import. CSV preview/template is available, but CSV parsing is not enabled yet.
+                Review files before import.
               </p>
             </div>
             <div className="flex items-center gap-2">
