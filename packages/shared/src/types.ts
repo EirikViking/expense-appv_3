@@ -669,6 +669,7 @@ export interface PeriodComparison {
 // ============================================
 
 export interface TransactionsQuery {
+  transaction_id?: string;
   date_from?: string;
   date_to?: string;
   status?: TransactionStatus;

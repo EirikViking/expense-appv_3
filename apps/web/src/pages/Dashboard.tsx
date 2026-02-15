@@ -153,6 +153,7 @@ export function DashboardPage() {
   const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
   const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
   const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
+  const [drilldownTransactionId, setDrilldownTransactionId] = useState<string | undefined>();
   const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
   const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
   const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
@@ -172,6 +173,7 @@ export function DashboardPage() {
     setDrilldownCategory(undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
+    setDrilldownTransactionId(undefined);
     setDrilldownDateFrom(overview?.period.start);
     setDrilldownDateTo(overview?.period.end);
     setDrilldownOpen(true);
@@ -191,6 +193,7 @@ export function DashboardPage() {
     setDrilldownCategory(trendCategoryId);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
+    setDrilldownTransactionId(undefined);
     setDrilldownDateFrom(start);
     setDrilldownDateTo(end);
     setDrilldownStatus(statusFilter ? (statusFilter as TransactionStatus) : undefined);
@@ -651,6 +654,7 @@ export function DashboardPage() {
                       setDrilldownCategory(undefined);
                       setDrilldownMerchantId(undefined);
                       setDrilldownMerchantName(undefined);
+                      setDrilldownTransactionId(undefined);
                       setDrilldownFlowType(undefined);
                       setDrilldownIncludeTransfers(!excludeTransfers);
                       setDrilldownMinAmount(undefined);
@@ -927,8 +931,10 @@ export function DashboardPage() {
                       if (statusFilter) qs.set('status', statusFilter);
                       if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
                       qs.set('flow_type', 'expense');
-                      // Prefer free-text search to include variants of the store name (e.g. "KIWI 505 BARCODE").
-                      qs.set('search', merchant.merchant_name);
+                      // Use merchant_name filter so backend can apply the same unknown-merchant semantics.
+                      if (merchant.merchant_name) {
+                        qs.set('merchant_name', merchant.merchant_name);
+                      }
                       navigate(`/transactions?${qs.toString()}`);
                     }}
                   >
@@ -976,7 +982,27 @@ export function DashboardPage() {
             ) : anomalies.length > 0 ? (
               <div className="space-y-3">
                 {anomalies.map((anomaly, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                  <button
+                    key={i}
+                    type="button"
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left"
+                    onClick={() => {
+                      setDrilldownTitle(t('dashboard.unusualSpending'));
+                      setDrilldownSubtitle(anomaly.reason);
+                      setDrilldownCategory(undefined);
+                      setDrilldownMerchantId(undefined);
+                      setDrilldownMerchantName(undefined);
+                      setDrilldownTransactionId(anomaly.transaction_id);
+                      setDrilldownDateFrom(undefined);
+                      setDrilldownDateTo(undefined);
+                      setDrilldownStatus(undefined);
+                      setDrilldownFlowType(undefined);
+                      setDrilldownIncludeTransfers(undefined);
+                      setDrilldownMinAmount(undefined);
+                      setDrilldownMaxAmount(undefined);
+                      setDrilldownOpen(true);
+                    }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{anomaly.description}</p>
                       <p className="text-xs text-white/60">{anomaly.reason}</p>
@@ -992,7 +1018,7 @@ export function DashboardPage() {
                         {anomaly.severity}
                       </Badge>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -1007,6 +1033,7 @@ export function DashboardPage() {
         onOpenChange={setDrilldownOpen}
         title={drilldownTitle}
         subtitle={drilldownSubtitle}
+        transactionId={drilldownTransactionId}
         dateFrom={drilldownDateFrom}
         dateTo={drilldownDateTo}
         categoryId={drilldownCategory}

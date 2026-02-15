@@ -285,6 +285,7 @@ export const updateRecurringSchema = z.object({
 // ============================================
 
 export const transactionsQuerySchema = z.object({
+  transaction_id: idSchema.optional(),
   date_from: dateSchema.optional(),
   date_to: dateSchema.optional(),
   status: z.enum(TRANSACTION_STATUSES).optional(),

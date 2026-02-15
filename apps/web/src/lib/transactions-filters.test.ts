@@ -25,6 +25,7 @@ describe('transactions-filters', () => {
       hasNarrowingFilters({
         dateFrom: '',
         dateTo: '',
+        transactionId: '',
         status: '',
         sourceType: '',
         categoryId: '',
@@ -41,6 +42,7 @@ describe('transactions-filters', () => {
       hasNarrowingFilters({
         dateFrom: '',
         dateTo: '',
+        transactionId: '',
         status: 'booked',
         sourceType: '',
         categoryId: '',

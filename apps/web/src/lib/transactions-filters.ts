@@ -4,6 +4,7 @@ export interface DateFilterState {
 }
 
 export interface NarrowingFilterState extends DateFilterState {
+  transactionId: string;
   status: string;
   sourceType: string;
   categoryId: string;
@@ -35,8 +36,9 @@ export function clearDateFiltersInSearchParams(searchParams: URLSearchParams): U
 
 export function hasNarrowingFilters(filters: NarrowingFilterState): boolean {
   return Boolean(
-    filters.dateFrom ||
+      filters.dateFrom ||
       filters.dateTo ||
+      filters.transactionId ||
       filters.status ||
       filters.sourceType ||
       filters.categoryId ||

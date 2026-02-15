@@ -249,6 +249,12 @@ type Highlight = {
   title: string;
   value: string;
   detail: string;
+  drilldown?:
+    | { type: 'category'; categoryId?: string | null }
+    | { type: 'merchant'; merchantId?: string | null; merchantName?: string | null }
+    | { type: 'day'; date: string }
+    | { type: 'transaction'; transactionId: string }
+    | { type: 'period' };
 };
 
 function buildHighlights(args: {
@@ -267,20 +273,22 @@ function buildHighlights(args: {
   if (topCategory) {
     out.push({
       id: 'top-category',
-      emoji: '📦',
+      emoji: '\u{1F4E6}',
       title: lang === 'nb' ? 'Største kategori' : 'Top category',
       value: localizeCategoryName(topCategory.name, currentLanguage),
       detail: formatCompactCurrency(topCategory.total),
+      drilldown: { type: 'category', categoryId: topCategory.id },
     });
   }
 
   if (largestExpenseTx) {
     out.push({
       id: 'largest-purchase',
-      emoji: '🧾',
+      emoji: '\u{1F9FE}',
       title: lang === 'nb' ? 'Største enkeltkjøp' : 'Largest single purchase',
       value: largestExpenseTx.description,
       detail: formatCompactCurrency(Math.abs(largestExpenseTx.amount)),
+      drilldown: { type: 'transaction', transactionId: largestExpenseTx.id },
     });
   }
 
@@ -288,10 +296,11 @@ function buildHighlights(args: {
   if (topMerchant) {
     out.push({
       id: 'top-merchant',
-      emoji: '🏪',
+      emoji: '\u{1F3EA}',
       title: lang === 'nb' ? 'Mest brukte brukersted' : 'Most used merchant',
       value: topMerchant.name,
       detail: lang === 'nb' ? `${topMerchant.count} kjøp` : `${topMerchant.count} purchases`,
+      drilldown: { type: 'merchant', merchantId: topMerchant.id, merchantName: topMerchant.name },
     });
   }
 
@@ -299,10 +308,11 @@ function buildHighlights(args: {
   if (topDay) {
     out.push({
       id: 'top-day',
-      emoji: '📅',
+      emoji: '\u{1F4C5}',
       title: lang === 'nb' ? 'Dag med høyest forbruk' : 'Highest-spend day',
       value: topDay.date,
       detail: formatCompactCurrency(Math.abs(topDay.amount)),
+      drilldown: { type: 'day', date: topDay.date },
     });
   }
 
@@ -312,10 +322,11 @@ function buildHighlights(args: {
     const up = delta > 0;
     out.push({
       id: 'period-change',
-      emoji: up ? '📈' : '📉',
+      emoji: up ? '\u{1F4C8}' : '\u{1F4C9}',
       title: lang === 'nb' ? 'Endring mot forrige periode' : 'Change vs previous period',
       value: `${up ? '+' : ''}${pct.toFixed(1)}%`,
       detail: `${up ? '+' : ''}${formatCompactCurrency(delta)}`,
+      drilldown: { type: 'period' },
     });
   }
 
@@ -495,6 +506,45 @@ export function InsightsPage() {
     navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
   };
 
+  const openHighlightDrilldown = (highlight: Highlight) => {
+    const drilldown = highlight.drilldown;
+    if (!drilldown) return;
+
+    if (drilldown.type === 'category') {
+      openCategoryDrilldown(drilldown.categoryId);
+      return;
+    }
+
+    if (drilldown.type === 'merchant') {
+      openMerchantDrilldown({
+        merchant_id: drilldown.merchantId ?? null,
+        merchant_name: drilldown.merchantName ?? '',
+        total: 0,
+        count: 0,
+        avg: 0,
+        trend: 0,
+      });
+      return;
+    }
+
+    if (drilldown.type === 'day') {
+      const qs = createBaseDrilldownQuery();
+      qs.set('date_from', drilldown.date);
+      qs.set('date_to', drilldown.date);
+      navigate(`/transactions?${qs.toString()}`);
+      return;
+    }
+
+    if (drilldown.type === 'transaction') {
+      const qs = new URLSearchParams();
+      qs.set('transaction_id', drilldown.transactionId);
+      navigate(`/transactions?${qs.toString()}`);
+      return;
+    }
+
+    navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -634,11 +684,16 @@ export function InsightsPage() {
           ) : highlights.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {highlights.map((h) => (
-                <div key={h.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                <button
+                  key={h.id}
+                  type="button"
+                  className="rounded-lg border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => openHighlightDrilldown(h)}
+                >
                   <p className="text-xs text-white/60">{h.emoji} {h.title}</p>
                   <p className="mt-1 text-sm font-semibold text-white">{h.value}</p>
                   <p className="mt-1 text-xs text-cyan-100/90">{h.detail}</p>
-                </div>
+                </button>
               ))}
             </div>
           ) : (

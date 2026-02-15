@@ -71,6 +71,7 @@ export function TransactionsPage() {
   const [showExcluded, setShowExcluded] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const [merchantName, setMerchantName] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [flowType, setFlowType] = useState<FlowType | ''>('');
@@ -180,6 +181,7 @@ export function TransactionsPage() {
       const shouldFetchOverallTotal = hasNarrowingFilters({
         dateFrom,
         dateTo,
+        transactionId,
         status,
         sourceType,
         categoryId,
@@ -193,6 +195,7 @@ export function TransactionsPage() {
 
       const [txResult, catResult, overallResult] = await Promise.all([
         api.getTransactions({
+          transaction_id: transactionId || undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
           status: status || undefined,
@@ -226,6 +229,7 @@ export function TransactionsPage() {
         categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
         shouldFetchOverallTotal
           ? api.getTransactions({
+              transaction_id: transactionId || undefined,
               include_transfers: !excludeTransfers,
               include_excluded: showExcluded ? true : undefined,
               limit: 1,
@@ -246,7 +250,7 @@ export function TransactionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey]);
+  }, [transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey]);
 
   useEffect(() => {
     fetchData();
@@ -266,6 +270,7 @@ export function TransactionsPage() {
     const qStatus = (searchParams.get('status') || '') as TransactionStatus | '';
     const qSource = (searchParams.get('source_type') || '') as SourceType | '';
     const qCategory = searchParams.get('category_id') || '';
+    const qTransactionId = searchParams.get('transaction_id') || '';
     const qMerchantId = searchParams.get('merchant_id') || '';
     const qMerchantName = searchParams.get('merchant_name') || '';
     const qMinAmount = searchParams.get('min_amount') || '';
@@ -284,6 +289,7 @@ export function TransactionsPage() {
     setStatus(qStatus);
     setSourceType(qSource);
     setCategoryId(qCategory);
+    setTransactionId(qTransactionId);
     setMerchantId(qMerchantId);
     setMerchantName(qMerchantName);
     setMinAmount(qMinAmount);
@@ -315,6 +321,7 @@ export function TransactionsPage() {
     if (status) next.set('status', status);
     if (sourceType) next.set('source_type', sourceType);
     if (categoryId) next.set('category_id', categoryId);
+    if (transactionId) next.set('transaction_id', transactionId);
     if (merchantId) next.set('merchant_id', merchantId);
     if (merchantName) next.set('merchant_name', merchantName);
     if (minAmount) next.set('min_amount', minAmount);
@@ -338,6 +345,7 @@ export function TransactionsPage() {
     status,
     sourceType,
     categoryId,
+    transactionId,
     merchantId,
     merchantName,
     minAmount,
@@ -391,6 +399,7 @@ export function TransactionsPage() {
     setStatus('');
     setSourceType('');
     setCategoryId('');
+    setTransactionId('');
     setMerchantId('');
     setMerchantName('');
     setMinAmount('');
@@ -410,12 +419,13 @@ export function TransactionsPage() {
     setSearchParams(clearDateFiltersInSearchParams(searchParams), { replace: true });
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || transactionId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
   const hasActiveDateRange = isDateFilterActive(dateFrom, dateTo);
   const hasDrilldownContext = Boolean(
-    (searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
-      searchParams.get('date_from') &&
-      searchParams.get('date_to')
+    searchParams.get('transaction_id') ||
+      ((searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
+        searchParams.get('date_from') &&
+        searchParams.get('date_to'))
   );
 
   return (

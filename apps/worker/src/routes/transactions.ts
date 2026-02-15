@@ -30,6 +30,28 @@ type DbTransactionRow = Omit<Transaction, 'is_excluded' | 'is_transfer'> & {
   is_transfer: DbBool;
 };
 
+const UNKNOWN_MERCHANT_FILTERS = new Set([
+  'ukjent brukersted',
+  'unknown merchant',
+  'unknown',
+]);
+
+function isUnknownMerchantFilter(value: string): boolean {
+  return UNKNOWN_MERCHANT_FILTERS.has(value.trim().toLowerCase());
+}
+
+const UNKNOWN_MERCHANT_VALUE_SQL = `UPPER(TRIM(COALESCE(NULLIF(TRIM(t.merchant), ''), NULLIF(TRIM(t.description), ''), '')))`;
+const UNKNOWN_MERCHANT_SQL = `(
+  ${UNKNOWN_MERCHANT_VALUE_SQL} = '' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} IN ('UKJENT BRUKERSTED', 'UNKNOWN MERCHANT', 'UNKNOWN', 'NOK', 'KR') OR
+  (
+    ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]*'
+    AND ${UNKNOWN_MERCHANT_VALUE_SQL} NOT LIKE '% %'
+  ) OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* NOK' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* KR'
+)`;
+
 // Helper to enrich transactions with metadata
 async function enrichTransactions(
   db: D1Database,
@@ -181,6 +203,7 @@ transactions.get('/', async (c) => {
     }
 
     const {
+      transaction_id,
       date_from,
       date_to,
       status,
@@ -206,6 +229,11 @@ transactions.get('/', async (c) => {
     const params: (string | number)[] = [];
     conditions.push('t.user_id = ?');
     params.push(scopeUserId);
+
+    if (transaction_id) {
+      conditions.push('t.id = ?');
+      params.push(transaction_id);
+    }
 
     if (date_from) {
       conditions.push('t.tx_date >= ?');
@@ -296,17 +324,23 @@ transactions.get('/', async (c) => {
         joinClause += merchantsJoin;
       }
 
-      // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
-      // rather than an exact string match to a single row's description. Use a case-insensitive contains
-      // match so variants like "KIWI 505 BARCODE ..." are included.
       const mn = merchant_name.trim();
-      const needle = `%${mn}%`;
-      conditions.push(`(
-        COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
-        COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
-        t.description LIKE ? COLLATE NOCASE
-      )`);
-      params.push(needle, needle, needle);
+      if (isUnknownMerchantFilter(mn)) {
+        // Unknown merchant groups in insights are synthesized from noisy values.
+        // Match using a safe SQL predicate instead of plain text equality.
+        conditions.push(UNKNOWN_MERCHANT_SQL);
+      } else {
+        // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
+        // rather than an exact string match to a single row's description. Use a case-insensitive contains
+        // match so variants like "KIWI 505 BARCODE ..." are included.
+        const needle = `%${mn}%`;
+        conditions.push(`(
+          COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
+          COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
+          t.description LIKE ? COLLATE NOCASE
+        )`);
+        params.push(needle, needle, needle);
+      }
     }
 
     if (search && search.trim()) {

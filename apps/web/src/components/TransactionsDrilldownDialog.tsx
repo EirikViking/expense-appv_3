@@ -23,6 +23,7 @@ interface TransactionsDrilldownDialogProps {
     title: string;
     subtitle?: string;
     // Filter params
+    transactionId?: string;
     dateFrom?: string;
     dateTo?: string;
     merchantId?: string;
@@ -41,6 +42,7 @@ export function TransactionsDrilldownDialog({
     onOpenChange,
     title,
     subtitle,
+    transactionId,
     dateFrom,
     dateTo,
     merchantId,
@@ -66,24 +68,21 @@ export function TransactionsDrilldownDialog({
         if (open) {
             loadTransactions();
         }
-    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId, status, flowType, includeTransfers, minAmount, maxAmount]);
+    }, [open, page, transactionId, dateFrom, dateTo, merchantId, merchantName, categoryId, status, flowType, includeTransfers, minAmount, maxAmount]);
 
     const loadTransactions = async () => {
         setLoading(true);
         try {
-            // Merchant drilldown should include all variants of a store name.
-            // Exact equality (merchant_name=...) and merchant_id-only filtering often undercounts
-            // because many rows don't have merchant_id yet, or have slightly different text variants.
-            // Prefer free-text search when merchantName is provided.
             const merchantNeedle = merchantName?.trim() ? merchantName.trim() : undefined;
-            const effectiveSearch = (search && search.trim()) ? search.trim() : merchantNeedle;
-            const useMerchantIdFilter = Boolean(merchantId) && !merchantNeedle && !effectiveSearch;
+            const effectiveSearch = search?.trim() ? search.trim() : undefined;
+            const useMerchantIdFilter = Boolean(merchantId) && !merchantNeedle;
 
             const response = await api.getTransactions({
+                transaction_id: transactionId,
                 date_from: dateFrom,
                 date_to: dateTo,
                 merchant_id: useMerchantIdFilter ? merchantId : undefined,
-                merchant_name: undefined,
+                merchant_name: merchantNeedle,
                 search: effectiveSearch,
                 category_id: categoryId,
                 status: status,
