@@ -105,6 +105,21 @@ function summarizeSkippedLines(skippedLines?: SkippedLine[]): IngestResponse['sk
   return summary;
 }
 
+function getTxDateRange(
+  txs: Array<{ tx_date?: string | null }>
+): Pick<IngestResponse, 'min_tx_date' | 'max_tx_date'> {
+  const dates = txs
+    .map((tx) => (typeof tx.tx_date === 'string' ? tx.tx_date : ''))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+
+  if (dates.length === 0) return {};
+  return {
+    min_tx_date: dates[0],
+    max_tx_date: dates[dates.length - 1],
+  };
+}
+
 async function applyRulesForFile(
   db: D1Database,
   fileHash: string
@@ -670,6 +685,7 @@ ingest.post('/xlsx', async (c) => {
       skipped_duplicates,
       skipped_invalid,
       file_duplicate: isFileDuplicate,
+      ...getTxDateRange(transactions),
     };
 
     return c.json({
@@ -879,6 +895,7 @@ ingest.post('/pdf', async (c) => {
       skipped_duplicates,
       skipped_invalid,
       file_duplicate: false,
+      ...getTxDateRange(parsedTxs),
     };
 
     return c.json({

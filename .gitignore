@@ -39,3 +39,6 @@ seed.sql
 playwright-report/
 test-results/
 e2e/screenshots/
+
+# Private local fixtures
+fixtures/private/

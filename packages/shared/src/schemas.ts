@@ -337,6 +337,8 @@ export const ingestResponseSchema = z.object({
   skipped_duplicates: z.number(),
   skipped_invalid: z.number(),
   file_duplicate: z.boolean(),
+  min_tx_date: dateSchema.optional(),
+  max_tx_date: dateSchema.optional(),
   skipped_lines_summary: z.object({
     header: z.number(),
     section_marker: z.number(),
