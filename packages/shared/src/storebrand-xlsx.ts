@@ -17,6 +17,13 @@ export interface StorebrandParsedRow5 {
   raw_row: StorebrandRow5;
 }
 
+const STOREBRAND_DATE_SERIAL_INTEGER_MIN = 30000;
+const STOREBRAND_DATE_SERIAL_INTEGER_MAX = 60000;
+
+function isStorebrandSerialInteger(value: number): boolean {
+  return Number.isInteger(value) && value >= STOREBRAND_DATE_SERIAL_INTEGER_MIN && value <= STOREBRAND_DATE_SERIAL_INTEGER_MAX;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
@@ -75,7 +82,8 @@ export function parseStorebrandDate(value: unknown): string | null {
 
 export function parseStorebrandAmount(value: unknown): number | null {
   if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
+    if (!Number.isFinite(value) || isStorebrandSerialInteger(value)) return null;
+    return value;
   }
   if (value === null || value === undefined) return null;
 
@@ -100,7 +108,9 @@ export function parseStorebrandAmount(value: unknown): number | null {
   if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
 
   const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  if (!Number.isFinite(n)) return null;
+  if (isStorebrandSerialInteger(n)) return null;
+  return n;
 }
 
 export function isLikelyStorebrandCurrency(value: unknown): boolean {
