@@ -380,7 +380,7 @@ export const api = {
     }),
 
   resetData: (confirm: boolean) =>
-    request<{ success: boolean; message: string }>('/transactions/admin/reset', {
+    request<{ success: boolean; message: string }>('/transactions/actions/reset', {
       method: 'DELETE',
       body: JSON.stringify({ confirm }),
     }),

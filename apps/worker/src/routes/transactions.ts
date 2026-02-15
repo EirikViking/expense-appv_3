@@ -188,6 +188,12 @@ async function enrichTransactions(
 }
 
 transactions.use('/admin/*', async (c, next) => {
+  // Legacy self-service reset path was placed under /admin by mistake.
+  // Allow authenticated users through for this specific route; handler itself is user-scoped.
+  if (c.req.path.endsWith('/admin/reset')) {
+    await next();
+    return;
+  }
   if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
   await next();
 });
@@ -883,8 +889,8 @@ transactions.post('/bulk/include', async (c) => {
   }
 });
 
-// Reset all data (DANGER)
-transactions.delete('/admin/reset', async (c) => {
+// Reset all current-user data (DANGER)
+const handleResetData = async (c: Context<{ Bindings: Env }>) => {
   try {
     const { confirm } = await c.req.json() as { confirm: boolean };
     if (confirm !== true) {
@@ -917,7 +923,10 @@ transactions.delete('/admin/reset', async (c) => {
     console.error('Reset error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-});
+};
+
+transactions.delete('/actions/reset', handleResetData);
+transactions.delete('/admin/reset', handleResetData);
 
 // Detect transfers in existing data (heuristic backfill)
 transactions.post('/admin/detect-transfers', async (c) => {

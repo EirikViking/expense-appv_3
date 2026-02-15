@@ -10,7 +10,7 @@ type BoundStmt = {
 };
 
 describe('transactions reset endpoint scoping', () => {
-  it('deletes only effective user data, never global rows', async () => {
+  it('allows regular users and deletes only scoped user data, never global rows', async () => {
     const executed: BoundStmt[] = [];
     const db = {
       prepare: (sql: string) => ({
@@ -21,21 +21,6 @@ describe('transactions reset endpoint scoping', () => {
             first: async () => {
               if (sql.includes('FROM sessions s')) {
                 return {
-                  id: 'admin_1',
-                  email: 'admin@example.com',
-                  name: 'Admin',
-                  role: 'admin',
-                  active: 1,
-                  onboarding_done_at: null,
-                  created_at: new Date().toISOString(),
-                  updated_at: new Date().toISOString(),
-                };
-              }
-              if (sql.includes('SELECT impersonated_user_id FROM sessions WHERE id = ?')) {
-                return { impersonated_user_id: 'user_anja' };
-              }
-              if (sql.includes('FROM users') && sql.includes('WHERE id = ?')) {
-                return {
                   id: 'user_anja',
                   email: 'anja@example.com',
                   name: 'Anja',
@@ -45,6 +30,9 @@ describe('transactions reset endpoint scoping', () => {
                   created_at: new Date().toISOString(),
                   updated_at: new Date().toISOString(),
                 };
+              }
+              if (sql.includes('SELECT impersonated_user_id FROM sessions WHERE id = ?')) {
+                return null;
               }
               return null;
             },
@@ -67,7 +55,7 @@ describe('transactions reset endpoint scoping', () => {
     };
 
     const response = await app.request(
-      '/transactions/admin/reset',
+      '/transactions/actions/reset',
       {
         method: 'DELETE',
         headers: {
