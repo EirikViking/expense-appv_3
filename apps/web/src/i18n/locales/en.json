@@ -293,7 +293,7 @@
         "zero_amount_rows_active": "There are active 0-amount rows (should be excluded)",
         "suspicious_serial_amounts": "Suspicious amounts look like Excel date serials (30k-60k)",
         "suspicious_income_purchases": "Suspicious purchases classified as income",
-        "groceries_flow_type_mismatch": "Groceries contains mismatched flow types/signs",
+        "groceries_flow_type_mismatch": "Groceries contains positive amounts that should be income/refunds or recategorized",
         "groceries_analytics_mismatch": "Groceries analytics does not match the groceries transactions sum",
         "groceries_income_leak": "Groceries contains income rows (should be expenses)"
       }
