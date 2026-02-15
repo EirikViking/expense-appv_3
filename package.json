@@ -28,6 +28,7 @@
     "ingest:pdf:verify": "node scripts/ingest_pdf.mjs --verify",
     "ingest:xlsx": "npx tsx scripts/ingest_xlsx.ts",
     "ingest:xlsx:verify": "npx tsx scripts/ingest_xlsx.ts --verify",
+    "merchant:normalize:backfill": "node scripts/backfill-merchant-normalization.mjs",
     "setup:local": "pnpm install && pnpm db:migrate:local",
     "db:migrate:local": "pnpm --filter worker db:migrate:local",
     "db:migrate:remote": "pnpm --filter worker db:migrate:remote",

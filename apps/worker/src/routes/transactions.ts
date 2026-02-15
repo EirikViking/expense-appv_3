@@ -19,6 +19,7 @@ import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
 import { getCategoryHint } from '../lib/category-hints';
+import { normalizeMerchant } from '../lib/merchant-normalize';
 import { ensureAdmin, getEffectiveUser, getScopeUserId } from '../lib/request-scope';
 
 const transactions = new Hono<{ Bindings: Env }>();
@@ -143,6 +144,7 @@ async function enrichTransactions(
     const meta = metaMap.get(tx.id);
     const tags = tagsMap.get(tx.id) || [];
     const sourceFilename = filesMap.get(tx.source_file_hash);
+    const merchantNormalized = normalizeMerchant((tx as any).merchant || '');
 
     return {
       ...tx,
@@ -152,7 +154,7 @@ async function enrichTransactions(
       category_name: meta?.category_name || null,
       category_color: meta?.category_color || null,
       merchant_id: meta?.merchant_id || null,
-      merchant_name: meta?.merchant_name || null,
+      merchant_name: meta?.merchant_name || ((tx as any).merchant ? merchantNormalized.merchant : null),
       notes: meta?.notes || null,
       is_recurring: meta?.is_recurring === 1,
       source_filename: sourceFilename || null,
@@ -469,8 +471,18 @@ transactions.patch('/:id', async (c) => {
     const params: (string | number | null)[] = [];
 
     if (merchant !== undefined) {
-      updates.push('merchant = ?');
-      params.push(merchant);
+      if (merchant) {
+        const normalizedMerchant = normalizeMerchant(merchant);
+        updates.push('merchant = ?');
+        params.push(normalizedMerchant.merchant);
+        updates.push('merchant_raw = ?');
+        params.push(normalizedMerchant.merchant_raw);
+      } else {
+        updates.push('merchant = ?');
+        params.push(null);
+        updates.push('merchant_raw = ?');
+        params.push(null);
+      }
     }
 
     if (is_transfer !== undefined) {
@@ -609,14 +621,15 @@ transactions.post('/', async (c) => {
     const flowType: 'expense' | 'income' = amount < 0 ? 'expense' : 'income';
     await c.env.DB.prepare(`
       INSERT INTO transactions
-        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0, ?)
+        (id, tx_hash, tx_date, booked_date, description, merchant, merchant_raw, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0, ?)
     `).bind(
       id,
       txHash,
       date,
       date,
       description,
+      null,
       null,
       amount,
       sourceFileHash,
@@ -2003,6 +2016,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
           t.amount,
           t.description,
           t.merchant,
+          t.merchant_raw,
           t.source_type,
           t.tx_hash,
           t.raw_json,
@@ -2021,6 +2035,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       amount: number;
       description: string;
       merchant: string | null;
+      merchant_raw: string | null;
       source_type: 'xlsx' | 'pdf' | 'manual';
       tx_hash: string;
       raw_json: string;
@@ -2087,6 +2102,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       // This addresses historical cases where a year token (e.g. 2026) became the amount.
       let nextDescription = r.description;
       let nextMerchant = r.merchant;
+      let nextMerchantRaw = r.merchant_raw || r.merchant;
       let amountForClassify = r.amount;
 
       if (r.source_type === 'pdf' && rawLine) {
@@ -2107,7 +2123,10 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         }
 
         const merchantHint = extractMerchantFromPdfLine(rawLine);
-        if (merchantHint) nextMerchant = merchantHint;
+        if (merchantHint) {
+          nextMerchant = merchantHint;
+          nextMerchantRaw = merchantHint;
+        }
 
         if (rawObj && typeof rawObj === 'object') {
           rawObj.parsed_description = nextDescription;
@@ -2156,6 +2175,9 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       })();
 
       const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: preNormalizedAmount });
+      const merchantNormalized = normalizeMerchant(nextMerchant || nextDescription || '');
+      const finalMerchant = merchantNormalized.merchant;
+      const finalMerchantRaw = nextMerchantRaw || merchantNormalized.merchant_raw || null;
 
       const nextAmount = normalized.amount;
       const wasLegacyStraksTransfer = r.is_transfer === 1 && isStraksbetalingDescription(nextDescription);
@@ -2167,7 +2189,9 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       const transferDiff = nextIsTransfer !== r.is_transfer;
       const excludedDiff = nextIsExcluded !== r.is_excluded;
       const descriptionDiff = nextDescription !== r.description;
-      const merchantDiff = (nextMerchant || null) !== (r.merchant || null);
+      const merchantDiff =
+        (finalMerchant || null) !== (r.merchant || null) ||
+        (finalMerchantRaw || null) !== (r.merchant_raw || null);
 
       if (flowDiff) flowChanged++;
       if (signDiff) signFixed++;
@@ -2205,7 +2229,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         c.env.DB.prepare(
           `
             UPDATE transactions
-            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?, description = ?, merchant = ?, raw_json = ?
+            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?, description = ?, merchant = ?, merchant_raw = ?, raw_json = ?
             WHERE id = ?
           `
         ).bind(
@@ -2215,7 +2239,8 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
           nextIsTransfer,
           nextIsExcluded,
           nextDescription,
-          nextMerchant || null,
+          finalMerchant || null,
+          finalMerchantRaw,
           rawObj ? JSON.stringify(rawObj) : r.raw_json,
           r.id
         )
@@ -2539,6 +2564,108 @@ transactions.post('/admin/reclassify-other', async (c) => {
     });
   } catch (error) {
     console.error('Reclassify other error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Normalize merchant values across existing rows.
+// Useful after introducing deterministic merchant normalization logic.
+transactions.post('/admin/normalize-merchants', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => null)) as
+      | {
+          cursor?: unknown;
+          limit?: unknown;
+          dry_run?: unknown;
+        }
+      | null;
+
+    const cursor = typeof body?.cursor === 'string' ? body.cursor : '';
+    const limitRaw = typeof body?.limit === 'number' ? body.limit : Number(body?.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(50, limitRaw), 1000) : 300;
+    const dryRun = body?.dry_run === true;
+
+    const rows = await c.env.DB
+      .prepare(
+        `
+          SELECT id, description, merchant, merchant_raw, raw_json
+          FROM transactions
+          WHERE id > ?
+          ORDER BY id ASC
+          LIMIT ?
+        `
+      )
+      .bind(cursor, limit)
+      .all<{
+        id: string;
+        description: string;
+        merchant: string | null;
+        merchant_raw: string | null;
+        raw_json: string | null;
+      }>();
+
+    const txs = rows.results || [];
+    const scanned = txs.length;
+    const nextCursor = scanned > 0 ? txs[scanned - 1].id : null;
+
+    const updates: D1PreparedStatement[] = [];
+    let wouldUpdate = 0;
+
+    for (const tx of txs) {
+      const sourceRaw = tx.merchant_raw || tx.merchant || tx.description || '';
+      const normalized = normalizeMerchant(sourceRaw);
+
+      const merchantNext = normalized.merchant || null;
+      const merchantRawNext = normalized.merchant_raw || null;
+      const merchantChanged = (tx.merchant || null) !== merchantNext || (tx.merchant_raw || null) !== merchantRawNext;
+      if (!merchantChanged) continue;
+
+      wouldUpdate++;
+      if (dryRun) continue;
+
+      let nextRawJson = tx.raw_json;
+      try {
+        if (tx.raw_json) {
+          const parsed = JSON.parse(tx.raw_json);
+          if (parsed && typeof parsed === 'object') {
+            (parsed as any).merchant_raw = merchantRawNext;
+            (parsed as any).merchant_normalized = merchantNext;
+            (parsed as any).merchant_kind = normalized.merchant_kind;
+            nextRawJson = JSON.stringify(parsed);
+          }
+        }
+      } catch {
+        // keep old raw_json when malformed
+      }
+
+      updates.push(
+        c.env.DB
+          .prepare(
+            `
+              UPDATE transactions
+              SET merchant = ?, merchant_raw = ?, raw_json = ?
+              WHERE id = ?
+            `
+          )
+          .bind(merchantNext, merchantRawNext, nextRawJson, tx.id)
+      );
+    }
+
+    if (!dryRun && updates.length > 0) {
+      await c.env.DB.batch(updates);
+    }
+
+    return c.json({
+      success: true,
+      dry_run: dryRun,
+      scanned,
+      would_update: wouldUpdate,
+      updated: dryRun ? 0 : updates.length,
+      next_cursor: scanned === limit ? nextCursor : null,
+      done: scanned < limit,
+    });
+  } catch (error) {
+    console.error('Normalize merchants error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

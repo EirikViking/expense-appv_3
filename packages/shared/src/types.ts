@@ -31,6 +31,7 @@ export interface Transaction {
   booked_date: string | null;
   description: string;
   merchant: string | null;
+  merchant_raw?: string | null;
   amount: number;
   currency: string;
   status: TransactionStatus;

@@ -11,7 +11,7 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { buildCategoryBreakdown, toNumber } from '../lib/analytics';
-import { merchantChainKey } from '../lib/merchant-chain';
+import { buildMerchantBreakdown } from '../lib/merchant-insights';
 import { getScopeUserId } from '../lib/request-scope';
 
 const analytics = new Hono<{ Bindings: Env }>();
@@ -485,49 +485,19 @@ analytics.get('/by-merchant', async (c) => {
       .bind(...prevBindings)
       .all<{ merchant_id: string | null; merchant_name: string; total: number }>();
 
-    // Aggregate previous totals by chain key.
-    const prevMap = new Map<string, number>();
-    for (const r of prevResult.results || []) {
-      const k = merchantChainKey(r.merchant_id, r.merchant_name);
-      prevMap.set(k, (prevMap.get(k) || 0) + toNumber(r.total));
-    }
-
-    // Aggregate current rows by chain key.
-    const currentAgg = new Map<string, { merchant_id: string | null; merchant_name: string; total: number; count: number }>();
-    for (const r of currentResult.results || []) {
-      const k = merchantChainKey(r.merchant_id, r.merchant_name);
-      const existing = currentAgg.get(k);
-      if (existing) {
-        existing.total += toNumber(r.total);
-        existing.count += toNumber(r.count);
-      } else {
-        currentAgg.set(k, {
-          merchant_id: r.merchant_id ? r.merchant_id : null,
-          merchant_name: k,
-          total: toNumber(r.total),
-          count: toNumber(r.count),
-        });
-      }
-    }
-
-    const merchants: MerchantBreakdown[] = [...currentAgg.values()].map(r => {
-      const total = toNumber(r.total);
-      const count = toNumber(r.count);
-      const avg = count > 0 ? total / count : 0;
-      const prevTotal = prevMap.get(r.merchant_name) || 0;
-      const trend = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
-
-      return {
-        merchant_id: r.merchant_id,
+    const merchants: MerchantBreakdown[] = buildMerchantBreakdown(
+      (currentResult.results || []).map((r) => ({
+        merchant_id: r.merchant_id ? r.merchant_id : null,
         merchant_name: r.merchant_name,
-        total,
-        count,
-        avg,
-        trend,
-      };
-    });
-
-    merchants.sort((a, b) => b.total - a.total);
+        total: toNumber(r.total),
+        count: toNumber(r.count),
+      })),
+      (prevResult.results || []).map((r) => ({
+        merchant_id: r.merchant_id ? r.merchant_id : null,
+        merchant_name: r.merchant_name,
+        total: toNumber(r.total),
+      }))
+    );
     return c.json({ merchants: merchants.slice(0, limit) });
   } catch (error) {
     console.error('Analytics by-merchant error:', error);

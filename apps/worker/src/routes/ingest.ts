@@ -13,6 +13,7 @@ import { applyRulesToBatch, getEnabledRules } from '../lib/rule-engine';
 import { detectIsTransfer } from '../lib/transfer-detect';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
+import { normalizeMerchant } from '../lib/merchant-normalize';
 import type { Env } from '../types';
 import { getScopeUserId } from '../lib/request-scope';
 
@@ -432,6 +433,7 @@ async function insertTransaction(
   bookedDate: string | null,
   description: string,
   merchant: string | null,
+  merchantRaw: string | null,
   amount: number,
   currency: string,
   status: string,
@@ -447,8 +449,8 @@ async function insertTransaction(
   await db
     .prepare(
       `INSERT INTO transactions
-       (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       (id, tx_hash, tx_date, booked_date, description, merchant, merchant_raw, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -457,6 +459,7 @@ async function insertTransaction(
       bookedDate,
       description,
       merchant,
+      merchantRaw,
       amount,
       currency,
       status,
@@ -509,6 +512,7 @@ async function insertXlsxTransactionsBatch(
       booked_date: string | null;
       description: string;
       merchant: string | null;
+      merchant_raw: string | null;
       amount: number;
       currency: string;
       raw_json: string;
@@ -541,6 +545,7 @@ async function insertXlsxTransactionsBatch(
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
+        const normalizedMerchant = normalizeMerchant(tx.merchant || tx.description || '');
 
         // Preserve original context for deterministic rebuilds/debugging.
         const rawJson = (() => {
@@ -560,6 +565,9 @@ async function insertXlsxTransactionsBatch(
               (obj as any).normalized_is_transfer = Boolean(flags?.is_transfer);
               (obj as any).normalized_is_excluded = Boolean(flags?.is_excluded);
               (obj as any).normalized_reason = flow.reason;
+              (obj as any).merchant_raw = normalizedMerchant.merchant_raw;
+              (obj as any).merchant_normalized = normalizedMerchant.merchant;
+              (obj as any).merchant_kind = normalizedMerchant.merchant_kind;
               return JSON.stringify(obj);
             }
           } catch {
@@ -580,6 +588,9 @@ async function insertXlsxTransactionsBatch(
             normalized_is_transfer: Boolean(flags?.is_transfer),
             normalized_is_excluded: Boolean(flags?.is_excluded),
             normalized_reason: flow.reason,
+            merchant_raw: normalizedMerchant.merchant_raw,
+            merchant_normalized: normalizedMerchant.merchant,
+            merchant_kind: normalizedMerchant.merchant_kind,
           });
         })();
 
@@ -589,7 +600,8 @@ async function insertXlsxTransactionsBatch(
           tx_date: tx.tx_date,
           booked_date: tx.booked_date || null,
           description: tx.description,
-          merchant: tx.merchant || null,
+          merchant: normalizedMerchant.merchant || null,
+          merchant_raw: normalizedMerchant.merchant_raw || null,
           amount,
           currency: tx.currency,
           raw_json: rawJson,
@@ -612,8 +624,8 @@ async function insertXlsxTransactionsBatch(
         db
           .prepare(
             `INSERT OR IGNORE INTO transactions
-             (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             (id, tx_hash, tx_date, booked_date, description, merchant, merchant_raw, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             p.id,
@@ -622,6 +634,7 @@ async function insertXlsxTransactionsBatch(
             p.booked_date,
             p.description,
             p.merchant,
+            p.merchant_raw,
             p.amount,
             p.currency,
             'booked',
@@ -821,6 +834,7 @@ ingest.post('/pdf', async (c) => {
         const description = reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
         const parsedAmount = reparsed?.amount !== undefined && reparsed.date === tx.tx_date ? reparsed.amount : tx.amount;
         const merchantHint = tx.merchant_hint || extractMerchantFromPdfLine(tx.raw_line);
+        const normalizedMerchant = normalizeMerchant(merchantHint || description || '');
 
         const rawJson = JSON.stringify({
           source_type: 'pdf',
@@ -834,6 +848,9 @@ ingest.post('/pdf', async (c) => {
           parsed_description: description,
           parsed_amount: parsedAmount,
           merchant_hint: merchantHint,
+          merchant_raw: normalizedMerchant.merchant_raw,
+          merchant_normalized: normalizedMerchant.merchant,
+          merchant_kind: normalizedMerchant.merchant_kind,
         });
 
         const flow = classifyFlowType({
@@ -886,7 +903,8 @@ ingest.post('/pdf', async (c) => {
           tx.tx_date,
           null, // PDF doesn't have separate booked date
           description,
-          merchantHint,
+          normalizedMerchant.merchant,
+          normalizedMerchant.merchant_raw || null,
           amount,
           'NOK',
           tx.status,

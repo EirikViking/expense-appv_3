@@ -974,7 +974,9 @@ export function TransactionsPage() {
                             {tx.merchant_name && (
                               <>
                                 <span className="text-white/25">|</span>
-                                <span>{tx.merchant_name}</span>
+                                <span title={tx.merchant_raw && tx.merchant_raw !== tx.merchant_name ? tx.merchant_raw : undefined}>
+                                  {tx.merchant_name}
+                                </span>
                               </>
                             )}
                             {tx.category_name && (

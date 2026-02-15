@@ -208,6 +208,9 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.merchant')}</p>
                             <p>{tx.merchant_name || t('common.notAvailable')}</p>
+                            {tx.merchant_raw && tx.merchant_name && tx.merchant_raw !== tx.merchant_name && (
+                                <p className="text-xs text-white/55">{tx.merchant_raw}</p>
+                            )}
                         </div>
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.category')}</p>
