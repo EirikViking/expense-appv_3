@@ -18,6 +18,7 @@ import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, is
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
+import { getCategoryHint } from '../lib/category-hints';
 import { ensureAdmin, getEffectiveUser, getScopeUserId } from '../lib/request-scope';
 
 const transactions = new Hono<{ Bindings: Env }>();
@@ -2441,6 +2442,15 @@ transactions.post('/admin/reclassify-other', async (c) => {
 
     for (const r of rows) {
       const combined = buildCombinedText(r.merchant, r.description);
+
+      // Deterministic high-confidence hints first.
+      const hintCategory = getCategoryHint(combined, Number(r.amount));
+      if (hintCategory) {
+        const nextNotes = r.notes ? `${r.notes}\n${stamp}` : stamp;
+        updates.push({ id: r.id, category_id: hintCategory, notes: nextNotes });
+        continue;
+      }
+
       const s = score(combined);
       if (!s || !s.topCat) {
         skipped_no_score++;
