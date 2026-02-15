@@ -292,7 +292,7 @@ export function DashboardPage() {
         const merchantsRes = await api.getAnalyticsByMerchant({
           date_from: dateFrom,
           date_to: dateTo,
-          limit: 20,
+          limit: 12,
           status: statusFilter || undefined,
           include_transfers: !excludeTransfers,
           category_id: selectedCategoryId || undefined,

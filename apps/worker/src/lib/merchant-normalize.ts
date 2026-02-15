@@ -42,8 +42,10 @@ function isCodeLike(value: string): boolean {
   if (!compact) return true;
   if (/^\d+$/.test(compact)) return true;
   if (/^\d+(?:[.,]\d+)?(?:NOK|KR)$/.test(compact)) return true;
+  if (/^\d{3,8}(?:NOK|KR)\d+(?:[.,]\d+)?$/.test(compact)) return true;
   if (/^(?:NOK|KR)$/.test(compact)) return true;
   if (/^\d{3,8}(?:NOK|KR)?$/.test(compact)) return true;
+  if (/^(?:VISA|GIRO)?\d{3,8}(?:NOK|KR)\d+(?:[.,]\d+)?$/.test(compact)) return true;
   return false;
 }
 
@@ -59,6 +61,10 @@ function applyDomainMapping(value: string): string {
 
   if (/(?:^|\b)ELKJOP(?:\.NO)?(?:\b|$)/.test(upper)) {
     return 'ELKJOP';
+  }
+
+  if (/(?:^|\b)KLARNA(?:\b|$)/.test(upper)) {
+    return 'KLARNA';
   }
 
   return value;
@@ -77,6 +83,10 @@ function cleanupMerchantCandidate(raw: string): string {
   // Remove leading numeric transaction codes.
   candidate = candidate.replace(/^\d{3,8}\s+/, '');
 
+  // "100032 NOK 1061,56 Klarna Ab" -> "Klarna Ab"
+  candidate = candidate.replace(/^(?:NOK|KR)\s+[-\d.,]+\s+/i, '');
+  candidate = candidate.replace(/^\d{3,8}\s+(?:NOK|KR)\s+[-\d.,]+\s+/i, '');
+
   // Drop pointless trailing currency token.
   candidate = candidate.replace(/\s+(?:NOK|KR)\.?$/i, '').trim();
 
@@ -86,13 +96,42 @@ function cleanupMerchantCandidate(raw: string): string {
   return candidate;
 }
 
+function mergeFallbackResult(
+  primaryRaw: string,
+  fallback: { merchant: string; merchant_raw: string; merchant_kind: MerchantKind }
+) {
+  return {
+    merchant: fallback.merchant,
+    merchant_raw: primaryRaw,
+    merchant_kind: fallback.merchant_kind,
+  };
+}
+
 export function normalizeMerchant(raw: string): {
+  merchant: string;
+  merchant_raw: string;
+  merchant_kind: MerchantKind;
+};
+
+export function normalizeMerchant(raw: string, fallbackRaw: string): {
+  merchant: string;
+  merchant_raw: string;
+  merchant_kind: MerchantKind;
+};
+
+export function normalizeMerchant(raw: string, fallbackRaw?: string): {
   merchant: string;
   merchant_raw: string;
   merchant_kind: MerchantKind;
 } {
   const merchant_raw = normalizeSpace(String(raw || ''));
+  const fallback_raw = normalizeSpace(String(fallbackRaw || ''));
+
   if (!merchant_raw) {
+    if (fallback_raw) {
+      const fallback = normalizeMerchant(fallback_raw);
+      if (fallback.merchant_kind === 'name') return fallback;
+    }
     return {
       merchant: UNKNOWN_MERCHANT,
       merchant_raw,
@@ -101,6 +140,12 @@ export function normalizeMerchant(raw: string): {
   }
 
   if (isCodeLike(merchant_raw)) {
+    if (fallback_raw && fallback_raw !== merchant_raw) {
+      const fallback = normalizeMerchant(fallback_raw);
+      if (fallback.merchant_kind === 'name') {
+        return mergeFallbackResult(merchant_raw, fallback);
+      }
+    }
     return {
       merchant: UNKNOWN_MERCHANT,
       merchant_raw,
@@ -114,6 +159,12 @@ export function normalizeMerchant(raw: string): {
   }
 
   if (isCodeLike(candidate)) {
+    if (fallback_raw && fallback_raw !== merchant_raw) {
+      const fallback = normalizeMerchant(fallback_raw);
+      if (fallback.merchant_kind === 'name') {
+        return mergeFallbackResult(merchant_raw, fallback);
+      }
+    }
     return {
       merchant: UNKNOWN_MERCHANT,
       merchant_raw,

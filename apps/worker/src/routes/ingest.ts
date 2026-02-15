@@ -545,7 +545,7 @@ async function insertXlsxTransactionsBatch(
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
-        const normalizedMerchant = normalizeMerchant(tx.merchant || tx.description || '');
+        const normalizedMerchant = normalizeMerchant(tx.merchant || '', tx.description || '');
 
         // Preserve original context for deterministic rebuilds/debugging.
         const rawJson = (() => {
@@ -834,7 +834,7 @@ ingest.post('/pdf', async (c) => {
         const description = reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
         const parsedAmount = reparsed?.amount !== undefined && reparsed.date === tx.tx_date ? reparsed.amount : tx.amount;
         const merchantHint = tx.merchant_hint || extractMerchantFromPdfLine(tx.raw_line);
-        const normalizedMerchant = normalizeMerchant(merchantHint || description || '');
+        const normalizedMerchant = normalizeMerchant(merchantHint || '', description || '');
 
         const rawJson = JSON.stringify({
           source_type: 'pdf',

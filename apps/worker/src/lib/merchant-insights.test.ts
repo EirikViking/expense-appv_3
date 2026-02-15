@@ -17,5 +17,22 @@ describe('merchant insights grouping', () => {
     expect(breakdown.some((m) => m.merchant_name === 'Ukjent brukersted')).toBe(true);
     expect(breakdown.some((m) => m.merchant_name === 'ELKJOP')).toBe(true);
   });
+
+  it('normalizes code-prefixed card descriptions into stable merchant groups', () => {
+    const breakdown = buildMerchantBreakdown(
+      [
+        { merchant_id: null, merchant_name: 'Visa 100032 Nok 1061,56 Klarna Ab', total: 1061.56, count: 1 },
+        { merchant_id: null, merchant_name: 'Visa 100322 Nok 644,00 Klarna Ab', total: 644, count: 1 },
+        { merchant_id: null, merchant_name: 'Visa 100022 Nok 2728,00 Klarna:goodlife n', total: 2728, count: 1 },
+      ],
+      []
+    );
+
+    const klarna = breakdown.find((m) => m.merchant_name === 'KLARNA');
+    expect(klarna).toBeTruthy();
+    expect(klarna?.count).toBe(3);
+    expect(Math.round((klarna?.total || 0) * 100) / 100).toBe(4433.56);
+    expect(breakdown.some((m) => m.merchant_name === 'Ukjent brukersted')).toBe(false);
+  });
 });
 

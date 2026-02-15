@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
@@ -55,6 +55,7 @@ export function TransactionsPage() {
   const [aggregates, setAggregates] = useState<{ sum_amount: number; total_spent: number; total_income: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   // Filters
   const [dateFrom, setDateFrom] = useState('');
@@ -164,6 +165,7 @@ export function TransactionsPage() {
   };
 
   const fetchData = useCallback(async () => {
+    if (!filtersInitialized) return;
     if (!validateDateRange(dateFrom, dateTo)) {
       setDateRangeError('Fra-dato kan ikke være etter til-dato.');
       setTransactions([]);
@@ -176,6 +178,7 @@ export function TransactionsPage() {
 
     setIsLoading(true);
     setError(null);
+    const requestId = ++requestIdRef.current;
 
     try {
       const shouldFetchOverallTotal = hasNarrowingFilters({
@@ -238,23 +241,30 @@ export function TransactionsPage() {
           : Promise.resolve(null),
       ]);
 
-      setTransactions(txResult.transactions);
-      setTotal(txResult.total);
-      setOverallTotal(overallResult?.total ?? txResult.total);
-      setAggregates(txResult.aggregates ?? null);
-      if ('categories' in catResult && catResult.categories) {
-        setCategories(catResult.categories);
+      if (requestId === requestIdRef.current) {
+        setTransactions(txResult.transactions);
+        setTotal(txResult.total);
+        setOverallTotal(overallResult?.total ?? txResult.total);
+        setAggregates(txResult.aggregates ?? null);
+        if ('categories' in catResult && catResult.categories) {
+          setCategories(catResult.categories);
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('transactions.failedFetch'));
+      if (requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err.message : t('transactions.failedFetch'));
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey]);
+  }, [filtersInitialized, transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey, t]);
 
   useEffect(() => {
+    if (!filtersInitialized) return;
     fetchData();
-  }, [fetchData]);
+  }, [filtersInitialized, fetchData]);
 
   useEffect(() => {
     if (!dateFrom || !dateTo) {

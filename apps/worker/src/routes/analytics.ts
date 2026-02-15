@@ -375,7 +375,18 @@ analytics.get('/by-merchant', async (c) => {
     // Many Storebrand exports embed noise into description (e.g. "Notanr ...", "betal dato ..."),
     // which fragments the same store into many merchant groups. Normalize into a stable key when
     // no canonical merchant exists.
-    const baseTextExpr = `COALESCE(NULLIF(TRIM(t.merchant), ''), TRIM(t.description))`;
+    const merchantRawExpr = `TRIM(COALESCE(t.merchant, ''))`;
+    const merchantLooksLikeCodeExpr = `(
+      ${merchantRawExpr} GLOB '[0-9][0-9][0-9]*' OR
+      UPPER(${merchantRawExpr}) GLOB '[0-9][0-9][0-9]* NOK *' OR
+      UPPER(${merchantRawExpr}) GLOB '[0-9][0-9][0-9]* KR *'
+    )`;
+    const baseTextExpr = `
+      CASE
+        WHEN ${merchantLooksLikeCodeExpr} THEN TRIM(t.description)
+        ELSE COALESCE(NULLIF(${merchantRawExpr}, ''), TRIM(t.description))
+      END
+    `;
     const prefixStrippedExpr = `
       CASE
         WHEN LOWER(${baseTextExpr}) LIKE 'vipps*%' AND INSTR(${baseTextExpr}, '*') > 0
@@ -396,21 +407,10 @@ analytics.get('/by-merchant', async (c) => {
         END
       )
     `;
-    const twoTokensExpr = `
-      CASE
-        WHEN INSTR(${cleanedExpr}, ' ') = 0 THEN ${cleanedExpr}
-        WHEN INSTR(SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1), ' ') = 0 THEN ${cleanedExpr}
-        ELSE SUBSTR(
-          ${cleanedExpr},
-          1,
-          INSTR(${cleanedExpr}, ' ') + INSTR(SUBSTR(${cleanedExpr}, INSTR(${cleanedExpr}, ' ') + 1), ' ')
-        )
-      END
-    `;
     const merchantNameExpr = `
       CASE
         WHEN m.id IS NOT NULL AND COALESCE(NULLIF(TRIM(m.canonical_name), ''), '') != '' THEN TRIM(m.canonical_name)
-        ELSE TRIM(${twoTokensExpr})
+        ELSE TRIM(${cleanedExpr})
       END
     `;
 
@@ -427,7 +427,7 @@ analytics.get('/by-merchant', async (c) => {
     });
 
     // Pull enough rows to allow safe post-aggregation (e.g. chain merging of "KIWI 505" + "KIWI 123").
-    const scanLimit = Math.min(500, Math.max(limit * 25, 200));
+    const scanLimit = Math.min(250, Math.max(limit * 10, 80));
 
     const currentResult = await c.env.DB
       .prepare(`

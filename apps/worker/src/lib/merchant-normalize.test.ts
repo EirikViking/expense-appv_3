@@ -13,5 +13,15 @@ describe('normalizeMerchant', () => {
     expect(normalizeMerchant('100331 CLASOHLSON.COM/NO').merchant).toBe('CLAS OHLSON');
     expect(normalizeMerchant('PAYPAL').merchant).toBe('PAYPAL');
   });
+
+  it('uses fallback description when merchant field is code-like amount noise', () => {
+    const normalized = normalizeMerchant(
+      '100032 NOK 1061,56',
+      'Visa 100032 Nok 1061,56 Klarna Ab'
+    );
+    expect(normalized.merchant).toBe('KLARNA');
+    expect(normalized.merchant_raw).toBe('100032 NOK 1061,56');
+    expect(normalized.merchant_kind).toBe('name');
+  });
 });
 

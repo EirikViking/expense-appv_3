@@ -42,6 +42,23 @@ describe('transactions-filters', () => {
       hasNarrowingFilters({
         dateFrom: '',
         dateTo: '',
+        transactionId: 'tx_1',
+        status: '',
+        sourceType: '',
+        categoryId: '',
+        merchantId: '',
+        merchantName: '',
+        minAmount: '',
+        maxAmount: '',
+        searchQuery: '',
+        flowType: '',
+      })
+    ).toBe(true);
+
+    expect(
+      hasNarrowingFilters({
+        dateFrom: '',
+        dateTo: '',
         transactionId: '',
         status: 'booked',
         sourceType: '',

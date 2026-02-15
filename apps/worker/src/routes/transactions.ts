@@ -40,7 +40,7 @@ function isUnknownMerchantFilter(value: string): boolean {
   return UNKNOWN_MERCHANT_FILTERS.has(value.trim().toLowerCase());
 }
 
-const UNKNOWN_MERCHANT_VALUE_SQL = `UPPER(TRIM(COALESCE(NULLIF(TRIM(t.merchant), ''), NULLIF(TRIM(t.description), ''), '')))`;
+const UNKNOWN_MERCHANT_VALUE_SQL = `UPPER(TRIM(COALESCE(NULLIF(TRIM(t.merchant), ''), '')))`;
 const UNKNOWN_MERCHANT_SQL = `(
   ${UNKNOWN_MERCHANT_VALUE_SQL} = '' OR
   ${UNKNOWN_MERCHANT_VALUE_SQL} IN ('UKJENT BRUKERSTED', 'UNKNOWN MERCHANT', 'UNKNOWN', 'NOK', 'KR') OR
@@ -48,6 +48,8 @@ const UNKNOWN_MERCHANT_SQL = `(
     ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]*'
     AND ${UNKNOWN_MERCHANT_VALUE_SQL} NOT LIKE '% %'
   ) OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* NOK [0-9.,-]*' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* KR [0-9.,-]*' OR
   ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* NOK' OR
   ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* KR'
 )`;
@@ -166,7 +168,7 @@ async function enrichTransactions(
     const meta = metaMap.get(tx.id);
     const tags = tagsMap.get(tx.id) || [];
     const sourceFilename = filesMap.get(tx.source_file_hash);
-    const merchantNormalized = normalizeMerchant((tx as any).merchant || '');
+    const merchantNormalized = normalizeMerchant((tx as any).merchant || '', tx.description || '');
 
     return {
       ...tx,
@@ -344,6 +346,10 @@ transactions.get('/', async (c) => {
     }
 
     if (search && search.trim()) {
+      const searchNeedleRaw = search.trim();
+      if (isUnknownMerchantFilter(searchNeedleRaw)) {
+        conditions.push(UNKNOWN_MERCHANT_SQL);
+      } else {
       // Make "search" useful by matching:
       // - description
       // - canonical merchant name (if available)
@@ -355,7 +361,7 @@ transactions.get('/', async (c) => {
       if (!joinClause.includes('merchants m')) {
         joinClause += merchantsJoin;
       }
-      const needle = `%${search.trim()}%`;
+      const needle = `%${searchNeedleRaw}%`;
       conditions.push(`(
         t.description LIKE ? COLLATE NOCASE OR
         COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
@@ -370,6 +376,7 @@ transactions.get('/', async (c) => {
         )
       )`);
       params.push(needle, needle, needle, needle, needle);
+      }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -2209,7 +2216,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       })();
 
       const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: preNormalizedAmount });
-      const merchantNormalized = normalizeMerchant(nextMerchant || nextDescription || '');
+      const merchantNormalized = normalizeMerchant(nextMerchant || '', nextDescription || '');
       const finalMerchant = merchantNormalized.merchant;
       const finalMerchantRaw = nextMerchantRaw || merchantNormalized.merchant_raw || null;
 
@@ -2647,7 +2654,7 @@ transactions.post('/admin/normalize-merchants', async (c) => {
 
     for (const tx of txs) {
       const sourceRaw = tx.merchant_raw || tx.merchant || tx.description || '';
-      const normalized = normalizeMerchant(sourceRaw);
+      const normalized = normalizeMerchant(sourceRaw, tx.description || '');
 
       const merchantNext = normalized.merchant || null;
       const merchantRawNext = normalized.merchant_raw || null;
