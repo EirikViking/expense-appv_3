@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 import { InviteShareCard } from '@/components/InviteShareCard';
+import { GIT_COMMIT } from '@/lib/version';
 
 type UserDraft = {
   name: string;
@@ -435,6 +436,11 @@ export function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <p className="text-right text-xs text-white/55">
+        {t('settingsPage.buildLabel')}: <code className="rounded bg-white/10 px-1.5 py-0.5">{buildId}</code>
+      </p>
     </div>
   );
 }
+  const buildId = GIT_COMMIT.slice(0, 7);

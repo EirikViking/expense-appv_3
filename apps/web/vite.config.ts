@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import fs from 'fs';
 
+const GIT_COMMIT = process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || process.env.COMMIT_SHA || 'local';
+const BUILD_TIME = new Date().toISOString();
+
 // Build-time guard plugin that fails if Node crypto is imported
 function cryptoImportGuard(): Plugin {
   const forbiddenPatterns = [
@@ -65,9 +68,24 @@ function cryptoImportGuard(): Plugin {
   };
 }
 
+function buildMetadataAsset(commit: string): Plugin {
+  return {
+    name: 'build-metadata-asset',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'build.txt',
+        source: `${commit}\n`,
+      });
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
     cryptoImportGuard(),
+    buildMetadataAsset(GIT_COMMIT),
     react(),
   ],
   test: {
@@ -104,7 +122,7 @@ export default defineConfig({
     // Ensure no Node.js globals are polyfilled
     global: 'globalThis',
     // Inject build-time values (these get replaced in the bundle)
-    '__BUILD_TIME__': JSON.stringify(new Date().toISOString()),
-    '__GIT_COMMIT__': JSON.stringify(process.env.CF_PAGES_COMMIT_SHA || process.env.GITHUB_SHA || 'local'),
+    '__BUILD_TIME__': JSON.stringify(BUILD_TIME),
+    '__GIT_COMMIT__': JSON.stringify(GIT_COMMIT),
   },
 });
