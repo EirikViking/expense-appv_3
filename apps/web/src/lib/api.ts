@@ -77,6 +77,7 @@ export interface ValidateIngestResponse {
     tx_base_total?: number;
     analytics_delta?: number;
     flow_delta?: number;
+    wrong_sign_count?: number;
     income_leak_count?: number;
   };
   suspicious_income?: Array<{ description: string; count: number; total_abs: number }>;

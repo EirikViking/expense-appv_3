@@ -220,7 +220,7 @@
         "zero_amount_rows_active": "Det finnes aktive 0-beløp-rader (skal være utelatt)",
         "suspicious_serial_amounts": "Mistenkelige beløp ser ut som Excel-datoserial (30k-60k)",
         "suspicious_income_purchases": "Mistenkelige kjøp er klassifisert som inntekt",
-        "groceries_flow_type_mismatch": "Dagligvarer har feil flyt-type/fortegn",
+        "groceries_flow_type_mismatch": "Dagligvarer inneholder positive beløp som bør være inntekt/refusjon eller omkategoriseres",
         "groceries_analytics_mismatch": "Dagligvarer i innsikt matcher ikke sum av transaksjoner",
         "groceries_income_leak": "Dagligvarer inneholder inntektsrader (skal være utgifter)"
       }

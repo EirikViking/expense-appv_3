@@ -1582,6 +1582,23 @@ const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
       `
     ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
 
+    // True sign mismatch for groceries: positive amounts on active, non-transfer groceries rows.
+    // This is a stricter and less noisy signal than comparing strict-vs-fallback flow buckets.
+    const groceriesWrongSign = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND tm.category_id = 'cat_food_groceries'
+          AND t.amount > 0
+      `
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
+
     // Match /analytics/by-category behavior for groceries, including splits and excluding transfers by default.
     const groceriesAnalytics = await c.env.DB.prepare(
       `
@@ -1716,7 +1733,7 @@ const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
     if (zero_active > 0) failures.push('zero_amount_rows_active');
     if (suspicious_count > 0) failures.push('suspicious_income_purchases');
     if (suspicious_serial_amounts > 0) failures.push('suspicious_serial_amounts');
-    if (groceries_flow_delta > 1) failures.push('groceries_flow_type_mismatch');
+    if (Number(groceriesWrongSign?.count || 0) > 0) failures.push('groceries_flow_type_mismatch');
     if (groceries_analytics_delta > 1) failures.push('groceries_analytics_mismatch');
     if (Number(groceriesIncomeLeak?.count || 0) > 0) failures.push('groceries_income_leak');
 
@@ -1748,6 +1765,7 @@ const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
           sum_abs: groceries_fallback_sum,
         },
         flow_delta: groceries_flow_delta,
+        wrong_sign_count: Number(groceriesWrongSign?.count || 0),
         income_leak_count: Number(groceriesIncomeLeak?.count || 0),
       },
       suspicious_income,
