@@ -54,6 +54,7 @@ import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
+import { darkenHexColor, getCategoryChartColor } from '@/lib/category-chart-colors';
 
 export function DashboardPage() {
   const { t, i18n } = useTranslation();
@@ -336,7 +337,6 @@ export function DashboardPage() {
     void loadTrend();
   }, [trendMonths, trendCategoryId, statusFilter]);
 
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;
 
@@ -354,6 +354,32 @@ export function DashboardPage() {
       .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
       .slice(0, 4);
   }, [categories]);
+
+  const topCategoryPieData = useMemo(() => {
+    return categories.slice(0, 8).map((category, index) => {
+      const seed = String(category.category_id || category.category_name || index);
+      const fill = category.category_color || getCategoryChartColor(seed);
+      return {
+        ...category,
+        name: localizeCategoryName(category.category_name, currentLanguage),
+        fill,
+        depthFill: darkenHexColor(fill, 0.3),
+      };
+    });
+  }, [categories, currentLanguage]);
+
+  const openCategoryDrilldown = (entry: CategoryBreakdown) => {
+    const qs = new URLSearchParams();
+    qs.set('date_from', dateFrom);
+    qs.set('date_to', dateTo);
+    qs.set('include_transfers', excludeTransfers ? '0' : '1');
+    if (statusFilter) qs.set('status', statusFilter);
+    if (entry.category_id) qs.set('category_id', String(entry.category_id));
+    qs.set('flow_type', 'expense');
+    qs.set('sort_by', 'amount_abs');
+    qs.set('sort_order', 'desc');
+    navigate(`/transactions?${qs.toString()}`);
+  };
 
   if (loading && !overview) {
     return (
@@ -688,8 +714,28 @@ export function DashboardPage() {
             {showCategoryDetails && hasCategorization ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
+                  <defs>
+                    <filter id="categoryPieShadow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feDropShadow dx="0" dy="7" stdDeviation="5" floodColor="rgba(0,0,0,0.45)" />
+                    </filter>
+                  </defs>
                   <Pie
-                    data={categories.slice(0, 8).map(c => ({ ...c, name: localizeCategoryName(c.category_name, currentLanguage) }))}
+                    data={topCategoryPieData}
+                    cx="50%"
+                    cy="52%"
+                    innerRadius={62}
+                    outerRadius={102}
+                    dataKey="total"
+                    nameKey="name"
+                    stroke="none"
+                    isAnimationActive={false}
+                  >
+                    {topCategoryPieData.map((entry, index) => (
+                      <Cell key={`cell-depth-${index}`} fill={entry.depthFill} opacity={0.95} />
+                    ))}
+                  </Pie>
+                  <Pie
+                    data={topCategoryPieData}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -697,26 +743,19 @@ export function DashboardPage() {
                     paddingAngle={2}
                     dataKey="total"
                     nameKey="name"
+                    style={{ filter: 'url(#categoryPieShadow)' }}
                     label={({ name, percent }) =>
                       (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ''
                     }
                     labelLine={false}
                     className="cursor-pointer outline-none"
                   >
-                    {categories.slice(0, 8).map((entry, index) => (
+                    {topCategoryPieData.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
-                        fill={entry.category_color || COLORS[index % COLORS.length]}
+                        fill={entry.fill}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => {
-                          updateSearch((next) => {
-                            if (entry.category_id) {
-                              next.set('category_id', entry.category_id);
-                            } else {
-                              next.delete('category_id');
-                            }
-                          });
-                        }}
+                        onClick={() => openCategoryDrilldown(entry)}
                       />
                     ))}
                   </Pie>
