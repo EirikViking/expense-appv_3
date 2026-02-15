@@ -1,6 +1,6 @@
 import type { FlowType, SourceType } from '@expense/shared';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from './xlsx-normalize';
-import { isStraksbetalingDescription } from './transfer-detect';
+import { isFelleskontoDescription, isStraksbetalingDescription } from './transfer-detect';
 
 function normalizeForMatch(input: string): string {
   return input
@@ -15,6 +15,9 @@ function normalizeForMatch(input: string): string {
 }
 
 function looksLikeTransfer(description: string, sectionLabel: string | null): boolean {
+  // Product decision: Felleskonto should never be transfer.
+  if (isFelleskontoDescription(description)) return false;
+
   const d = normalizeForMatch(description);
   const s = normalizeForMatch(sectionLabel || '');
 
@@ -140,6 +143,11 @@ export function classifyFlowType(args: {
     return args.amount > 0
       ? { flow_type: 'income', reason: 'straksbetaling-positive', section_label: sectionLabel }
       : { flow_type: 'expense', reason: 'straksbetaling-nonpositive', section_label: sectionLabel };
+  }
+
+  // Product decision: "Felleskonto" rows are always treated as real spending.
+  if (isFelleskontoDescription(args.description)) {
+    return { flow_type: 'expense', reason: 'felleskonto-expense', section_label: sectionLabel };
   }
 
   // Transfers must never count as income/expense (when excluded).

@@ -12,7 +12,7 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
-import { detectIsTransfer, isStraksbetalingDescription } from '../lib/transfer-detect';
+import { detectIsTransfer, isFelleskontoDescription, isStraksbetalingDescription } from '../lib/transfer-detect';
 import { extractMerchantFromPdfLine, parsePdfTransactionLine } from '../lib/pdf-parser';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
@@ -2247,7 +2247,10 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         }
       }
 
-      const forcedTransfer = r.is_transfer === 1 && !isStraksbetalingDescription(nextDescription);
+      const forcedTransfer =
+        r.is_transfer === 1 &&
+        !isStraksbetalingDescription(nextDescription) &&
+        !isFelleskontoDescription(nextDescription);
       const classification = forcedTransfer
         ? { flow_type: 'transfer' as const, reason: 'forced-is_transfer' }
         : classifyFlowType({
@@ -2279,9 +2282,11 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       const finalMerchantRaw = nextMerchantRaw || merchantNormalized.merchant_raw || null;
 
       const nextAmount = normalized.amount;
-      const wasLegacyStraksTransfer = r.is_transfer === 1 && isStraksbetalingDescription(nextDescription);
+      const wasLegacyForcedExpenseTransfer =
+        r.is_transfer === 1 &&
+        (isStraksbetalingDescription(nextDescription) || isFelleskontoDescription(nextDescription));
       const nextIsTransfer = nextFlow === 'transfer' ? 1 : 0;
-      const nextIsExcluded = nextFlow === 'transfer' ? 1 : (wasLegacyStraksTransfer ? 0 : r.is_excluded);
+      const nextIsExcluded = nextFlow === 'transfer' ? 1 : (wasLegacyForcedExpenseTransfer ? 0 : r.is_excluded);
 
       const flowDiff = String(r.flow_type || 'unknown') !== nextFlow;
       const signDiff = nextAmount !== r.amount;

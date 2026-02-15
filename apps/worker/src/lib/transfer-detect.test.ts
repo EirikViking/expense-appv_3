@@ -12,4 +12,9 @@ describe('transfer-detect', () => {
     expect(detectIsTransfer('REMA 1000 SORENGA')).toBe(false);
     expect(detectIsTransfer('SATS Bjoervika')).toBe(false);
   });
+
+  it('never flags felleskonto rows as transfers', () => {
+    expect(detectIsTransfer('Overføring til Felleskonto')).toBe(false);
+    expect(detectIsTransfer('Felleskonto betaling husleie')).toBe(false);
+  });
 });

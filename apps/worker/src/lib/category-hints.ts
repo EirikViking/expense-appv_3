@@ -23,6 +23,7 @@ export function getCategoryHint(combinedText: unknown, amount: number): string |
 
   // Most specific first.
   if (hasAny(text, ['paypal :tidal', 'tidalmusica', 'tidal'])) return 'cat_entertainment_streaming';
+  if (hasAny(text, ['felleskonto'])) return 'cat_bills_housing_shared';
   if (hasAny(text, ['talkmore'])) return 'cat_bills_internet';
   if (hasAny(text, ['clasohlson', 'clas ohlson', 'clas ohl'])) return 'cat_shopping_home';
   if (hasAny(text, ['eivind heggedal'])) return 'cat_other_p2p';

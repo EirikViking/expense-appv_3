@@ -19,6 +19,7 @@ describe('category hints', () => {
   it('handles trumf directionally and keeps unknown as null', () => {
     expect(getCategoryHint('Giro 224254874 Trumf AS', -423.07)).toBe('cat_food_groceries');
     expect(getCategoryHint('Giro innbetaling Trumf bonus', 423.07)).toBe('cat_income_refund');
+    expect(getCategoryHint('Overføring til Felleskonto', -8200)).toBe('cat_bills_housing_shared');
     expect(getCategoryHint('Ukjent leverandør abc123', -42)).toBeNull();
   });
 });

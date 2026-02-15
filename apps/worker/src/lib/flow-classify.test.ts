@@ -64,6 +64,18 @@ describe('flow-classify', () => {
     });
     expect(income.flow_type).toBe('income');
   });
+
+  it('classifies Felleskonto rows as expense and never transfer', () => {
+    const c = classifyFlowType({
+      source_type: 'xlsx',
+      description: 'Overføring til Felleskonto',
+      amount: 8200,
+      raw_json: null,
+    });
+    expect(c.flow_type).toBe('expense');
+    const n = normalizeAmountAndFlags({ flow_type: c.flow_type, amount: 8200 });
+    expect(n.amount).toBe(-8200);
+  });
 });
 
 
