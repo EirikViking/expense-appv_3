@@ -339,7 +339,7 @@ export const api = {
     return request<TransactionsResponse>(`/transactions${qs}`);
   },
 
-  validateIngest: (params: { date_from: string; date_to: string }) => {
+  validateIngest: (params: { date_from: string; date_to: string; file_hash?: string }) => {
     const qs = buildQuery(params);
     return request<ValidateIngestResponse>(`/transactions/validate/ingest${qs}`);
   },

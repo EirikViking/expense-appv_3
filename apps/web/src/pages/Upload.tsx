@@ -101,10 +101,17 @@ export function UploadPage() {
     return { date_from: dates[0], date_to: dates[dates.length - 1] };
   };
 
-  const runValidation = async (filename: string, range: { date_from: string; date_to: string }) => {
+  const runValidation = async (
+    filename: string,
+    range: { date_from: string; date_to: string },
+    fileHash?: string
+  ) => {
     updateResult(filename, { validation_range: range, validation_error: undefined });
     try {
-      const validation = await api.validateIngest(range);
+      const validation = await api.validateIngest({
+        ...range,
+        file_hash: fileHash,
+      });
       updateResult(filename, { validation });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Validation request failed';
@@ -237,10 +244,10 @@ export function UploadPage() {
         const ingestRange = getRangeFromIngestResponse(result) ?? rangeFromXlsxTransactions(transactions);
         updateResult(filename, { status: 'success', result, validation_range: ingestRange });
         if (!result.file_duplicate && result.inserted > 0) {
-          void runValidation(filename, ingestRange);
+          void runValidation(filename, ingestRange, fileHash);
           // After validation, run an automatic "Other"/uncategorized reduction scoped to this file.
           // This keeps the app usable even when rules are incomplete.
-          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, ingestRange));
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, ingestRange, fileHash));
         }
       } else {
         updateResult(filename, {

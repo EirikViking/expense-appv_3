@@ -1476,6 +1476,8 @@ const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
     const q = c.req.query();
     const dateFrom = q.date_from;
     const dateTo = q.date_to;
+    const fileHashRaw = typeof q.file_hash === 'string' ? q.file_hash.trim() : '';
+    const fileHash = fileHashRaw.length > 0 ? fileHashRaw : null;
 
     const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
     if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
@@ -1689,10 +1691,22 @@ const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
         WHERE t.tx_date >= ? AND t.tx_date <= ?
           AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
+          ${fileHash ? 'AND t.source_file_hash = ?' : ''}
           AND ABS(t.amount) BETWEEN 30000 AND 60000
           AND CAST(ABS(t.amount) AS INTEGER) = ABS(t.amount)
+          AND (
+            ABS(
+              ABS(t.amount) - CAST(julianday(t.tx_date) - julianday('1899-12-30') AS INTEGER)
+            ) <= 3
+            OR (
+              t.booked_date IS NOT NULL
+              AND ABS(
+                ABS(t.amount) - CAST(julianday(t.booked_date) - julianday('1899-12-30') AS INTEGER)
+              ) <= 3
+            )
+          )
       `
-    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
+    ).bind(...(fileHash ? [dateFrom, dateTo, scopeUserId, fileHash] : [dateFrom, dateTo, scopeUserId])).first<{ count: number }>();
     const suspicious_serial_amounts = Number(suspiciousSerialAmountRes?.count || 0);
 
     const zero_active = Number(statsRes?.zero_amount_active || 0);
