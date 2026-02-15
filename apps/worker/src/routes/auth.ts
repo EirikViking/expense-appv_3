@@ -338,7 +338,7 @@ auth.post('/reset-password', async (c) => {
     await c.env.DB
       .prepare(
         `UPDATE users
-         SET password_salt = ?, password_hash = ?, password_iters = ?, updated_at = ?
+         SET password_salt = ?, password_hash = ?, password_iters = ?, active = 1, updated_at = ?
          WHERE id = ?`
       )
       .bind(hashed.salt, hashed.hash, hashed.iterations, now, used.user_id)
