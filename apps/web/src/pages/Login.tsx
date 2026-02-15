@@ -10,7 +10,8 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login, isAuthenticated, bootstrapRequired } = useAuth();
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const { login, logout, user, isAuthenticated, bootstrapRequired } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -21,7 +22,44 @@ export function LoginPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to={from} replace />;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass max-w-md w-full space-y-6 p-8 rounded-2xl border border-white/15 bg-white/5 shadow-[0_30px_80px_rgba(0,0,0,.55)]">
+          <div>
+            <h2 className="text-center text-2xl font-bold text-white">
+              {t('login.alreadySignedInTitle')}
+            </h2>
+            <p className="mt-2 text-center text-sm text-white/70">
+              {t('login.alreadySignedInAs', { name: user?.name || user?.email || '' })}
+            </p>
+          </div>
+          <div className="space-y-3">
+            <button
+              type="button"
+              onClick={() => navigate(from, { replace: true })}
+              className="w-full rounded-md border border-white/10 bg-gradient-to-r from-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-[#051018] hover:brightness-110"
+            >
+              {t('login.continueAsCurrent')}
+            </button>
+            <button
+              type="button"
+              disabled={isSwitchingAccount}
+              onClick={async () => {
+                setIsSwitchingAccount(true);
+                try {
+                  await logout();
+                } finally {
+                  setIsSwitchingAccount(false);
+                }
+              }}
+              className="w-full rounded-md border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10 disabled:opacity-50"
+            >
+              {isSwitchingAccount ? t('login.signingOut') : t('login.switchAccount')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
