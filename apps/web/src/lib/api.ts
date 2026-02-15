@@ -68,6 +68,7 @@ export interface ValidateIngestResponse {
     total?: number;
     excluded?: number;
     zero_amount?: { active?: number; excluded?: number };
+    suspicious_serial_amounts?: number;
     flow_type?: Record<string, number>;
     source_type?: Record<string, number>;
   };

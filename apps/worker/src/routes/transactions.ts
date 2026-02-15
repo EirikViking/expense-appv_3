@@ -1605,12 +1605,25 @@ transactions.get('/admin/validate-ingest', async (c) => {
       total_abs: r.total_abs,
     }));
 
+    const suspiciousSerialAmountRes = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND ABS(t.amount) BETWEEN 30000 AND 60000
+          AND CAST(ABS(t.amount) AS INTEGER) = ABS(t.amount)
+      `
+    ).bind(dateFrom, dateTo).first<{ count: number }>();
+    const suspicious_serial_amounts = Number(suspiciousSerialAmountRes?.count || 0);
+
     const zero_active = Number(statsRes?.zero_amount_active || 0);
     const suspicious_count = suspicious_income.reduce((acc, r) => acc + (r.count || 0), 0);
 
     const failures: string[] = [];
     if (zero_active > 0) failures.push('zero_amount_rows_active');
     if (suspicious_count > 0) failures.push('suspicious_income_purchases');
+    if (suspicious_serial_amounts > 0) failures.push('suspicious_serial_amounts');
     if (groceries_flow_delta > 1) failures.push('groceries_flow_type_mismatch');
     if (groceries_analytics_delta > 1) failures.push('groceries_analytics_mismatch');
     if (Number(groceriesIncomeLeak?.count || 0) > 0) failures.push('groceries_income_leak');
@@ -1627,6 +1640,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           active: zero_active,
           excluded: Number(statsRes?.zero_amount_excluded || 0),
         },
+        suspicious_serial_amounts,
         source_type: source_counts,
       },
       groceries: {

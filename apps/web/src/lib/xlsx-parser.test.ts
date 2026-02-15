@@ -70,4 +70,60 @@ describe('parseXlsxFile (header section scan)', () => {
     expect(kiwi?.amount).toBe(-10);
     expect(kiwi?.merchant).toBe('KIWI');
   });
+
+  it('parses DNB directional amount columns from header format', () => {
+    const rows: unknown[][] = [
+      ['Dato', 'Forklaring', 'Rentedato', 'Ut fra konto', 'Inn på konto'],
+      [46041, 'Dagligvare', 46043, 205.75, ''],
+      [46044, 'Lønn', 46044, '', 7350],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Kontoutskrift');
+
+    const result = parseXlsxFile(workbookToArrayBuffer(wb));
+    expect(result.error).toBeUndefined();
+    expect(result.transactions.length).toBe(2);
+    expect(result.transactions[0].tx_date).toBe('2026-01-19');
+    expect(result.transactions[0].booked_date).toBe('2026-01-21');
+    expect(result.transactions[0].amount).toBe(-205.75);
+    expect(result.transactions[1].amount).toBe(7350);
+  });
+
+  it('parses headerless 5-column layout with date serial in col0 and amount in col2', () => {
+    const rows: unknown[][] = [
+      [46041, 'Kjøp matbutikk', -205.75, 10000.2, 'NOK'],
+      [46042, 'Lønn fra jobb', 7350, 17350.2, 'NOK'],
+      [46043, 'Mobilregning', -499, 16851.2, 'NOK'],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    const result = parseXlsxFile(workbookToArrayBuffer(wb));
+    expect(result.error).toBeUndefined();
+    expect(result.transactions.length).toBe(3);
+    expect(result.detectedFormat).toBe('simple_5col');
+    expect(result.transactions[0].tx_date).toBe('2026-01-19');
+    expect(result.transactions[0].amount).toBe(-205.75);
+    expect(result.transactions[1].amount).toBe(7350);
+  });
+
+  it('fails with a clear error when amount collides with date serial', () => {
+    const rows: unknown[][] = [
+      ['Dato', 'Beskrivelse', 'Beløp'],
+      [46041, 'Feil kolonne', 46041],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    const result = parseXlsxFile(workbookToArrayBuffer(wb));
+    expect(result.transactions).toHaveLength(0);
+    expect(result.error).toContain('Beløpskolonnen ser ut til å være en datokolonne');
+  });
+
 });
