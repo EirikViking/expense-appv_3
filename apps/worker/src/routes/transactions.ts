@@ -18,7 +18,7 @@ import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, is
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
-import { ensureAdmin, getScopeUserId } from '../lib/request-scope';
+import { ensureAdmin, getEffectiveUser, getScopeUserId } from '../lib/request-scope';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -831,23 +831,33 @@ transactions.post('/bulk/include', async (c) => {
 // Reset all data (DANGER)
 transactions.delete('/admin/reset', async (c) => {
   try {
-    // Verify some secret or just allow it? User requested it.
-    // Ideally requires a confirmation flag in body?
     const { confirm } = await c.req.json() as { confirm: boolean };
     if (confirm !== true) {
       return c.json({ error: 'Confirmation required' }, 400);
     }
 
+    const effectiveUser = getEffectiveUser(c as any);
+    if (!effectiveUser) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const userId = effectiveUser.id;
+
     await c.env.DB.batch([
-      c.env.DB.prepare('DELETE FROM transaction_meta'),
-      c.env.DB.prepare('DELETE FROM transaction_tags'),
-      c.env.DB.prepare('DELETE FROM transactions'),
-      c.env.DB.prepare('DELETE FROM ingested_files'),
-      // Also clear budgets and rules?? User said "delete all data".
-      // Maybe not config? I'll stick to transaction data for now.
+      // Scope strictly to the currently effective user (impersonated user when active).
+      c.env.DB.prepare(
+        `DELETE FROM transaction_tags
+         WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ?)`
+      ).bind(userId),
+      c.env.DB.prepare(
+        `DELETE FROM transaction_meta
+         WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ?)`
+      ).bind(userId),
+      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM ingested_files WHERE user_id = ?').bind(userId),
     ]);
 
-    return c.json({ success: true, message: 'All transaction data deleted' });
+    return c.json({ success: true, message: 'All transaction data for current user deleted' });
   } catch (error) {
     console.error('Reset error:', error);
     return c.json({ error: 'Internal server error' }, 500);
