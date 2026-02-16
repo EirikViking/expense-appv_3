@@ -168,6 +168,40 @@ export interface BudgetWithSpent {
   end_date: string | null;
 }
 
+export interface BudgetSettings {
+  enabled: boolean;
+  weekly_amount: number | null;
+  monthly_amount: number | null;
+  yearly_amount: number | null;
+  updated_at: string | null;
+}
+
+export type BudgetTrackingStatus = 'on_track' | 'warning' | 'over_budget';
+
+export interface BudgetTrackingPeriod {
+  period: Extract<BudgetPeriodType, 'weekly' | 'monthly' | 'yearly'>;
+  label: string;
+  start_date: string;
+  end_date: string;
+  budget_amount: number;
+  spent_amount: number;
+  remaining_amount: number;
+  progress_ratio: number;
+  status: BudgetTrackingStatus;
+  days_elapsed: number;
+  days_total: number;
+  days_remaining: number;
+  projected_spent: number;
+  projected_variance: number;
+}
+
+export interface BudgetTrackingResponse {
+  enabled: boolean;
+  settings: BudgetSettings;
+  periods: BudgetTrackingPeriod[];
+  generated_at: string;
+}
+
 export interface Recurring {
   id: string;
   name: string;
@@ -392,6 +426,13 @@ export interface UpdateBudgetRequest {
   end_date?: string | null;
 }
 
+export interface UpdateBudgetSettingsRequest {
+  enabled: boolean;
+  weekly_amount?: number | null;
+  monthly_amount?: number | null;
+  yearly_amount?: number | null;
+}
+
 // Recurring CRUD
 export interface CreateRecurringRequest {
   name: string;
@@ -542,6 +583,10 @@ export interface RulesResponse {
 
 export interface BudgetsResponse {
   budgets: BudgetWithSpent[];
+}
+
+export interface BudgetSettingsResponse {
+  settings: BudgetSettings;
 }
 
 export interface RecurringResponse {

@@ -251,6 +251,15 @@ export const updateBudgetSchema = z.object({
   end_date: dateSchema.nullable().optional(),
 });
 
+const optionalBudgetAmountSchema = z.number().positive().nullable().optional();
+
+export const updateBudgetSettingsSchema = z.object({
+  enabled: z.boolean(),
+  weekly_amount: optionalBudgetAmountSchema,
+  monthly_amount: optionalBudgetAmountSchema,
+  yearly_amount: optionalBudgetAmountSchema,
+});
+
 // ============================================
 // Recurring schemas
 // ============================================

@@ -34,6 +34,9 @@ import type {
   BudgetWithSpent,
   CreateBudgetRequest,
   UpdateBudgetRequest,
+  BudgetSettingsResponse,
+  BudgetTrackingResponse,
+  UpdateBudgetSettingsRequest,
   RecurringResponse,
   Recurring,
   CreateRecurringRequest,
@@ -584,6 +587,18 @@ export const api = {
     request<{ success: boolean }>(`/budgets/${id}`, {
       method: 'DELETE',
     }),
+
+  getBudgetSettings: () =>
+    request<BudgetSettingsResponse>('/budgets/settings'),
+
+  updateBudgetSettings: (data: UpdateBudgetSettingsRequest) =>
+    request<BudgetSettingsResponse>('/budgets/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getBudgetTracking: () =>
+    request<BudgetTrackingResponse>('/budgets/tracking'),
 
   // Recurring
   getRecurring: (activeOnly?: boolean, subscriptionsOnly?: boolean) => {
