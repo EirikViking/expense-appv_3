@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/lib/utils';
-import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
+import { Brain, Calendar, RefreshCw, Sparkles, Target, Trophy, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { useNavigate } from 'react-router-dom';
@@ -46,6 +46,32 @@ type InsightCopy = {
   leaderboardTitle: string;
   leaderboardHint: string;
   topCategories: string;
+  quizTitle: string;
+  quizSubtitle: string;
+  quizProgress: string;
+  quizScore: string;
+  quizPerfect: string;
+  quizGood: string;
+  quizTryAgain: string;
+  quizShowData: string;
+  quizShuffle: string;
+  wisdomTitle: string;
+  wisdomSubtitle: string;
+  missionTitle: string;
+  praiseTitle: string;
+};
+
+type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  drilldown?:
+    | { type: 'category'; categoryId?: string | null }
+    | { type: 'merchant'; merchantId?: string | null; merchantName?: string | null }
+    | { type: 'day'; date: string }
+    | { type: 'period' };
 };
 
 function clamp01(n: number) {
@@ -139,6 +165,19 @@ function getCopy(lang: Lang): InsightCopy {
       leaderboardTitle: 'Leaderboard (helt uoffisielt)',
       leaderboardHint: 'Klikk en rad for drilldown til transaksjoner med samme periode og utgiftstype.',
       topCategories: 'Topp kategorier',
+      quizTitle: 'Forbruksquiz',
+      quizSubtitle: 'Tre raske sp\u00f8rsm\u00e5l om perioden din.',
+      quizProgress: 'Besvart',
+      quizScore: 'Poeng',
+      quizPerfect: 'Perfekt! Du kjenner forbruket ditt imponerende godt.',
+      quizGood: 'Sterkt levert. Du har god kontroll p\u00e5 tallene.',
+      quizTryAgain: 'God start. Ta en ny runde og l\u00e5s opp flere detaljer.',
+      quizShowData: 'Se datagrunnlag',
+      quizShuffle: 'Ny quiz',
+      wisdomTitle: 'AI-coach med glimt i \u00f8yet',
+      wisdomSubtitle: 'Mikror\u00e5d laget fra dine faktiske tall i perioden.',
+      missionTitle: 'Ukens mini-oppdrag',
+      praiseTitle: 'Ros fra coachen',
     };
   }
 
@@ -163,6 +202,19 @@ function getCopy(lang: Lang): InsightCopy {
     leaderboardTitle: 'Leaderboard (unofficial)',
     leaderboardHint: 'Click a row to drill down to transactions with the same date range and flow type.',
     topCategories: 'Top categories',
+    quizTitle: 'Spending quiz',
+    quizSubtitle: 'Three quick questions based on your current period.',
+    quizProgress: 'Answered',
+    quizScore: 'Score',
+    quizPerfect: 'Perfect. You know your own spending surprisingly well.',
+    quizGood: 'Strong work. You clearly track your numbers.',
+    quizTryAgain: 'Nice start. Run another round to sharpen your instincts.',
+    quizShowData: 'Show data behind answer',
+    quizShuffle: 'New quiz',
+    wisdomTitle: 'AI coach with personality',
+    wisdomSubtitle: 'Micro-advice generated from your real period data.',
+    missionTitle: 'Mini mission of the week',
+    praiseTitle: 'Coach applause',
   };
 }
 
@@ -353,6 +405,171 @@ function buildFunFact(args: {
     : `If you cut ${categoryName} by 10%, you save about ${formatCompactCurrency(saving)} in the same period.`;
 }
 
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+export function buildSpendingQuiz(args: {
+  lang: Lang;
+  currentLanguage: string;
+  summary: AnalyticsSummary | null;
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  timeseries: TimeSeriesPoint[];
+}): QuizQuestion[] {
+  const { lang, currentLanguage, summary, categories, merchants, timeseries } = args;
+  const questions: QuizQuestion[] = [];
+  const totalExpenses = Math.abs(summary?.total_expenses ?? 0);
+  const topCategory = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+  const topDay = getTopSpendDay(timeseries);
+
+  if (topCategory && totalExpenses > 0) {
+    const localizedCategory = localizeCategoryName(topCategory.name, currentLanguage);
+    const exactPct = Math.max(1, Math.round((Math.abs(topCategory.total) / totalExpenses) * 100));
+    const nearLow = Math.max(1, exactPct - 7);
+    const nearHigh = Math.min(95, exactPct + 9);
+    const options = uniqueStrings([`${nearLow}%`, `${exactPct}%`, `${nearHigh}%`]);
+    const correctIndex = options.indexOf(`${exactPct}%`);
+    if (options.length >= 3 && correctIndex >= 0) {
+      questions.push({
+        id: 'quiz-top-category-share',
+        prompt:
+          lang === 'nb'
+            ? `Hvor stor andel av forbruket gikk til ${localizedCategory}?`
+            : `How much of your spending went to ${localizedCategory}?`,
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${localizedCategory} tok ${exactPct}% av perioden. Det er en tydelig driver.`
+            : `${localizedCategory} represented ${exactPct}% of this period. It is a clear driver.`,
+        drilldown: { type: 'category', categoryId: topCategory.id },
+      });
+    }
+  }
+
+  if (topMerchant) {
+    const decoys = merchants
+      .map((m) => m.merchant_name || (lang === 'nb' ? 'Ukjent brukersted' : 'Unknown merchant'))
+      .filter((name) => name !== topMerchant.name)
+      .slice(0, 2);
+    const options = uniqueStrings([topMerchant.name, ...decoys]);
+    if (options.length >= 3) {
+      const correctIndex = options.indexOf(topMerchant.name);
+      questions.push({
+        id: 'quiz-top-merchant',
+        prompt:
+          lang === 'nb'
+            ? 'Hvilket brukersted dukket opp oftest i perioden?'
+            : 'Which merchant appeared most often in this period?',
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${topMerchant.name} dukket opp ${topMerchant.count} ganger i perioden.`
+            : `${topMerchant.name} appeared ${topMerchant.count} times in this period.`,
+        drilldown: { type: 'merchant', merchantId: topMerchant.id, merchantName: topMerchant.name },
+      });
+    }
+  }
+
+  if (topDay) {
+    const allDates = uniqueStrings(timeseries.map((p) => p.date).filter(Boolean));
+    const nearDates = allDates.filter((d) => d !== topDay.date).slice(0, 2);
+    const options = uniqueStrings([topDay.date, ...nearDates]);
+    if (options.length >= 3) {
+      const correctIndex = options.indexOf(topDay.date);
+      questions.push({
+        id: 'quiz-top-day',
+        prompt:
+          lang === 'nb'
+            ? 'Hvilken dag hadde h\u00f8yest forbruk?'
+            : 'Which day had the highest spending?',
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${topDay.date} var toppdagen med ${formatCompactCurrency(Math.abs(topDay.amount))}.`
+            : `${topDay.date} was the peak day with ${formatCompactCurrency(Math.abs(topDay.amount))}.`,
+        drilldown: { type: 'day', date: topDay.date },
+      });
+    }
+  }
+
+  return questions.slice(0, 3);
+}
+
+export function buildCoachWisdom(args: {
+  lang: Lang;
+  summary: AnalyticsSummary | null;
+  compare: AnalyticsCompareResponse | null;
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  currentLanguage: string;
+}): { praise: string; mission: string; bullets: string[] } {
+  const { lang, summary, compare, categories, merchants, currentLanguage } = args;
+  const totalExpenses = Math.abs(summary?.total_expenses ?? 0);
+  const expenseDelta = compare?.change.expenses ?? 0;
+  const expensePct = compare?.change_percentage.expenses ?? 0;
+  const topCategory = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+
+  const praise =
+    expenseDelta < 0
+      ? lang === 'nb'
+        ? `Sterkt jobbet! Forbruket er ned ${formatCompactCurrency(Math.abs(expenseDelta))} (${Math.abs(expensePct).toFixed(1)}%).`
+        : `Great work! Spending is down ${formatCompactCurrency(Math.abs(expenseDelta))} (${Math.abs(expensePct).toFixed(1)}%).`
+      : expenseDelta === 0
+        ? lang === 'nb'
+          ? 'Stabilt og kontrollert. Du holder samme forbruksniv\u00e5 som forrige periode.'
+          : 'Stable and controlled. You kept spending flat versus the previous period.'
+        : lang === 'nb'
+          ? 'Bra innsats med oversikt. N\u00e5 handler det om \u00e5 finjustere de st\u00f8rste postene.'
+          : 'Solid visibility. Next step is tightening the largest spending buckets.';
+
+  const mission =
+    topCategory
+      ? lang === 'nb'
+        ? `Sett et mini-m\u00e5l: kutt ${localizeCategoryName(topCategory.name, currentLanguage)} med 5% neste periode.`
+        : `Set a mini goal: reduce ${localizeCategoryName(topCategory.name, currentLanguage)} by 5% next period.`
+      : lang === 'nb'
+        ? 'Sett et mini-m\u00e5l: kategoriser de 10 siste transaksjonene for bedre innsikt.'
+        : 'Set a mini goal: categorize your latest 10 transactions for sharper insight.';
+
+  const bullets: string[] = [];
+  if (topCategory && totalExpenses > 0) {
+    const share = Math.round((Math.abs(topCategory.total) / totalExpenses) * 100);
+    bullets.push(
+      lang === 'nb'
+        ? `${localizeCategoryName(topCategory.name, currentLanguage)} utgj\u00f8r ${share}% av forbruket ditt.`
+        : `${localizeCategoryName(topCategory.name, currentLanguage)} represents ${share}% of your spending.`
+    );
+  }
+  if (topMerchant) {
+    bullets.push(
+      lang === 'nb'
+        ? `${topMerchant.name} er p\u00e5 toppen med ${topMerchant.count} kj\u00f8p.`
+        : `${topMerchant.name} leads with ${topMerchant.count} purchases.`
+    );
+  }
+  bullets.push(
+    lang === 'nb'
+      ? 'Tips: bruk drilldown i h\u00f8ydepunkter for \u00e5 handle p\u00e5 de st\u00f8rste postene f\u00f8rst.'
+      : 'Tip: use highlight drilldowns to act on your largest spend first.'
+  );
+
+  return { praise, mission, bullets };
+}
+
 export function InsightsPage() {
   const { i18n } = useTranslation();
   const { user } = useAuth();
@@ -381,6 +598,7 @@ export function InsightsPage() {
   const [customRangeError, setCustomRangeError] = useState<string | null>(null);
 
   const [seed, setSeed] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
 
   const loadData = async () => {
     setLoading(true);
@@ -457,6 +675,37 @@ export function InsightsPage() {
     [lang, categories, currentLanguage]
   );
 
+  const quiz = useMemo(
+    () =>
+      buildSpendingQuiz({
+        lang,
+        currentLanguage,
+        summary,
+        categories,
+        merchants,
+        timeseries,
+      }),
+    [lang, currentLanguage, summary, categories, merchants, timeseries]
+  );
+
+  const coach = useMemo(
+    () => buildCoachWisdom({ lang, summary, compare, categories, merchants, currentLanguage }),
+    [lang, summary, compare, categories, merchants, currentLanguage]
+  );
+
+  const quizAnsweredCount = useMemo(
+    () => quiz.filter((q) => quizAnswers[q.id] !== undefined).length,
+    [quiz, quizAnswers]
+  );
+  const quizScore = useMemo(
+    () => quiz.filter((q) => quizAnswers[q.id] === q.correctIndex).length,
+    [quiz, quizAnswers]
+  );
+
+  useEffect(() => {
+    setQuizAnswers({});
+  }, [dateFrom, dateTo, seed]);
+
   const applyCustomRange = () => {
     if (!customDateFrom || !customDateTo) return;
     if (!validateDateRange(customDateFrom, customDateTo)) {
@@ -506,8 +755,7 @@ export function InsightsPage() {
     navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
   };
 
-  const openHighlightDrilldown = (highlight: Highlight) => {
-    const drilldown = highlight.drilldown;
+  const openDrilldown = (drilldown: Highlight['drilldown']) => {
     if (!drilldown) return;
 
     if (drilldown.type === 'category') {
@@ -543,6 +791,10 @@ export function InsightsPage() {
     }
 
     navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
+  };
+
+  const openHighlightDrilldown = (highlight: Highlight) => {
+    openDrilldown(highlight.drilldown);
   };
 
   return (
@@ -704,6 +956,156 @@ export function InsightsPage() {
             <p className="text-xs font-semibold text-fuchsia-100">{copy.funFactTitle}</p>
             <p className="mt-1 text-sm text-fuchsia-50">{funFact}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-20 top-12 h-48 w-48 rounded-full bg-cyan-300/20 blur-3xl animate-floatSlow" />
+          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-fuchsia-300/20 blur-3xl animate-float" />
+          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-emerald-300/10 blur-3xl animate-floatSlower" />
+        </div>
+        <CardHeader className="relative">
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-cyan-200" />
+            {copy.quizTitle}
+          </CardTitle>
+          <p className="text-xs text-white/70">{copy.quizSubtitle}</p>
+        </CardHeader>
+        <CardContent className="relative grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {loading ? (
+            <>
+              <div className="xl:col-span-2 space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <Skeleton className="h-4 w-4/5" />
+                    <Skeleton className="mt-3 h-9 w-full" />
+                    <Skeleton className="mt-2 h-9 w-full" />
+                    <Skeleton className="mt-2 h-9 w-full" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="xl:col-span-2 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">
+                    {copy.quizProgress}: {quizAnsweredCount}/{quiz.length}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {copy.quizScore}: {quizScore}/{quiz.length}
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      setQuizAnswers({});
+                      setSeed((s) => s + 1);
+                    }}
+                  >
+                    {copy.quizShuffle}
+                  </Button>
+                </div>
+
+                {quiz.map((q, index) => {
+                  const selected = quizAnswers[q.id];
+                  const answered = selected !== undefined;
+                  return (
+                    <div key={q.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <p className="text-xs text-white/60">
+                        {lang === 'nb' ? 'Sp\u00f8rsm\u00e5l' : 'Question'} {index + 1}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-white">{q.prompt}</p>
+                      <div className="mt-3 grid gap-2">
+                        {q.options.map((option, optIndex) => {
+                          const isCorrect = optIndex === q.correctIndex;
+                          const isSelected = selected === optIndex;
+                          const stateClass = answered
+                            ? isCorrect
+                              ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100'
+                              : isSelected
+                                ? 'border-rose-300/40 bg-rose-400/15 text-rose-100'
+                                : 'border-white/10 bg-white/5 text-white/70'
+                            : 'border-white/15 bg-white/5 text-white hover:bg-white/10';
+                          return (
+                            <button
+                              key={`${q.id}-${option}`}
+                              type="button"
+                              className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${stateClass}`}
+                              disabled={answered}
+                              onClick={() => setQuizAnswers((prev) => ({ ...prev, [q.id]: optIndex }))}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answered && (
+                        <div className="mt-3 rounded-lg border border-cyan-200/20 bg-cyan-500/10 p-3">
+                          <p className="text-xs text-cyan-100/90">{q.explanation}</p>
+                          {q.drilldown && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => openDrilldown(q.drilldown as Highlight['drilldown'])}
+                            >
+                              {copy.quizShowData}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-xl border border-emerald-200/20 bg-emerald-500/10 p-4">
+                  <p className="text-xs font-semibold text-emerald-100 flex items-center gap-2">
+                    <Trophy className="h-4 w-4" />
+                    {copy.praiseTitle}
+                  </p>
+                  <p className="mt-2 text-sm text-emerald-50">{coach.praise}</p>
+                </div>
+
+                <div className="rounded-xl border border-fuchsia-200/20 bg-fuchsia-500/10 p-4">
+                  <p className="text-xs font-semibold text-fuchsia-100">{copy.wisdomTitle}</p>
+                  <p className="mt-1 text-xs text-fuchsia-100/80">{copy.wisdomSubtitle}</p>
+                  <ul className="mt-3 space-y-2 text-sm text-fuchsia-50">
+                    {coach.bullets.map((bullet) => (
+                      <li key={bullet} className="leading-relaxed">• {bullet}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-xl border border-cyan-200/20 bg-cyan-500/10 p-4">
+                  <p className="text-xs font-semibold text-cyan-100 flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    {copy.missionTitle}
+                  </p>
+                  <p className="mt-2 text-sm text-cyan-50">{coach.mission}</p>
+                </div>
+
+                {quiz.length > 0 && quizAnsweredCount === quiz.length && (
+                  <div className="rounded-xl border border-amber-200/20 bg-amber-500/10 p-4">
+                    <p className="text-sm text-amber-50 font-medium">
+                      {quizScore === quiz.length ? copy.quizPerfect : quizScore >= Math.ceil(quiz.length / 2) ? copy.quizGood : copy.quizTryAgain}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 
