@@ -16,7 +16,6 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { getVersionString, getApiBaseUrl } from '@/lib/version';
-import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { Atmosphere } from '@/components/Atmosphere';
@@ -42,7 +41,6 @@ const navItems = [
 
 export function Layout({ children }: LayoutProps) {
   const { isAuthenticated, logout, needsOnboarding, completeOnboarding, user, actorUser, isImpersonating, checkAuth } = useAuth();
-  const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -104,7 +102,7 @@ export function Layout({ children }: LayoutProps) {
         {isAuthenticated && (
           <nav className="flex flex-col h-[calc(100vh-4rem)]">
             <div className="flex-1 px-3 py-4 space-y-1">
-              {navItems.filter(item => item.path !== '/budgets' || showBudgets).map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
                 return (

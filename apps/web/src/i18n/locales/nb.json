@@ -91,7 +91,9 @@
     "topExpenseCards": "Største utgiftsposter",
     "txCountShort": "Tx",
     "clickToDrilldown": "Klikk for drilldown",
-    "transactionsOnDate": "Transaksjoner: {{date}}"
+    "transactionsOnDate": "Transaksjoner: {{date}}",
+    "budgetPulse": "Budsjettstatus",
+    "budgetNoTargets": "Budsjett er aktivert, men ingen uke/m?ned/?r-m?l er satt enda."
   },
   "transactions": {
     "title": "Transaksjoner",
@@ -151,7 +153,8 @@
       "dateRequired": "Dato er påkrevd",
       "descriptionRequired": "Beskrivelse er påkrevd",
       "amountInvalid": "Beløp må være et gyldig tall"
-    }
+    },
+    "budgetSummaryTitle": "Budsjettstatus"
   },
   "theme": {
     "label": "Tema",
@@ -287,7 +290,7 @@
     "appearanceTitle": "Utseende og navigasjon",
     "appearanceDescription": "Tilpass opplevelsen",
     "showBudgets": "Vis budsjetter",
-    "showBudgetsHelp": "Aktiver budsjett-navigasjon og visninger.",
+    "showBudgetsHelp": "Administrer budsjetter og m?l p? Budsjetter-siden.",
     "showBudgetsDisabledHelp": "Budsjetter er skjult til hele budsjettflyten er produksjonsklar.",
     "dangerZone": "Faresone",
     "dangerHelp": "Irreversible handlinger. Vær forsiktig.",
@@ -303,12 +306,46 @@
     "resetSuccess": "Dine data ble slettet.",
     "resetFailed": "Kunne ikke slette data",
     "unknownError": "Ukjent feil",
-    "buildLabel": "Build"
+    "buildLabel": "Build",
+    "manageInBudgets": "?pne Budsjetter"
   },
   "budgetsPage": {
     "title": "Budsjetter",
-    "comingSoon": "Kommer snart",
-    "notReady": "Budsjettfunksjonen er ikke produksjonsklar enda."
+    "description": "Sett valgfrie forbruksm?l per uke, m?ned og ?r. Budsjettvisning i resten av appen vises kun n?r budsjettering er aktiv.",
+    "toggleTitle": "Budsjettering",
+    "toggleHelp": "Du kan aktivere budsjettering uten ? fylle ut alle perioder. Tomme felt behandles som ikke satt.",
+    "enabled": "Budsjettering er p?",
+    "disabled": "Budsjettering er av",
+    "weekly": "Ukebudsjett",
+    "monthly": "M?nedsbudsjett",
+    "yearly": "?rsbudsjett",
+    "optionalAmount": "Valgfritt bel?p",
+    "save": "Lagre innstillinger",
+    "saving": "Lagrer...",
+    "saved": "Budsjettinnstillinger lagret.",
+    "invalidAmount": "Bel?pet m? v?re et positivt tall.",
+    "configuredCount": "Konfigurerte m?l: {{count}}",
+    "trackingTitle": "Budsjettoppf?lging",
+    "trackingEmpty": "Ingen uke/m?ned/?r-m?l er satt enda.",
+    "disabledHint": "Aktiver budsjettering for ? vise oppf?lging og budsjettkontekst i appen.",
+    "budget": "Budsjett",
+    "spent": "Brukt",
+    "remaining": "Igjen",
+    "projected": "Prognose",
+    "daysLeft": "{{count}} dager igjen",
+    "period": {
+      "weekly": "Uke",
+      "monthly": "M?ned",
+      "yearly": "?r"
+    },
+    "status": {
+      "on_track": "I rute",
+      "warning": "F?lg med",
+      "over_budget": "Over budsjett"
+    },
+    "loadFailed": "Kunne ikke laste budsjettinnstillinger.",
+    "saveFailed": "Kunne ikke lagre budsjettinnstillinger.",
+    "loading": "Laster budsjettoppf?lging..."
   },
   "bootstrap": {
     "title": "Opprett første admin",

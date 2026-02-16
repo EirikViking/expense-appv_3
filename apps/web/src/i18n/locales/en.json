@@ -88,6 +88,8 @@
     "noGroceriesData": "No groceries data",
     "month": "Month",
     "spent": "Spent",
+    "budgetPulse": "Budget pulse",
+    "budgetNoTargets": "Budgeting is enabled, but no weekly/monthly/yearly target is configured yet.",
     "topExpenseCards": "Largest expense items",
     "txCountShort": "Tx",
     "clickToDrilldown": "Click to drill down",
@@ -113,6 +115,7 @@
     "excludeTransfersDefault": "Exclude transfers (default)",
     "showExcluded": "Show excluded",
     "excluded": "Excluded",
+    "budgetSummaryTitle": "Budget status",
     "sort": {
       "label": "Sort",
       "dateDesc": "Date (newest first)",
@@ -360,8 +363,9 @@
     "appearanceTitle": "Appearance and navigation",
     "appearanceDescription": "Customize your experience",
     "showBudgets": "Show budgets",
-    "showBudgetsHelp": "Enable budget navigation and views.",
+    "showBudgetsHelp": "Configure budgeting and targets in the Budgets page.",
     "showBudgetsDisabledHelp": "Budgets are hidden until the full budgeting flow is production-ready.",
+    "manageInBudgets": "Manage in Budgets",
     "dangerZone": "Danger zone",
     "dangerHelp": "Irreversible actions. Proceed with caution.",
     "deleteAllData": "Delete my data",
@@ -417,7 +421,40 @@
   },
   "budgetsPage": {
     "title": "Budgets",
-    "comingSoon": "Coming soon",
-    "notReady": "Budgets are not production-ready yet."
+    "description": "Set optional spending targets per week, month, and year. Tracking appears across the app only when budgeting is enabled.",
+    "toggleTitle": "Budgeting",
+    "toggleHelp": "You can enable budgeting without filling every period. Empty fields are treated as not configured.",
+    "enabled": "Budgeting is enabled",
+    "disabled": "Budgeting is disabled",
+    "weekly": "Weekly budget",
+    "monthly": "Monthly budget",
+    "yearly": "Yearly budget",
+    "optionalAmount": "Optional amount",
+    "save": "Save settings",
+    "saving": "Saving...",
+    "saved": "Budget settings saved.",
+    "invalidAmount": "Amount must be a positive number.",
+    "configuredCount": "Configured targets: {{count}}",
+    "trackingTitle": "Budget tracking",
+    "trackingEmpty": "No weekly/monthly/yearly targets are set yet.",
+    "disabledHint": "Enable budgeting to show tracking and app-wide budget context.",
+    "budget": "Budget",
+    "spent": "Spent",
+    "remaining": "Remaining",
+    "projected": "Projected",
+    "daysLeft": "{{count}} days left",
+    "period": {
+      "weekly": "Week",
+      "monthly": "Month",
+      "yearly": "Year"
+    },
+    "status": {
+      "on_track": "On track",
+      "warning": "Watchlist",
+      "over_budget": "Over budget"
+    },
+    "loadFailed": "Failed to load budget settings.",
+    "saveFailed": "Failed to save budget settings.",
+    "loading": "Loading budget tracking..."
   }
 }

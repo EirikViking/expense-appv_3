@@ -1,6 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-
-const SHOW_BUDGETS_KEY = 'show_budgets';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 
 type FeatureFlagsContextValue = {
   showBudgets: boolean;
@@ -10,17 +8,15 @@ type FeatureFlagsContextValue = {
 const FeatureFlagsContext = createContext<FeatureFlagsContextValue | null>(null);
 
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
-  const [showBudgets, setShowBudgets] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const stored = localStorage.getItem(SHOW_BUDGETS_KEY);
-    return stored === 'true';
-  });
-
-  useEffect(() => {
-    localStorage.setItem(SHOW_BUDGETS_KEY, String(showBudgets));
-  }, [showBudgets]);
-
-  const value = useMemo(() => ({ showBudgets, setShowBudgets }), [showBudgets]);
+  const value = useMemo(
+    () => ({
+      showBudgets: true,
+      setShowBudgets: (_value: boolean) => {
+        // Budgets route is always visible; enable/disable is handled in Budgets settings.
+      },
+    }),
+    [],
+  );
 
   return (
     <FeatureFlagsContext.Provider value={value}>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
+import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category, BudgetTrackingPeriod } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +50,8 @@ export function TransactionsPage() {
   const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
   const [total, setTotal] = useState(0);
   const [overallTotal, setOverallTotal] = useState(0);
   const [aggregates, setAggregates] = useState<{ sum_amount: number; total_spent: number; total_income: number } | null>(null);
@@ -265,6 +267,26 @@ export function TransactionsPage() {
     if (!filtersInitialized) return;
     fetchData();
   }, [filtersInitialized, fetchData]);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .getBudgetTracking()
+      .then((res) => {
+        if (!active) return;
+        setBudgetsEnabled(Boolean(res.enabled));
+        setBudgetTracking(res.periods || []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setBudgetsEnabled(false);
+        setBudgetTracking([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!dateFrom || !dateTo) {
@@ -497,6 +519,27 @@ export function TransactionsPage() {
           </Button>
         </div>
       </div>
+
+      {budgetsEnabled && budgetTracking.length > 0 && (
+        <div className="rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2">
+          <p className="text-xs text-cyan-100/90 mb-1">{t('transactions.budgetSummaryTitle')}</p>
+          <div className="flex flex-wrap gap-3 text-xs text-cyan-50">
+            {budgetTracking.map((item) => {
+              const label =
+                item.period === 'weekly'
+                  ? t('budgetsPage.period.weekly')
+                  : item.period === 'monthly'
+                    ? t('budgetsPage.period.monthly')
+                    : t('budgetsPage.period.yearly');
+              return (
+                <span key={item.period}>
+                  <strong>{label}</strong>: {formatCurrency(item.spent_amount)} / {formatCurrency(item.budget_amount)}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

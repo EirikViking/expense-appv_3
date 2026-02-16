@@ -8,6 +8,7 @@ import type {
   RecurringItem,
   TimeSeriesPoint,
   TransactionWithMeta,
+  BudgetTrackingPeriod,
 } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -586,6 +587,8 @@ export function InsightsPage() {
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [largestExpenseTx, setLargestExpenseTx] = useState<TransactionWithMeta | null>(null);
   const [compare, setCompare] = useState<AnalyticsCompareResponse | null>(null);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
 
   const initialRange = useMemo(() => loadLastDateRange() ?? getMonthRange(), []);
   const [dateFrom, setDateFrom] = useState(initialRange.start);
@@ -626,9 +629,10 @@ export function InsightsPage() {
           previous_start: prev.from,
           previous_end: prev.to,
         }),
+        api.getBudgetTracking(),
       ]);
 
-      const [summaryRes, byCatRes, byMerchRes, subsRes, timeseriesRes, largestRes, compareRes] = results;
+      const [summaryRes, byCatRes, byMerchRes, subsRes, timeseriesRes, largestRes, compareRes, budgetTrackingRes] = results;
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
       if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value.categories);
       if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value.merchants);
@@ -636,6 +640,10 @@ export function InsightsPage() {
       if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.series);
       if (largestRes.status === 'fulfilled') setLargestExpenseTx(largestRes.value.transactions[0] ?? null);
       if (compareRes.status === 'fulfilled') setCompare(compareRes.value);
+      if (budgetTrackingRes.status === 'fulfilled') {
+        setBudgetTracking(budgetTrackingRes.value.periods || []);
+        setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
+      }
     } finally {
       setLoading(false);
     }
@@ -916,6 +924,54 @@ export function InsightsPage() {
           )}
         </CardContent>
       </Card>
+
+      {budgetsEnabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{lang === 'nb' ? 'Budsjettkompass' : 'Budget compass'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {budgetTracking.length === 0 ? (
+              <p className="text-sm text-white/70">
+                {lang === 'nb'
+                  ? 'Budsjett er aktivert, men ingen periodegrenser er satt ennå.'
+                  : 'Budgeting is enabled, but no period limits are set yet.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {budgetTracking.map((item) => {
+                  const label =
+                    item.period === 'weekly'
+                      ? lang === 'nb' ? 'Uke' : 'Week'
+                      : item.period === 'monthly'
+                        ? lang === 'nb' ? 'Måned' : 'Month'
+                        : lang === 'nb' ? 'År' : 'Year';
+                  const statusLabel =
+                    item.status === 'on_track'
+                      ? lang === 'nb' ? 'I rute' : 'On track'
+                      : item.status === 'warning'
+                        ? lang === 'nb' ? 'Følg med' : 'Watchlist'
+                        : lang === 'nb' ? 'Over' : 'Over';
+                  return (
+                    <button
+                      key={item.period}
+                      type="button"
+                      className="rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10 transition-colors"
+                      onClick={() => navigate('/budgets')}
+                    >
+                      <p className="text-xs text-white/60">{label}</p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {formatCompactCurrency(item.spent_amount)} / {formatCompactCurrency(item.budget_amount)}
+                      </p>
+                      <p className="mt-1 text-xs text-cyan-100/90">{statusLabel}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

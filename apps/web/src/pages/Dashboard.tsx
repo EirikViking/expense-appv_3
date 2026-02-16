@@ -47,6 +47,7 @@ import type {
   FlowType,
   TransactionStatus,
   AnalyticsOverview,
+  BudgetTrackingPeriod,
 } from '@expense/shared';
 import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
@@ -70,6 +71,8 @@ export function DashboardPage() {
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [trendSeries, setTrendSeries] = useState<TimeSeriesPoint[]>([]);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
   const [trendMonths, setTrendMonths] = useState<3 | 6 | 12>(12);
   const [trendCategoryId, setTrendCategoryId] = useState<string>(CATEGORY_IDS.groceries);
   const [flatCategories, setFlatCategories] = useState<Category[]>([]);
@@ -227,7 +230,7 @@ export function DashboardPage() {
           include_transfers: !excludeTransfers,
         });
 
-        const [overviewRes, categoriesRes, timeseriesRes] =
+        const [overviewRes, categoriesRes, timeseriesRes, budgetTrackingRes] =
           await Promise.allSettled([
             api.getAnalyticsOverview({
               date_from: dateFrom,
@@ -248,6 +251,7 @@ export function DashboardPage() {
               granularity: 'day',
               include_transfers: !excludeTransfers,
             }),
+            api.getBudgetTracking(),
           ]);
 
         if (requestId !== baseRequestIdRef.current) return;
@@ -260,6 +264,10 @@ export function DashboardPage() {
         }
         if (timeseriesRes.status === 'fulfilled') {
           setTimeseries(timeseriesRes.value.series);
+        }
+        if (budgetTrackingRes.status === 'fulfilled') {
+          setBudgetTracking(budgetTrackingRes.value.periods || []);
+          setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
         }
 
         setLoading(false);
@@ -593,6 +601,52 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {budgetsEnabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('dashboard.budgetPulse')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {budgetTracking.length === 0 ? (
+              <p className="text-sm text-white/65">{t('dashboard.budgetNoTargets')}</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-3">
+                {budgetTracking.map((item) => {
+                  const pct = Math.round(Math.min(100, Math.max(0, item.progress_ratio * 100)));
+                  const label =
+                    item.period === 'weekly'
+                      ? t('budgetsPage.period.weekly')
+                      : item.period === 'monthly'
+                        ? t('budgetsPage.period.monthly')
+                        : t('budgetsPage.period.yearly');
+                  const statusText =
+                    item.status === 'on_track'
+                      ? t('budgetsPage.status.on_track')
+                      : item.status === 'warning'
+                        ? t('budgetsPage.status.warning')
+                        : t('budgetsPage.status.over_budget');
+
+                  return (
+                    <div key={item.period} className="rounded-lg border border-white/12 bg-white/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{label}</p>
+                        <span className="text-xs text-white/70">{statusText}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-cyan-300" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-xs text-white/70">
+                        {t('budgetsPage.spent')}: {formatCurrency(item.spent_amount)} / {formatCurrency(item.budget_amount)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick shortcuts */}
       {topExpenseCategoryTiles.length > 0 && (

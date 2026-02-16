@@ -10,6 +10,9 @@ import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 import { InviteShareCard } from '@/components/InviteShareCard';
 import { GIT_COMMIT } from '@/lib/version';
+import { Link } from 'react-router-dom';
+
+const buildId = GIT_COMMIT.slice(0, 7);
 
 type UserDraft = {
   name: string;
@@ -202,11 +205,11 @@ export function SettingsPage() {
           <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
             <div className="space-y-0.5">
               <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>
-              <p className="text-sm text-white/70">{t('settingsPage.showBudgetsDisabledHelp')}</p>
+              <p className="text-sm text-white/70">{t('settingsPage.showBudgetsHelp')}</p>
             </div>
-            <span className="rounded bg-white/10 px-2 py-1 text-xs text-white/70">
-              {t('budgetsPage.comingSoon')}
-            </span>
+            <Link to="/budgets" className="rounded bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15">
+              {t('settingsPage.manageInBudgets')}
+            </Link>
           </div>
         </CardContent>
       </Card>
@@ -443,4 +446,3 @@ export function SettingsPage() {
     </div>
   );
 }
-  const buildId = GIT_COMMIT.slice(0, 7);
