@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import type { BudgetTrackingPeriod } from '@expense/shared';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +58,21 @@ export function BudgetsPage() {
   const configuredCount = useMemo(
     () => [weekly, monthly, yearly].filter((v) => v.trim().length > 0).length,
     [weekly, monthly, yearly],
+  );
+
+  const hasOverBudget = useMemo(
+    () => tracking.some((item) => item.status === 'over_budget'),
+    [tracking],
+  );
+
+  const hasWarning = useMemo(
+    () => tracking.some((item) => item.status === 'warning'),
+    [tracking],
+  );
+
+  const allUnderBudget = useMemo(
+    () => tracking.length > 0 && tracking.every((item) => item.spent_amount < item.budget_amount),
+    [tracking],
   );
 
   const load = async () => {
@@ -231,37 +246,53 @@ export function BudgetsPage() {
           ) : tracking.length === 0 ? (
             <p className="text-sm text-white/65">{t('budgetsPage.trackingEmpty')}</p>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {tracking.map((item) => {
-                const progressPct = Math.min(100, Math.max(0, item.progress_ratio * 100));
-                return (
-                  <div key={item.period} className="rounded-lg border border-white/15 bg-white/5 p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="font-semibold">{t(periodKey(item.period))}</p>
-                      <Badge variant={statusVariant(item.status)}>{t(statusKey(item.status))}</Badge>
-                    </div>
+            <div className="space-y-3">
+              {hasOverBudget ? (
+                <div className="rounded-md border border-red-300/35 bg-red-500/15 px-3 py-2 text-sm text-red-100">
+                  {t('budgetsPage.feedback.overBudget')}
+                </div>
+              ) : hasWarning ? (
+                <div className="rounded-md border border-amber-300/35 bg-amber-500/15 px-3 py-2 text-sm text-amber-100">
+                  {t('budgetsPage.feedback.warning')}
+                </div>
+              ) : allUnderBudget ? (
+                <div className="rounded-md border border-emerald-300/35 bg-emerald-500/15 px-3 py-2 text-sm text-emerald-100">
+                  {t('budgetsPage.feedback.underBudget')}
+                </div>
+              ) : null}
 
-                    <div className="space-y-1 text-sm">
-                      <p>{t('budgetsPage.budget')}: <span className="font-medium">{formatCurrency(item.budget_amount)}</span></p>
-                      <p>{t('budgetsPage.spent')}: <span className="font-medium">{formatCurrency(item.spent_amount)}</span></p>
-                      <p>{t('budgetsPage.remaining')}: <span className="font-medium">{formatCurrency(item.remaining_amount)}</span></p>
-                      <p>{t('budgetsPage.projected')}: <span className="font-medium">{formatCurrency(item.projected_spent)}</span></p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                        <div
-                          className="h-full bg-cyan-300 transition-all"
-                          style={{ width: `${progressPct}%` }}
-                        />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {tracking.map((item) => {
+                  const progressPct = Math.min(100, Math.max(0, item.progress_ratio * 100));
+                  return (
+                    <div key={item.period} className="rounded-lg border border-white/15 bg-white/5 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-semibold">{t(periodKey(item.period))}</p>
+                        <Badge variant={statusVariant(item.status)}>{t(statusKey(item.status))}</Badge>
                       </div>
-                      <p className="text-xs text-white/60">
-                        {Math.round(progressPct)}% � {t('budgetsPage.daysLeft', { count: item.days_remaining })}
-                      </p>
+
+                      <div className="space-y-1 text-sm">
+                        <p>{t('budgetsPage.budget')}: <span className="font-medium">{formatCurrency(item.budget_amount)}</span></p>
+                        <p>{t('budgetsPage.spent')}: <span className="font-medium">{formatCurrency(item.spent_amount)}</span></p>
+                        <p>{t('budgetsPage.remaining')}: <span className="font-medium">{formatCurrency(item.remaining_amount)}</span></p>
+                        <p>{t('budgetsPage.projected')}: <span className="font-medium">{formatCurrency(item.projected_spent)}</span></p>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className="h-full bg-cyan-300 transition-all"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-white/60">
+                          {Math.round(progressPct)}% • {t('budgetsPage.daysLeft', { count: item.days_remaining })}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>

@@ -455,6 +455,11 @@
     },
     "loadFailed": "Failed to load budget settings.",
     "saveFailed": "Failed to save budget settings.",
-    "loading": "Loading budget tracking..."
+    "loading": "Loading budget tracking...",
+    "feedback": {
+      "underBudget": "Excellent work. You are under budget across all configured periods.",
+      "warning": "Heads-up: spending pace is rising. Keep an eye on budget progress.",
+      "overBudget": "Warning: one or more budgets are exceeded. Consider adjusting spending now."
+    }
   }
 }
