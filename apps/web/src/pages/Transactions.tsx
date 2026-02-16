@@ -198,7 +198,7 @@ export function TransactionsPage() {
         flowType,
       });
 
-      const [txResult, catResult, overallResult] = await Promise.all([
+      const [txResult, overallResult] = await Promise.all([
         api.getTransactions({
           transaction_id: transactionId || undefined,
           date_from: dateFrom || undefined,
@@ -231,14 +231,11 @@ export function TransactionsPage() {
           })(),
           sort_order: sortKey.endsWith('_asc') ? 'asc' : 'desc',
         }),
-        categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
         shouldFetchOverallTotal
-          ? api.getTransactions({
+          ? api.getTransactionsCount({
               transaction_id: transactionId || undefined,
               include_transfers: !excludeTransfers,
               include_excluded: showExcluded ? true : undefined,
-              limit: 1,
-              offset: 0,
             })
           : Promise.resolve(null),
       ]);
@@ -248,9 +245,6 @@ export function TransactionsPage() {
         setTotal(txResult.total);
         setOverallTotal(overallResult?.total ?? txResult.total);
         setAggregates(txResult.aggregates ?? null);
-        if ('categories' in catResult && catResult.categories) {
-          setCategories(catResult.categories);
-        }
       }
     } catch (err) {
       if (requestId === requestIdRef.current) {
@@ -261,12 +255,29 @@ export function TransactionsPage() {
         setIsLoading(false);
       }
     }
-  }, [filtersInitialized, transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey, t]);
+  }, [filtersInitialized, transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, excludeTransfers, showExcluded, flowType, sortKey, t]);
 
   useEffect(() => {
     if (!filtersInitialized) return;
     fetchData();
   }, [filtersInitialized, fetchData]);
+
+  useEffect(() => {
+    let active = true;
+    if (categories.length > 0) return;
+    api
+      .getCategories()
+      .then((res) => {
+        if (!active) return;
+        setCategories(res.categories || []);
+      })
+      .catch(() => {
+        // Keep page usable even if category lookup fails temporarily.
+      });
+    return () => {
+      active = false;
+    };
+  }, [categories.length]);
 
   useEffect(() => {
     let active = true;

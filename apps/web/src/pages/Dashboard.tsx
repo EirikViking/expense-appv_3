@@ -223,6 +223,18 @@ export function DashboardPage() {
     async function loadBaseData() {
       setLoadingAnomalies(true);
       try {
+        const overviewRes = await api.getAnalyticsOverview({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+        });
+
+        if (requestId !== baseRequestIdRef.current) return;
+        setOverview(overviewRes);
+        setLoading(false);
+        setIsRefreshing(false);
+
         const anomaliesPromise = api.getAnalyticsAnomalies({
           date_from: dateFrom,
           date_to: dateTo,
@@ -230,14 +242,8 @@ export function DashboardPage() {
           include_transfers: !excludeTransfers,
         });
 
-        const [overviewRes, categoriesRes, timeseriesRes, budgetTrackingRes] =
+        const [categoriesRes, timeseriesRes, budgetTrackingRes] =
           await Promise.allSettled([
-            api.getAnalyticsOverview({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-            }),
             api.getAnalyticsByCategory({
               date_from: dateFrom,
               date_to: dateTo,
@@ -256,9 +262,6 @@ export function DashboardPage() {
 
         if (requestId !== baseRequestIdRef.current) return;
 
-        if (overviewRes.status === 'fulfilled') {
-          setOverview(overviewRes.value);
-        }
         if (categoriesRes.status === 'fulfilled') {
           setCategories(categoriesRes.value.categories);
         }
@@ -269,9 +272,6 @@ export function DashboardPage() {
           setBudgetTracking(budgetTrackingRes.value.periods || []);
           setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
         }
-
-        setLoading(false);
-        setIsRefreshing(false);
 
         const anomaliesRes = await anomaliesPromise;
         if (requestId !== baseRequestIdRef.current) return;

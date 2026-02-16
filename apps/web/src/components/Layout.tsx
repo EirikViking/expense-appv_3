@@ -23,6 +23,7 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
+import { prefetchAppRoutes } from '@/lib/route-prefetch';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -57,6 +58,11 @@ export function Layout({ children }: LayoutProps) {
       setOnboardingDismissed(false);
     }
   }, [needsOnboarding]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    prefetchAppRoutes();
+  }, [isAuthenticated]);
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';

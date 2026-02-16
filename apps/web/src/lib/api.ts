@@ -133,9 +133,9 @@ function clearRequestCache() {
 function getCacheTtlMs(endpoint: string, override?: number): number {
   if (typeof override === 'number') return override;
   if (endpoint.startsWith('/categories') || endpoint.startsWith('/tags')) return 5 * 60_000;
-  if (endpoint.startsWith('/analytics')) return 30_000;
+  if (endpoint.startsWith('/analytics')) return 90_000;
   if (endpoint.startsWith('/merchants')) return 60_000;
-  if (endpoint.startsWith('/transactions')) return 10_000;
+  if (endpoint.startsWith('/transactions')) return 20_000;
   if (endpoint.startsWith('/auth/me')) return 15_000;
   return 20_000;
 }
@@ -365,6 +365,15 @@ export const api = {
 
   getTransaction: (id: string) =>
     request<TransactionWithMeta>(`/transactions/${id}`),
+
+  getTransactionsCount: (query: {
+    transaction_id?: string;
+    include_transfers?: boolean;
+    include_excluded?: boolean;
+  } = {}) => {
+    const qs = buildQuery(toQueryRecord(query));
+    return request<{ total: number }>(`/transactions/count${qs}`);
+  },
 
   createTransaction: (data: CreateTransactionRequest) =>
     request<TransactionWithMeta>('/transactions', {

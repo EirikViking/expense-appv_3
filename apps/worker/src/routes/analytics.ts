@@ -427,7 +427,8 @@ analytics.get('/by-merchant', async (c) => {
     });
 
     // Pull enough rows to allow safe post-aggregation (e.g. chain merging of "KIWI 505" + "KIWI 123").
-    const scanLimit = Math.min(250, Math.max(limit * 10, 80));
+    // Keep this bounded to avoid long-running grouped scans on large datasets.
+    const scanLimit = Math.min(120, Math.max(limit * 5, 50));
 
     const currentResult = await c.env.DB
       .prepare(`

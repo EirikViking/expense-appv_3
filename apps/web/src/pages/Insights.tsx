@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import type {
   AnalyticsCompareResponse,
@@ -602,18 +602,38 @@ export function InsightsPage() {
 
   const [seed, setSeed] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const requestIdRef = useRef(0);
 
   const loadData = async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     const prev = getPreviousRange(dateFrom, dateTo);
 
     try {
-      const results = await Promise.allSettled([
+      const coreResults = await Promise.allSettled([
         api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
         api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
+        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false }),
+        api.getAnalyticsCompare({
+          current_start: dateFrom,
+          current_end: dateTo,
+          previous_start: prev.from,
+          previous_end: prev.to,
+        }),
+      ]);
+
+      if (requestId !== requestIdRef.current) return;
+
+      const [summaryRes, byCatRes, timeseriesRes, compareRes] = coreResults;
+      if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
+      if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value.categories);
+      if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.series);
+      if (compareRes.status === 'fulfilled') setCompare(compareRes.value);
+      setLoading(false);
+
+      const secondaryResults = await Promise.allSettled([
         api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 }),
         api.getAnalyticsSubscriptions(),
-        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false }),
         api.getTransactions({
           date_from: dateFrom,
           date_to: dateTo,
@@ -623,29 +643,23 @@ export function InsightsPage() {
           sort_by: 'amount_abs',
           sort_order: 'desc',
         }),
-        api.getAnalyticsCompare({
-          current_start: dateFrom,
-          current_end: dateTo,
-          previous_start: prev.from,
-          previous_end: prev.to,
-        }),
         api.getBudgetTracking(),
       ]);
 
-      const [summaryRes, byCatRes, byMerchRes, subsRes, timeseriesRes, largestRes, compareRes, budgetTrackingRes] = results;
-      if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
-      if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value.categories);
+      if (requestId !== requestIdRef.current) return;
+
+      const [byMerchRes, subsRes, largestRes, budgetTrackingRes] = secondaryResults;
       if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value.merchants);
       if (subsRes.status === 'fulfilled') setSubscriptions(subsRes.value.subscriptions);
-      if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.series);
       if (largestRes.status === 'fulfilled') setLargestExpenseTx(largestRes.value.transactions[0] ?? null);
-      if (compareRes.status === 'fulfilled') setCompare(compareRes.value);
       if (budgetTrackingRes.status === 'fulfilled') {
         setBudgetTracking(budgetTrackingRes.value.periods || []);
         setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
       }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 

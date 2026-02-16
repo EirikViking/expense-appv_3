@@ -467,6 +467,50 @@ transactions.get('/', async (c) => {
   }
 });
 
+// Lightweight count endpoint used by UI for "filtered vs total" without running full list enrichment.
+transactions.get('/count', async (c) => {
+  try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
+    const transactionId = c.req.query('transaction_id');
+    const includeTransfers = c.req.query('include_transfers') === '1' || c.req.query('include_transfers') === 'true';
+    const includeExcluded = c.req.query('include_excluded') === '1' || c.req.query('include_excluded') === 'true';
+
+    const conditions: string[] = ['t.user_id = ?'];
+    const params: (string | number)[] = [scopeUserId];
+
+    if (transactionId) {
+      conditions.push('t.id = ?');
+      params.push(transactionId);
+    }
+
+    if (!includeExcluded) {
+      if (includeTransfers) {
+        conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
+      } else {
+        conditions.push('COALESCE(t.is_excluded, 0) = 0');
+      }
+    }
+
+    if (!includeTransfers) {
+      conditions.push('COALESCE(t.is_transfer, 0) = 0');
+      conditions.push("t.flow_type != 'transfer'");
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const result = await c.env.DB
+      .prepare(`SELECT COUNT(*) as total FROM transactions t ${whereClause}`)
+      .bind(...params)
+      .first<{ total: number }>();
+
+    return c.json({ total: result?.total || 0 });
+  } catch (error) {
+    console.error('Transactions count error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Get single transaction with full details
 transactions.get('/:id', async (c) => {
   try {
