@@ -54,6 +54,8 @@ export function buildMerchantBreakdown(
     const avg = count > 0 ? total / count : 0;
     const prevTotal = prevMap.get(row.merchant_name) || 0;
     const trend = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
+    const recomputed = prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : 0;
+    const trendBasisValid = prevTotal > 0 && Number.isFinite(recomputed) && Number.isFinite(trend) && Math.abs(recomputed - trend) < 0.001;
 
     return {
       merchant_id: row.merchant_id,
@@ -62,6 +64,8 @@ export function buildMerchantBreakdown(
       count,
       avg,
       trend,
+      previous_total: prevTotal,
+      trend_basis_valid: trendBasisValid,
     };
   });
 

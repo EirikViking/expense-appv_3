@@ -690,7 +690,15 @@ export const api = {
 
   getAnalyticsByMerchant: (query: Partial<AnalyticsQuery> & { limit?: number }) => {
     const qs = buildQuery(toQueryRecord(query));
-    return request<{ merchants: MerchantBreakdown[] }>(`/analytics/by-merchant${qs}`);
+    return request<{
+      merchants: MerchantBreakdown[];
+      comparison_period?: {
+        current_start: string;
+        current_end: string;
+        previous_start: string;
+        previous_end: string;
+      };
+    }>(`/analytics/by-merchant${qs}`);
   },
 
   getAnalyticsTimeseries: (query: Partial<AnalyticsQuery>) => {
