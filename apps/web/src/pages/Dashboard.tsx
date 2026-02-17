@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Tag,
+  Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -1030,7 +1031,17 @@ export function DashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <span>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</span>
+                <span
+                  className="inline-flex text-white/60 cursor-help"
+                  title={t('dashboard.topMerchantsTrendHint')}
+                  aria-label={t('dashboard.topMerchantsTrendHint')}
+                  tabIndex={0}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+              </CardTitle>
               <p className="mt-1 text-xs text-white/60">{t('dashboard.topMerchantsTrendHint')}</p>
             </div>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
