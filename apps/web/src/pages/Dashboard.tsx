@@ -56,9 +56,15 @@ import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
 import { darkenHexColor, getCategoryChartColor } from '@/lib/category-chart-colors';
+import { useAuth } from '@/context/AuthContext';
+import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
 
 export function DashboardPage() {
+  const DASHBOARD_CACHE_TTL_MS = 30_000;
+  const DASHBOARD_MERCHANTS_CACHE_TTL_MS = 30_000;
+  const DASHBOARD_TREND_CACHE_TTL_MS = 45_000;
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -85,6 +91,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category_id') || '';
+  const userId = user?.id || 'anonymous';
 
   const defaultRange = useMemo(() => {
     const stored = loadLastDateRange();
@@ -217,24 +224,58 @@ export function DashboardPage() {
   useEffect(() => {
     const requestId = ++baseRequestIdRef.current;
     const hasLoadedOnce = Boolean(overview);
+    const baseCacheKey = makePageCacheKey('dashboard:base', {
+      userId,
+      dateFrom,
+      dateTo,
+      status: statusFilter || '',
+      includeTransfers: !excludeTransfers,
+    });
+    const cached = readPageCache<{
+      overview: AnalyticsOverview | null;
+      categories: CategoryBreakdown[];
+      timeseries: TimeSeriesPoint[];
+      anomalies: AnomalyItem[];
+      budgetTracking: BudgetTrackingPeriod[];
+      budgetsEnabled: boolean;
+    }>(baseCacheKey);
+    if (cached) {
+      setOverview(cached.overview);
+      setCategories(cached.categories);
+      setTimeseries(cached.timeseries);
+      setAnomalies(cached.anomalies);
+      setBudgetTracking(cached.budgetTracking);
+      setBudgetsEnabled(cached.budgetsEnabled);
+      setLoading(false);
+      setIsRefreshing(false);
+      setLoadingAnomalies(false);
+    }
     if (hasLoadedOnce) setIsRefreshing(true);
     else setLoading(true);
 
     async function loadBaseData() {
       setLoadingAnomalies(true);
       try {
-        const overviewRes = await api.getAnalyticsOverview({
+        const overviewPromise = api.getAnalyticsOverview({
           date_from: dateFrom,
           date_to: dateTo,
           status: statusFilter || undefined,
           include_transfers: !excludeTransfers,
         });
-
-        if (requestId !== baseRequestIdRef.current) return;
-        setOverview(overviewRes);
-        setLoading(false);
-        setIsRefreshing(false);
-
+        const categoriesPromise = api.getAnalyticsByCategory({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+        });
+        const timeseriesPromise = api.getAnalyticsTimeseries({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          granularity: 'day',
+          include_transfers: !excludeTransfers,
+        });
+        const budgetTrackingPromise = api.getBudgetTracking();
         const anomaliesPromise = api.getAnalyticsAnomalies({
           date_from: dateFrom,
           date_to: dateTo,
@@ -242,23 +283,14 @@ export function DashboardPage() {
           include_transfers: !excludeTransfers,
         });
 
-        const [categoriesRes, timeseriesRes, budgetTrackingRes] =
-          await Promise.allSettled([
-            api.getAnalyticsByCategory({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-            }),
-            api.getAnalyticsTimeseries({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              granularity: 'day',
-              include_transfers: !excludeTransfers,
-            }),
-            api.getBudgetTracking(),
-          ]);
+        const overviewRes = await overviewPromise;
+
+        if (requestId !== baseRequestIdRef.current) return;
+        setOverview(overviewRes);
+        setLoading(false);
+        setIsRefreshing(false);
+        const [categoriesRes, timeseriesRes, budgetTrackingRes, anomaliesRes] =
+          await Promise.allSettled([categoriesPromise, timeseriesPromise, budgetTrackingPromise, anomaliesPromise]);
 
         if (requestId !== baseRequestIdRef.current) return;
 
@@ -272,10 +304,22 @@ export function DashboardPage() {
           setBudgetTracking(budgetTrackingRes.value.periods || []);
           setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
         }
+        if (anomaliesRes.status === 'fulfilled') {
+          setAnomalies(anomaliesRes.value.anomalies.slice(0, 5));
+        }
 
-        const anomaliesRes = await anomaliesPromise;
-        if (requestId !== baseRequestIdRef.current) return;
-        setAnomalies(anomaliesRes.anomalies.slice(0, 5));
+        writePageCache(
+          baseCacheKey,
+          {
+            overview: overviewRes,
+            categories: categoriesRes.status === 'fulfilled' ? categoriesRes.value.categories : categories,
+            timeseries: timeseriesRes.status === 'fulfilled' ? timeseriesRes.value.series : timeseries,
+            anomalies: anomaliesRes.status === 'fulfilled' ? anomaliesRes.value.anomalies.slice(0, 5) : anomalies,
+            budgetTracking: budgetTrackingRes.status === 'fulfilled' ? (budgetTrackingRes.value.periods || []) : budgetTracking,
+            budgetsEnabled: budgetTrackingRes.status === 'fulfilled' ? Boolean(budgetTrackingRes.value.enabled) : budgetsEnabled,
+          },
+          DASHBOARD_CACHE_TTL_MS
+        );
       } catch (err) {
         if (requestId !== baseRequestIdRef.current) return;
         console.error('Failed to load dashboard data:', err);
@@ -289,10 +333,23 @@ export function DashboardPage() {
     }
 
     void loadBaseData();
-  }, [excludeTransfers, dateFrom, dateTo, statusFilter]);
+  }, [excludeTransfers, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
     const requestId = ++merchantRequestIdRef.current;
+    const merchantsCacheKey = makePageCacheKey('dashboard:merchants', {
+      userId,
+      dateFrom,
+      dateTo,
+      status: statusFilter || '',
+      includeTransfers: !excludeTransfers,
+      selectedCategoryId,
+    });
+    const cached = readPageCache<MerchantBreakdown[]>(merchantsCacheKey);
+    if (cached) {
+      setMerchants(cached);
+      setLoadingMerchants(false);
+    }
     setLoadingMerchants(true);
 
     async function loadMerchants() {
@@ -307,6 +364,7 @@ export function DashboardPage() {
         });
         if (requestId !== merchantRequestIdRef.current) return;
         setMerchants(merchantsRes.merchants);
+        writePageCache(merchantsCacheKey, merchantsRes.merchants, DASHBOARD_MERCHANTS_CACHE_TTL_MS);
       } catch (err) {
         if (requestId !== merchantRequestIdRef.current) return;
         console.error('Failed to load dashboard merchants:', err);
@@ -318,10 +376,21 @@ export function DashboardPage() {
     }
 
     void loadMerchants();
-  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter]);
+  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
     const requestId = ++trendRequestIdRef.current;
+    const trendCacheKey = makePageCacheKey('dashboard:trend', {
+      userId,
+      trendMonths,
+      trendCategoryId,
+      status: statusFilter || '',
+    });
+    const cached = readPageCache<TimeSeriesPoint[]>(trendCacheKey);
+    if (cached) {
+      setTrendSeries(cached);
+      setLoadingTrend(false);
+    }
     setLoadingTrend(true);
 
     async function loadTrend() {
@@ -335,6 +404,7 @@ export function DashboardPage() {
         });
         if (requestId !== trendRequestIdRef.current) return;
         setTrendSeries(trendRes.series);
+        writePageCache(trendCacheKey, trendRes.series, DASHBOARD_TREND_CACHE_TTL_MS);
       } catch (err) {
         if (requestId !== trendRequestIdRef.current) return;
         console.error('Failed to load dashboard trend:', err);
@@ -346,7 +416,7 @@ export function DashboardPage() {
     }
 
     void loadTrend();
-  }, [trendMonths, trendCategoryId, statusFilter]);
+  }, [trendMonths, trendCategoryId, statusFilter, userId]);
 
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;

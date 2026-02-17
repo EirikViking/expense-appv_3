@@ -23,6 +23,7 @@ import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
 import { localizeCategoryName } from '@/lib/category-localization';
 import { useAuth } from '@/context/AuthContext';
+import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
 
 type Lang = 'en' | 'nb';
 
@@ -572,6 +573,7 @@ export function buildCoachWisdom(args: {
 }
 
 export function InsightsPage() {
+  const INSIGHTS_CACHE_TTL_MS = 30_000;
   const { i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -606,20 +608,66 @@ export function InsightsPage() {
 
   const loadData = async () => {
     const requestId = ++requestIdRef.current;
+    const cacheKey = makePageCacheKey('insights:page', {
+      userId: user?.id || 'anonymous',
+      dateFrom,
+      dateTo,
+    });
+    const cached = readPageCache<{
+      summary: AnalyticsSummary | null;
+      categories: CategoryBreakdown[];
+      merchants: MerchantBreakdown[];
+      subscriptions: RecurringItem[];
+      timeseries: TimeSeriesPoint[];
+      largestExpenseTx: TransactionWithMeta | null;
+      compare: AnalyticsCompareResponse | null;
+      budgetTracking: BudgetTrackingPeriod[];
+      budgetsEnabled: boolean;
+    }>(cacheKey);
+    if (cached) {
+      setSummary(cached.summary);
+      setCategories(cached.categories);
+      setMerchants(cached.merchants);
+      setSubscriptions(cached.subscriptions);
+      setTimeseries(cached.timeseries);
+      setLargestExpenseTx(cached.largestExpenseTx);
+      setCompare(cached.compare);
+      setBudgetTracking(cached.budgetTracking);
+      setBudgetsEnabled(cached.budgetsEnabled);
+      setLoading(false);
+    }
     setLoading(true);
     const prev = getPreviousRange(dateFrom, dateTo);
 
     try {
+      const summaryPromise = api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo });
+      const byCategoryPromise = api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo });
+      const timeseriesPromise = api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false });
+      const comparePromise = api.getAnalyticsCompare({
+        current_start: dateFrom,
+        current_end: dateTo,
+        previous_start: prev.from,
+        previous_end: prev.to,
+      });
+
+      const byMerchantPromise = api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 });
+      const subsPromise = api.getAnalyticsSubscriptions();
+      const largestPromise = api.getTransactions({
+        date_from: dateFrom,
+        date_to: dateTo,
+        flow_type: 'expense',
+        include_transfers: false,
+        limit: 1,
+        sort_by: 'amount_abs',
+        sort_order: 'desc',
+      });
+      const budgetTrackingPromise = api.getBudgetTracking();
+
       const coreResults = await Promise.allSettled([
-        api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
-        api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
-        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false }),
-        api.getAnalyticsCompare({
-          current_start: dateFrom,
-          current_end: dateTo,
-          previous_start: prev.from,
-          previous_end: prev.to,
-        }),
+        summaryPromise,
+        byCategoryPromise,
+        timeseriesPromise,
+        comparePromise,
       ]);
 
       if (requestId !== requestIdRef.current) return;
@@ -632,18 +680,10 @@ export function InsightsPage() {
       setLoading(false);
 
       const secondaryResults = await Promise.allSettled([
-        api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 }),
-        api.getAnalyticsSubscriptions(),
-        api.getTransactions({
-          date_from: dateFrom,
-          date_to: dateTo,
-          flow_type: 'expense',
-          include_transfers: false,
-          limit: 1,
-          sort_by: 'amount_abs',
-          sort_order: 'desc',
-        }),
-        api.getBudgetTracking(),
+        byMerchantPromise,
+        subsPromise,
+        largestPromise,
+        budgetTrackingPromise,
       ]);
 
       if (requestId !== requestIdRef.current) return;
@@ -656,6 +696,22 @@ export function InsightsPage() {
         setBudgetTracking(budgetTrackingRes.value.periods || []);
         setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
       }
+
+      writePageCache(
+        cacheKey,
+        {
+          summary: summaryRes.status === 'fulfilled' ? summaryRes.value : summary,
+          categories: byCatRes.status === 'fulfilled' ? byCatRes.value.categories : categories,
+          merchants: byMerchRes.status === 'fulfilled' ? byMerchRes.value.merchants : merchants,
+          subscriptions: subsRes.status === 'fulfilled' ? subsRes.value.subscriptions : subscriptions,
+          timeseries: timeseriesRes.status === 'fulfilled' ? timeseriesRes.value.series : timeseries,
+          largestExpenseTx: largestRes.status === 'fulfilled' ? (largestRes.value.transactions[0] ?? null) : largestExpenseTx,
+          compare: compareRes.status === 'fulfilled' ? compareRes.value : compare,
+          budgetTracking: budgetTrackingRes.status === 'fulfilled' ? (budgetTrackingRes.value.periods || []) : budgetTracking,
+          budgetsEnabled: budgetTrackingRes.status === 'fulfilled' ? Boolean(budgetTrackingRes.value.enabled) : budgetsEnabled,
+        },
+        INSIGHTS_CACHE_TTL_MS
+      );
     } finally {
       if (requestId === requestIdRef.current) {
         setLoading(false);
@@ -666,7 +722,7 @@ export function InsightsPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, user?.id]);
 
   useEffect(() => {
     if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });

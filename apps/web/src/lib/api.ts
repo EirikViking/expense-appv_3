@@ -115,6 +115,7 @@ export class ApiError extends Error {
 type RequestOptions = RequestInit & {
   skipCache?: boolean;
   cacheTtlMs?: number;
+  timeoutMs?: number;
 };
 
 type CachedResponse = {
@@ -140,6 +141,14 @@ function getCacheTtlMs(endpoint: string, override?: number): number {
   return 20_000;
 }
 
+function getRequestTimeoutMs(endpoint: string, override?: number): number {
+  if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override;
+  if (endpoint.startsWith('/analytics')) return 60_000;
+  if (endpoint.startsWith('/transactions')) return 45_000;
+  if (endpoint.startsWith('/ingest')) return 90_000;
+  return 30_000;
+}
+
 function readCachedResponse<T>(cacheKey: string): T | null {
   const cached = getResponseCache.get(cacheKey);
   if (!cached) return null;
@@ -157,6 +166,7 @@ async function request<T>(
   const fetchOptions: RequestInit = { ...options };
   delete (fetchOptions as RequestOptions).skipCache;
   delete (fetchOptions as RequestOptions).cacheTtlMs;
+  delete (fetchOptions as RequestOptions).timeoutMs;
   const headers: Record<string, string> = {};
 
   // Only set Content-Type for requests with a body (POST, PUT, PATCH)
@@ -164,6 +174,7 @@ async function request<T>(
   const isGet = method === 'GET';
   const skipCache = options.skipCache === true;
   const cacheTtlMs = getCacheTtlMs(endpoint, options.cacheTtlMs);
+  const timeoutMs = getRequestTimeoutMs(endpoint, options.timeoutMs);
   const shouldCacheGet = isGet && !skipCache && cacheTtlMs > 0;
   const cacheKey = `${method}:${endpoint}`;
   if (method !== 'GET' && method !== 'DELETE') {
@@ -179,14 +190,33 @@ async function request<T>(
 
   const executeRequest = async (): Promise<T> => {
     const apiUrl = getApiBaseUrl();
-    const response = await fetch(`${apiUrl}${endpoint}`, {
-      credentials: 'include',
-      ...fetchOptions,
-      headers: {
-        ...headers,
-        ...(fetchOptions.headers as Record<string, string>),
-      },
-    });
+    const hasExternalSignal = Boolean(fetchOptions.signal);
+    const timeoutController = !hasExternalSignal && typeof AbortController !== 'undefined'
+      ? new AbortController()
+      : null;
+    const timeoutHandle = timeoutController
+      ? setTimeout(() => timeoutController.abort(), timeoutMs)
+      : null;
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}${endpoint}`, {
+        credentials: 'include',
+        ...fetchOptions,
+        signal: timeoutController?.signal ?? fetchOptions.signal,
+        headers: {
+          ...headers,
+          ...(fetchOptions.headers as Record<string, string>),
+        },
+      });
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') {
+        throw new ApiError('Request timed out. Please try again.', 408, null);
+      }
+      throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
 
     let data: unknown = null;
     try {
