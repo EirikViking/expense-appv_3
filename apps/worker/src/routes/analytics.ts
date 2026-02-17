@@ -499,7 +499,15 @@ analytics.get('/by-merchant', async (c) => {
         total: toNumber(r.total),
       }))
     );
-    return c.json({ merchants: merchants.slice(0, limit) });
+    return c.json({
+      merchants: merchants.slice(0, limit),
+      comparison_period: {
+        current_start: date_from,
+        current_end: date_to,
+        previous_start: prevStart.toISOString().split('T')[0],
+        previous_end: prevEnd.toISOString().split('T')[0],
+      },
+    });
   } catch (error) {
     console.error('Analytics by-merchant error:', error);
     return c.json({ error: 'Internal server error' }, 500);

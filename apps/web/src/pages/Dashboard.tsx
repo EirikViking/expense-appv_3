@@ -75,6 +75,12 @@ export function DashboardPage() {
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
+  const [merchantComparisonPeriod, setMerchantComparisonPeriod] = useState<{
+    current_start: string;
+    current_end: string;
+    previous_start: string;
+    previous_end: string;
+  } | null>(null);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [trendSeries, setTrendSeries] = useState<TimeSeriesPoint[]>([]);
@@ -346,9 +352,18 @@ export function DashboardPage() {
       includeTransfers: !excludeTransfers,
       selectedCategoryId,
     });
-    const cached = readPageCache<MerchantBreakdown[]>(merchantsCacheKey);
+    const cached = readPageCache<{
+      merchants: MerchantBreakdown[];
+      comparison_period: {
+        current_start: string;
+        current_end: string;
+        previous_start: string;
+        previous_end: string;
+      } | null;
+    }>(merchantsCacheKey);
     if (cached) {
-      setMerchants(cached);
+      setMerchants(cached.merchants);
+      setMerchantComparisonPeriod(cached.comparison_period);
       setLoadingMerchants(false);
     }
     setLoadingMerchants(true);
@@ -365,7 +380,12 @@ export function DashboardPage() {
         });
         if (requestId !== merchantRequestIdRef.current) return;
         setMerchants(merchantsRes.merchants);
-        writePageCache(merchantsCacheKey, merchantsRes.merchants, DASHBOARD_MERCHANTS_CACHE_TTL_MS);
+        setMerchantComparisonPeriod(merchantsRes.comparison_period ?? null);
+        writePageCache(
+          merchantsCacheKey,
+          { merchants: merchantsRes.merchants, comparison_period: merchantsRes.comparison_period ?? null },
+          DASHBOARD_MERCHANTS_CACHE_TTL_MS
+        );
       } catch (err) {
         if (requestId !== merchantRequestIdRef.current) return;
         console.error('Failed to load dashboard merchants:', err);
@@ -425,6 +445,17 @@ export function DashboardPage() {
   const selectedCategory = selectedCategoryId
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
+
+  const getSafeTrend = (merchant: MerchantBreakdown): number | null => {
+    const prevTotal = Number(merchant.previous_total ?? 0);
+    const trend = Number(merchant.trend);
+    if (!Number.isFinite(trend) || prevTotal <= 0) return null;
+    if (merchant.trend_basis_valid === false) return null;
+    const expected = ((Number(merchant.total) - prevTotal) / prevTotal) * 100;
+    if (!Number.isFinite(expected)) return null;
+    if (Math.abs(expected - trend) > 0.25) return null;
+    return trend;
+  };
 
   const topExpenseCategoryTiles = useMemo(() => {
     const rows = categories
@@ -1035,14 +1066,35 @@ export function DashboardPage() {
                 <span>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</span>
                 <span
                   className="inline-flex text-white/60 cursor-help"
-                  title={t('dashboard.topMerchantsTrendHint')}
-                  aria-label={t('dashboard.topMerchantsTrendHint')}
+                  title={
+                    merchantComparisonPeriod
+                      ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                          from: merchantComparisonPeriod.previous_start,
+                          to: merchantComparisonPeriod.previous_end,
+                        })
+                      : t('dashboard.topMerchantsTrendHint')
+                  }
+                  aria-label={
+                    merchantComparisonPeriod
+                      ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                          from: merchantComparisonPeriod.previous_start,
+                          to: merchantComparisonPeriod.previous_end,
+                        })
+                      : t('dashboard.topMerchantsTrendHint')
+                  }
                   tabIndex={0}
                 >
                   <Info className="h-3.5 w-3.5" />
                 </span>
               </CardTitle>
-              <p className="mt-1 text-xs text-white/60">{t('dashboard.topMerchantsTrendHint')}</p>
+              <p className="mt-1 text-xs text-white/60">
+                {merchantComparisonPeriod
+                  ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                      from: merchantComparisonPeriod.previous_start,
+                      to: merchantComparisonPeriod.previous_end,
+                    })
+                  : t('dashboard.topMerchantsTrendHint')}
+              </p>
             </div>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
               {t('dashboard.viewAll')} <ArrowRight className="h-3 w-3" />
@@ -1087,9 +1139,12 @@ export function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <p className="font-medium">{formatCurrency(merchant.total)}</p>
-                      {merchant.trend !== 0 && (
+                      {getSafeTrend(merchant) !== null && (
                         <p className={`text-xs ${merchant.trend > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                          {t('dashboard.trendVsPreviousPeriod', { value: formatPercentage(merchant.trend) })}
+                          {t('dashboard.trendVsPreviousPeriodWithTotal', {
+                            value: formatPercentage(getSafeTrend(merchant) as number),
+                            total: formatCurrency(merchant.previous_total || 0),
+                          })}
                         </p>
                       )}
                     </div>

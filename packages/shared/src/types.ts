@@ -658,6 +658,8 @@ export interface MerchantBreakdown {
   count: number;
   avg: number;
   trend: number; // Percentage change from previous period
+  previous_total?: number;
+  trend_basis_valid?: boolean;
 }
 
 export interface TimeSeriesPoint {
@@ -781,6 +783,12 @@ export interface CategoryBreakdownResponse {
 
 export interface MerchantBreakdownResponse {
   merchants: MerchantBreakdown[];
+  comparison_period?: {
+    current_start: string;
+    current_end: string;
+    previous_start: string;
+    previous_end: string;
+  };
 }
 
 export interface TimeSeriesResponse {

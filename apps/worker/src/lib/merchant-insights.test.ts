@@ -34,5 +34,17 @@ describe('merchant insights grouping', () => {
     expect(Math.round((klarna?.total || 0) * 100) / 100).toBe(4433.56);
     expect(breakdown.some((m) => m.merchant_name === 'Ukjent brukersted')).toBe(false);
   });
+
+  it('attaches previous_total and marks trend basis as valid when comparison exists', () => {
+    const breakdown = buildMerchantBreakdown(
+      [{ merchant_id: null, merchant_name: 'KIWI', total: 2472.04, count: 12 }],
+      [{ merchant_id: null, merchant_name: 'KIWI', total: 1114.94 }]
+    );
+
+    const kiwi = breakdown.find((m) => m.merchant_name === 'KIWI');
+    expect(kiwi).toBeTruthy();
+    expect(Math.round((kiwi?.previous_total || 0) * 100) / 100).toBe(1114.94);
+    expect(kiwi?.trend_basis_valid).toBe(true);
+  });
 });
 
