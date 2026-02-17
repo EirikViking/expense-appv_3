@@ -52,8 +52,7 @@ describe('transactions count endpoint', () => {
     );
 
     expect(response.status).toBe(200);
-    const body = await response.json();
+    const body = (await response.json()) as { total: number };
     expect(body.total).toBe(42);
   });
 });
-
