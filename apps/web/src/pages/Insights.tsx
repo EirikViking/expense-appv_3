@@ -140,6 +140,22 @@ function getTopSpendDay(timeseries: TimeSeriesPoint[]) {
   return p ? { date: p.date, amount: p.expenses || 0 } : null;
 }
 
+function getBudgetScheduleDelta(item: BudgetTrackingPeriod) {
+  if (!Number.isFinite(item.budget_amount) || item.budget_amount <= 0) return null;
+  if (!Number.isFinite(item.days_total) || item.days_total <= 0) return null;
+  if (!Number.isFinite(item.days_elapsed) || item.days_elapsed <= 0) return null;
+
+  const elapsedRatio = clamp01(item.days_elapsed / item.days_total);
+  const expectedSpentSoFar = item.budget_amount * elapsedRatio;
+  const delta = expectedSpentSoFar - item.spent_amount;
+
+  return {
+    expectedSpentSoFar,
+    delta,
+    direction: delta >= 0 ? ('ahead' as const) : ('behind' as const),
+  };
+}
+
 export function getMerchantLeaderboardTitle(lang: Lang): string {
   return lang === 'nb' ? 'Topp brukersteder' : 'Top merchants';
 }
@@ -1014,8 +1030,9 @@ export function InsightsPage() {
                     item.period === 'weekly'
                       ? lang === 'nb' ? 'Uke' : 'Week'
                       : item.period === 'monthly'
-                        ? lang === 'nb' ? 'Måned' : 'Month'
-                        : lang === 'nb' ? 'År' : 'Year';
+                        ? lang === 'nb' ? 'M\u00e5ned' : 'Month'
+                        : lang === 'nb' ? '\u00c5r' : 'Year';
+                  const schedule = item.period === 'yearly' ? getBudgetScheduleDelta(item) : null;
                   const statusLabel =
                     item.status === 'on_track'
                       ? lang === 'nb' ? 'I rute' : 'On track'
@@ -1034,6 +1051,13 @@ export function InsightsPage() {
                         {formatCompactCurrency(item.spent_amount)} / {formatCompactCurrency(item.budget_amount)}
                       </p>
                       <p className="mt-1 text-xs text-cyan-100/90">{statusLabel}</p>
+                      {schedule && (
+                        <p className="mt-1 text-xs text-white/70">
+                          {lang === 'nb'
+                            ? `Skjema hittil: ${formatCompactCurrency(schedule.expectedSpentSoFar)} - ${schedule.direction === 'ahead' ? 'Foran skjema' : 'Bak skjema'}: ${formatCompactCurrency(Math.abs(schedule.delta))}`
+                            : `Expected by now: ${formatCompactCurrency(schedule.expectedSpentSoFar)} - ${schedule.direction === 'ahead' ? 'Ahead of schedule' : 'Behind schedule'}: ${formatCompactCurrency(Math.abs(schedule.delta))}`}
+                        </p>
+                      )}
                     </button>
                   );
                 })}
