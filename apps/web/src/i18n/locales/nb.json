@@ -68,6 +68,8 @@
     "noCategorizedTransactions": "Ingen kategoriserte transaksjoner enda",
     "categoryDrilldownHint": "Klikk en kategori for å se kjøpmenn.",
     "topMerchants": "Topp brukersteder",
+    "topMerchantsTrendHint": "Prosent viser endring mot forrige like lange periode.",
+    "trendVsPreviousPeriod": "{{value}} vs forrige like lange periode",
     "merchantsInCategory": "Kjøpmenn i kategori",
     "viewAll": "Se alle",
     "unusualSpending": "Uvanlig forbruk",

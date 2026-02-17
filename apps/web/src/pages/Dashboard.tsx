@@ -1029,7 +1029,10 @@ export function DashboardPage() {
         {/* Top Merchants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</CardTitle>
+            <div>
+              <CardTitle>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</CardTitle>
+              <p className="mt-1 text-xs text-white/60">{t('dashboard.topMerchantsTrendHint')}</p>
+            </div>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
               {t('dashboard.viewAll')} <ArrowRight className="h-3 w-3" />
             </Link>
@@ -1075,7 +1078,7 @@ export function DashboardPage() {
                       <p className="font-medium">{formatCurrency(merchant.total)}</p>
                       {merchant.trend !== 0 && (
                         <p className={`text-xs ${merchant.trend > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                          {formatPercentage(merchant.trend)}
+                          {t('dashboard.trendVsPreviousPeriod', { value: formatPercentage(merchant.trend) })}
                         </p>
                       )}
                     </div>

@@ -14,4 +14,11 @@ describe('Dashboard KPI cards', () => {
     expect(en.dashboard).not.toHaveProperty('netSpend');
     expect(en.dashboard).not.toHaveProperty('income');
   });
+
+  it('explains top merchant trend as previous equal-length period', () => {
+    expect(typeof nb.dashboard.topMerchantsTrendHint).toBe('string');
+    expect(typeof nb.dashboard.trendVsPreviousPeriod).toBe('string');
+    expect(typeof en.dashboard.topMerchantsTrendHint).toBe('string');
+    expect(typeof en.dashboard.trendVsPreviousPeriod).toBe('string');
+  });
 });

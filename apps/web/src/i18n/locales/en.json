@@ -68,6 +68,8 @@
     "noCategorizedTransactions": "No categorized transactions yet",
     "categoryDrilldownHint": "Click a category to drill down into merchants.",
     "topMerchants": "Top merchants",
+    "topMerchantsTrendHint": "Percentage shows change vs the previous period of equal length.",
+    "trendVsPreviousPeriod": "{{value}} vs previous equal-length period",
     "merchantsInCategory": "Merchants in category",
     "viewAll": "View all",
     "unusualSpending": "Unusual spending",
