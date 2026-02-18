@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
+import { getDisplayTransactionDescription } from '@/lib/transaction-display';
 
 interface TransactionDetailsDialogProps {
     transaction: TransactionWithMeta | null;
@@ -122,6 +123,7 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     // If both props are empty and the dialog isn't open, render nothing.
     if (!tx && !open) return null;
     if (!tx) return null;
+    const displayDescription = getDisplayTransactionDescription(tx.description, tx.merchant_name);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -201,7 +203,10 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.description')}</p>
-                            <p className="break-words">{tx.description}</p>
+                            <p className="break-words">{displayDescription}</p>
+                            {displayDescription !== tx.description && (
+                                <p className="text-xs text-white/55 break-words">{tx.description}</p>
+                            )}
                         </div>
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.source')}</p>

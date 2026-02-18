@@ -16,6 +16,7 @@ import { ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from 'lucide-
 import { TransactionDetailsDialog } from './TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
+import { getDisplayTransactionDescription } from '@/lib/transaction-display';
 
 interface TransactionsDrilldownDialogProps {
     open: boolean;
@@ -133,7 +134,9 @@ export function TransactionsDrilldownDialog({
                             </div>
                         ) : transactions.length > 0 ? (
                             <div className="space-y-2">
-                                {transactions.map((tx) => (
+                                {transactions.map((tx) => {
+                                    const displayDescription = getDisplayTransactionDescription(tx.description, tx.merchant_name);
+                                    return (
                                     <div
                                         key={tx.id}
                                         className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer group"
@@ -153,7 +156,7 @@ export function TransactionsDrilldownDialog({
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="font-medium truncate">{tx.description}</p>
+                                                <p className="font-medium truncate">{displayDescription}</p>
                                                 <div className="flex items-center gap-2 text-sm text-gray-500">
                                                     <span>{formatDate(tx.tx_date)}</span>
                                                     {tx.merchant_name && (
@@ -193,7 +196,8 @@ export function TransactionsDrilldownDialog({
                                             <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-blue-500 transition-colors ml-2" />
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-32 text-gray-500">

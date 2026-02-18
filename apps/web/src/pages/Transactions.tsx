@@ -42,6 +42,7 @@ import {
   resolveDateFiltersFromSearchParams,
 } from '@/lib/transactions-filters';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { getDisplayTransactionDescription } from '@/lib/transaction-display';
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
@@ -943,7 +944,9 @@ export function TransactionsPage() {
           <Card>
             <CardContent className="p-0">
               <div className="divide-y divide-white/10">
-                {transactions.map((tx) => (
+                {transactions.map((tx) => {
+                  const displayDescription = getDisplayTransactionDescription(tx.description, tx.merchant_name);
+                  return (
                   <div
                     key={tx.id}
                     className="p-4 hover:bg-white/5 transition-colors cursor-pointer"
@@ -963,7 +966,7 @@ export function TransactionsPage() {
                       <div className="space-y-3">
                         <div className="flex items-start justify-between">
                           <div>
-                            <p className="font-medium">{tx.description}</p>
+                            <p className="font-medium">{displayDescription}</p>
                             <p className="text-sm text-white/60">{formatDate(tx.tx_date)}</p>
                           </div>
                           <div className="flex gap-2">
@@ -1012,7 +1015,7 @@ export function TransactionsPage() {
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(tx.id)}
-                          aria-label={`${t('transactions.title')}: ${tx.description}`}
+                          aria-label={`${t('transactions.title')}: ${displayDescription}`}
                           onClick={(e) => e.stopPropagation()}
                           onChange={(e) => {
                             if (e.target.checked) setSelectedIds([...selectedIds, tx.id]);
@@ -1030,7 +1033,7 @@ export function TransactionsPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-medium truncate">{tx.description}</p>
+                            <p className="font-medium truncate">{displayDescription}</p>
                             {tx.is_excluded && (
                               <Badge variant="destructive" className="text-xs">
                                 {t('transactions.excluded')}
@@ -1122,7 +1125,7 @@ export function TransactionsPage() {
                                 startEdit(tx);
                               }}
                               className="p-1 hover:bg-white/10 rounded"
-                              aria-label={`${t('transactions.editOne')}: ${tx.description}`}
+                              aria-label={`${t('transactions.editOne')}: ${displayDescription}`}
                             >
                               <Pencil className="h-3 w-3 text-white/45" />
                             </button>
@@ -1131,7 +1134,8 @@ export function TransactionsPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {transactions.length === 0 && (
                   <div className="p-12 text-center text-white/60">
                     {t('transactions.noTransactionsFound')}
