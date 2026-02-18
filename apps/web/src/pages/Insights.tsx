@@ -828,8 +828,8 @@ export function InsightsPage() {
 
   const openMerchantDrilldown = (merchant: MerchantBreakdown) => {
     const qs = createBaseDrilldownQuery();
-    if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
-    else if (merchant.merchant_name) qs.set('merchant_name', merchant.merchant_name);
+    if (merchant.merchant_name) qs.set('merchant_name', merchant.merchant_name);
+    else if (merchant.merchant_id) qs.set('merchant_id', merchant.merchant_id);
     navigate(`/transactions?${qs.toString()}`);
   };
 

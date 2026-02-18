@@ -126,4 +126,11 @@ describe('parseXlsxFile (header section scan)', () => {
     expect(result.error).toContain('Beløpskolonnen ser ut til å være en datokolonne');
   });
 
+  it('rejects oversized XLSX payloads before parsing', () => {
+    const tooLarge = new ArrayBuffer(13 * 1024 * 1024);
+    const result = parseXlsxFile(tooLarge);
+    expect(result.transactions).toHaveLength(0);
+    expect(result.error).toContain('XLSX-filen er for stor');
+  });
 });
+

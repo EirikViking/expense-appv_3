@@ -20,13 +20,13 @@ export default defineConfig({
     ],
     webServer: [
         {
-            command: 'pnpm dev:worker',
+            command: 'corepack pnpm dev:worker',
             port: 8788,
             timeout: 30000,
             reuseExistingServer: !process.env.CI,
         },
         {
-            command: 'pnpm dev:web',
+            command: 'corepack pnpm dev:web',
             port: 5199,
             timeout: 30000,
             reuseExistingServer: !process.env.CI,

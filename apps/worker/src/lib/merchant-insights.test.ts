@@ -41,10 +41,27 @@ describe('merchant insights grouping', () => {
       [{ merchant_id: null, merchant_name: 'KIWI', total: 1114.94 }]
     );
 
-    const kiwi = breakdown.find((m) => m.merchant_name === 'KIWI');
+    const kiwi = breakdown.find((m) => m.merchant_name.toLowerCase() === 'kiwi');
     expect(kiwi).toBeTruthy();
     expect(Math.round((kiwi?.previous_total || 0) * 100) / 100).toBe(1114.94);
     expect(kiwi?.trend_basis_valid).toBe(true);
+  });
+
+  it('merges merchant rows regardless of case differences', () => {
+    const breakdown = buildMerchantBreakdown(
+      [
+        { merchant_id: null, merchant_name: 'KIWI', total: 1000, count: 4 },
+        { merchant_id: null, merchant_name: 'Kiwi', total: 750, count: 3 },
+        { merchant_id: null, merchant_name: 'kiwi', total: 250, count: 1 },
+      ],
+      [{ merchant_id: null, merchant_name: 'kIwI', total: 500 }]
+    );
+
+    const kiwiRows = breakdown.filter((m) => m.merchant_name.toLowerCase() === 'kiwi');
+    expect(kiwiRows).toHaveLength(1);
+    expect(kiwiRows[0]?.count).toBe(8);
+    expect(kiwiRows[0]?.total).toBe(2000);
+    expect(kiwiRows[0]?.previous_total).toBe(500);
   });
 });
 

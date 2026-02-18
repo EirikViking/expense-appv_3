@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit --pretty false"
   },
   "dependencies": {
     "@expense/shared": "workspace:*",
@@ -45,3 +46,4 @@
     "vitest": "^2.1.0"
   }
 }
+
