@@ -59,6 +59,8 @@ import { localizeCategoryName } from '@/lib/category-localization';
 import { darkenHexColor, getCategoryChartColor } from '@/lib/category-chart-colors';
 import { useAuth } from '@/context/AuthContext';
 import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
+import { SpendingConstellation } from '@/components/dashboard/SpendingConstellation';
+import { computeSpendingMomentum } from '@/lib/dashboard-momentum';
 
 export function DashboardPage() {
   const DASHBOARD_CACHE_TTL_MS = 30_000;
@@ -468,6 +470,38 @@ export function DashboardPage() {
       .slice(0, 4);
   }, [categories]);
 
+  const constellationItems = useMemo(() => {
+    return topExpenseCategoryTiles.slice(0, 6).map((category, index) => {
+      const seed = String(category.category_id || category.category_name || index);
+      const fill = category.category_color || getCategoryChartColor(seed);
+      return {
+        id: String(category.category_id || category.category_name || index),
+        name: localizeCategoryName(category.category_name, currentLanguage),
+        total: Math.abs(category.total),
+        count: category.count,
+        fill,
+        depthFill: darkenHexColor(fill, 0.32),
+      };
+    });
+  }, [topExpenseCategoryTiles, currentLanguage]);
+
+  const spendingMomentum = useMemo(() => computeSpendingMomentum(timeseries), [timeseries]);
+
+  const momentumText = useMemo(() => {
+    if (!spendingMomentum || spendingMomentum.changePct === null) {
+      return currentLanguage === 'nb' ? 'For lite historikk ennå' : 'Not enough history yet';
+    }
+
+    const pct = formatPercentage(Math.abs(spendingMomentum.changePct));
+    if (spendingMomentum.trend === 'heating') {
+      return currentLanguage === 'nb' ? `${pct} opp mot første halvdel` : `${pct} up vs first half`;
+    }
+    if (spendingMomentum.trend === 'cooling') {
+      return currentLanguage === 'nb' ? `${pct} ned mot første halvdel` : `${pct} down vs first half`;
+    }
+    return currentLanguage === 'nb' ? 'Stabil utvikling i perioden' : 'Stable movement in this period';
+  }, [spendingMomentum, currentLanguage]);
+
   const topCategoryPieData = useMemo(() => {
     return categories.slice(0, 8).map((category, index) => {
       const seed = String(category.category_id || category.category_name || index);
@@ -786,6 +820,33 @@ export function DashboardPage() {
             ))}
           </div>
         </section>
+      )}
+
+      {constellationItems.length > 0 && (
+        <SpendingConstellation
+          title={currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+          subtitle={
+            currentLanguage === 'nb'
+              ? 'Klikk en boble for å åpne transaksjoner i valgt kategori.'
+              : 'Click a node to open transactions for that category.'
+          }
+          emptyLabel={t('dashboard.noCategorizedTransactions')}
+          hintLabel={
+            currentLanguage === 'nb'
+              ? 'Størrelsen viser totalbeløp i perioden. Perfekt for rask sammenligning.'
+              : 'Node size shows period totals for quick comparison.'
+          }
+          momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
+          momentumText={momentumText}
+          items={constellationItems}
+          onSelect={(id) => {
+            const selected = topExpenseCategoryTiles.find((category, index) => {
+              const categoryId = String(category.category_id || category.category_name || index);
+              return categoryId === id;
+            });
+            if (selected) openCategoryDrilldown(selected);
+          }}
+        />
       )}
 
       {/* Charts */}
