@@ -64,9 +64,9 @@ import { SpendingConstellation } from '@/components/dashboard/SpendingConstellat
 import { computeSpendingMomentum } from '@/lib/dashboard-momentum';
 
 export function DashboardPage() {
-  const DASHBOARD_CACHE_TTL_MS = 30_000;
-  const DASHBOARD_MERCHANTS_CACHE_TTL_MS = 30_000;
-  const DASHBOARD_TREND_CACHE_TTL_MS = 45_000;
+  const DASHBOARD_CACHE_TTL_MS = 120_000;
+  const DASHBOARD_MERCHANTS_CACHE_TTL_MS = 120_000;
+  const DASHBOARD_TREND_CACHE_TTL_MS = 180_000;
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
@@ -355,6 +355,10 @@ export function DashboardPage() {
   }, [excludeTransfers, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
+    if (!overview) {
+      setLoadingMerchants(false);
+      return;
+    }
     const requestId = ++merchantRequestIdRef.current;
     const merchantsCacheKey = makePageCacheKey('dashboard:merchants', {
       userId,
@@ -409,9 +413,13 @@ export function DashboardPage() {
     }
 
     void loadMerchants();
-  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, userId]);
+  }, [overview, excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
+    if (!overview) {
+      setLoadingTrend(false);
+      return;
+    }
     const requestId = ++trendRequestIdRef.current;
     const trendCacheKey = makePageCacheKey('dashboard:trend', {
       userId,
@@ -449,7 +457,7 @@ export function DashboardPage() {
     }
 
     void loadTrend();
-  }, [trendMonths, trendCategoryId, statusFilter, userId]);
+  }, [overview, trendMonths, trendCategoryId, statusFilter, userId]);
 
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;
@@ -516,27 +524,28 @@ export function DashboardPage() {
 
   const momentumText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) {
-      return currentLanguage === 'nb' ? 'For lite historikk ennÃ¥' : 'Not enough history yet';
+      return t('dashboard.momentumNotEnoughHistory');
     }
 
     const pct = formatAbsolutePercent(spendingMomentum.changePct);
     if (spendingMomentum.trend === 'heating') {
-      return currentLanguage === 'nb' ? `${pct} opp mot fÃ¸rste halvdel` : `${pct} up vs first half`;
+      return t('dashboard.momentumUpVsFirstHalf', { pct });
     }
     if (spendingMomentum.trend === 'cooling') {
-      return currentLanguage === 'nb' ? `${pct} ned mot fÃ¸rste halvdel` : `${pct} down vs first half`;
+      return t('dashboard.momentumDownVsFirstHalf', { pct });
     }
-    return currentLanguage === 'nb' ? 'Stabil utvikling i perioden' : 'Stable movement in this period';
-  }, [spendingMomentum, currentLanguage]);
+    return t('dashboard.momentumStable');
+  }, [spendingMomentum, t]);
 
   const momentumHelpText = useMemo(() => {
-    return currentLanguage === 'nb'
-      ? 'Momentum sammenligner total forbruk i andre halvdel av valgt periode mot f\u00F8rste halvdel.'
-      : 'Momentum compares total spending in the second half of the selected period against the first half.';
-  }, [currentLanguage]);
+    return t('dashboard.momentumHelpText');
+  }, [t]);
 
   const momentumBreakdownText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) return '';
+    const firstHalfLabel = t('dashboard.momentumFirstHalf');
+    const secondHalfLabel = t('dashboard.momentumSecondHalf');
+    const changeLabel = t('dashboard.momentumChange');
     if (currentLanguage === 'nb') {
       const firstRange = spendingMomentum
         ? `${formatDate(spendingMomentum.firstFrom)}-${formatDate(spendingMomentum.firstTo)}`
@@ -544,7 +553,7 @@ export function DashboardPage() {
       const secondRange = spendingMomentum
         ? `${formatDate(spendingMomentum.secondFrom)}-${formatDate(spendingMomentum.secondTo)}`
         : '';
-      return `1. halvdel${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
+      return `${firstHalfLabel}${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | ${secondHalfLabel}${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | ${changeLabel}: ${formatCurrency(spendingMomentum.delta, true)}`;
     }
     const firstRange = spendingMomentum
       ? `${spendingMomentum.firstFrom}-${spendingMomentum.firstTo}`
@@ -552,8 +561,8 @@ export function DashboardPage() {
     const secondRange = spendingMomentum
       ? `${spendingMomentum.secondFrom}-${spendingMomentum.secondTo}`
       : '';
-    return `First half${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | Second half${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
-  }, [spendingMomentum, currentLanguage]);
+    return `${firstHalfLabel}${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | ${secondHalfLabel}${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | ${changeLabel}: ${formatCurrency(spendingMomentum.delta, true)}`;
+  }, [spendingMomentum, currentLanguage, t]);
 
   const topCategoryPieData = useMemo(() => {
     return categories.slice(0, 8).map((category, index) => {
@@ -621,7 +630,7 @@ export function DashboardPage() {
           <div className="text-sm text-white/60">
             {overview?.period.start ?? dateFrom} - {overview?.period.end ?? dateTo}
           </div>
-          {isRefreshing && <div className="text-xs text-white/45">{currentLanguage === 'nb' ? 'Oppdaterer...' : 'Updating...'}</div>}
+          {isRefreshing && <div className="text-xs text-white/45">{t('dashboard.refreshing')}</div>}
           {selectedCategory && (
             <div className="mt-1 text-sm">
               <button
@@ -879,7 +888,7 @@ export function DashboardPage() {
         <section className="space-y-3" aria-labelledby="spending-constellation-heading">
           <div className="flex items-center justify-between gap-3">
             <h2 id="spending-constellation-heading" className="text-sm font-semibold text-white/80">
-              {currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+              {t('dashboard.constellationTitle')}
             </h2>
             <button
               type="button"
@@ -887,25 +896,17 @@ export function DashboardPage() {
               className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-white/10"
             >
               {showConstellation
-                ? currentLanguage === 'nb' ? 'Skjul' : 'Hide'
-                : currentLanguage === 'nb' ? 'Vis' : 'Show'}
+                ? t('dashboard.hideConstellation')
+                : t('dashboard.showConstellation')}
             </button>
           </div>
           {showConstellation ? (
             <SpendingConstellation
-              title={currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
-              subtitle={
-                currentLanguage === 'nb'
-                  ? 'Klikk en boble for å åpne transaksjoner i valgt kategori.'
-                  : 'Click a node to open transactions for that category.'
-              }
+              title={t('dashboard.constellationTitle')}
+              subtitle={t('dashboard.constellationSubtitle')}
               emptyLabel={t('dashboard.noCategorizedTransactions')}
-              hintLabel={
-                currentLanguage === 'nb'
-                  ? 'Størrelsen viser totalbeløp i perioden. Perfekt for rask sammenligning.'
-                  : 'Node size shows period totals for quick comparison.'
-              }
-              momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
+              hintLabel={t('dashboard.constellationHint')}
+              momentumTitle={t('dashboard.momentumTitle')}
               momentumText={momentumText}
               momentumHelpText={momentumHelpText}
               momentumBreakdownText={momentumBreakdownText}
@@ -920,9 +921,7 @@ export function DashboardPage() {
             />
           ) : (
             <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/65">
-              {currentLanguage === 'nb'
-                ? 'Forbruks-konstellasjon er skjult. Trykk "Vis" for å åpne den igjen.'
-                : 'Spending constellation is hidden. Press "Show" to open it again.'}
+              {t('dashboard.constellationHiddenHint')}
             </div>
           )}
         </section>
