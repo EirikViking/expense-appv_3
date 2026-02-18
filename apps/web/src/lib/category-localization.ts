@@ -38,6 +38,7 @@ const NB_CATEGORY_NAME_MAP: Record<string, string> = {
   Alcohol: 'Alkohol',
   Finance: 'Finans',
   Investments: 'Investeringer',
+  'Rent / Shared costs': 'Husleie/Fellesutgifter',
   'Betaling av skatt': 'Betaling av skatt',
   'Gaver og veldedighet': 'Gaver og veldedighet',
 };

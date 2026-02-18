@@ -92,6 +92,21 @@ pnpm run ingest:pdf -- --file path/to/statement.pdf --no-verify
 pnpm run ingest:xlsx -- --file path/to/statement.xlsx --no-verify
 ```
 
+## Production deploy verification
+
+Frontend production deploy is triggered by pushing `origin/main` (Cloudflare Pages).
+
+Quick checks:
+
+```bash
+curl -s https://expense-appv-3.pages.dev/build.txt
+curl -I https://expense-appv-3.pages.dev/favicon.svg
+```
+
+In the app UI, open Settings and confirm the footer label `Build: <sha>` matches `build.txt`.
+
+If `apps/worker` changes, deploy Worker production explicitly after merge.
+
 ## Storebrand "Detaljer" PDF Parsing
 
 The backend parser supports Storebrand "Detaljer" PDFs using a block parser:

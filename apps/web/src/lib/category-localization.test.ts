@@ -12,4 +12,8 @@ describe('category localization', () => {
   it('does not localize for non-Norwegian languages', () => {
     expect(localizeCategoryName('Groceries', 'en')).toBe('Groceries');
   });
+
+  it('localizes Rent / Shared costs to Husleie/Fellesutgifter in Norwegian', () => {
+    expect(localizeCategoryName('Rent / Shared costs', 'nb')).toBe('Husleie/Fellesutgifter');
+  });
 });

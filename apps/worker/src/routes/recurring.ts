@@ -8,6 +8,7 @@ import {
   type Transaction,
 } from '@expense/shared';
 import type { Env } from '../types';
+import { getScopeUserId } from '../lib/request-scope';
 
 const recurring = new Hono<{ Bindings: Env }>();
 
@@ -23,10 +24,14 @@ function parsePattern(patternJson: string): Record<string, unknown> {
 // Get all recurring items
 recurring.get('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const activeOnly = c.req.query('active') === 'true';
     const subscriptionsOnly = c.req.query('subscriptions') === 'true';
 
-    let query = 'SELECT * FROM recurring WHERE 1=1';
+    let query = 'SELECT * FROM recurring WHERE user_id = ?';
+    const params: Array<string | number> = [scopeUserId];
     if (activeOnly) {
       query += ' AND is_active = 1';
     }
@@ -35,7 +40,7 @@ recurring.get('/', async (c) => {
     }
     query += ' ORDER BY name';
 
-    const result = await c.env.DB.prepare(query).all<{
+    const result = await c.env.DB.prepare(query).bind(...params).all<{
       id: string;
       name: string;
       merchant_id: string | null;
@@ -73,11 +78,14 @@ recurring.get('/', async (c) => {
 // Get single recurring item
 recurring.get('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB
-      .prepare('SELECT * FROM recurring WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM recurring WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first();
 
     if (!result) {
@@ -99,6 +107,9 @@ recurring.get('/:id', async (c) => {
 // Create recurring item
 recurring.post('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = createRecurringSchema.safeParse(body);
 
@@ -147,9 +158,9 @@ recurring.post('/', async (c) => {
       .prepare(`
         INSERT INTO recurring (
           id, name, merchant_id, category_id, amount_expected, amount_min, amount_max,
-          cadence, day_of_month, pattern, is_active, is_subscription, created_at, updated_at
+          cadence, day_of_month, pattern, is_active, is_subscription, created_at, updated_at, user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
       `)
       .bind(
         id,
@@ -164,13 +175,14 @@ recurring.post('/', async (c) => {
         '{}',
         is_subscription ? 1 : 0,
         now,
-        now
+        now,
+        scopeUserId
       )
       .run();
 
     const created = await c.env.DB
-      .prepare('SELECT * FROM recurring WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM recurring WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first();
 
     return c.json({
@@ -188,6 +200,9 @@ recurring.post('/', async (c) => {
 // Update recurring item
 recurring.put('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const body = await c.req.json();
     const parsed = updateRecurringSchema.safeParse(body);
@@ -197,8 +212,8 @@ recurring.put('/:id', async (c) => {
     }
 
     const existing = await c.env.DB
-      .prepare('SELECT 1 FROM recurring WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT 1 FROM recurring WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first();
 
     if (!existing) {
@@ -262,15 +277,15 @@ recurring.put('/:id', async (c) => {
       params.push(is_subscription ? 1 : 0);
     }
 
-    params.push(id);
+    params.push(id, scopeUserId);
     await c.env.DB
-      .prepare(`UPDATE recurring SET ${updates.join(', ')} WHERE id = ?`)
+      .prepare(`UPDATE recurring SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
       .bind(...params)
       .run();
 
     const updated = await c.env.DB
-      .prepare('SELECT * FROM recurring WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM recurring WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first();
 
     return c.json({
@@ -288,11 +303,14 @@ recurring.put('/:id', async (c) => {
 // Delete recurring item
 recurring.delete('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB
-      .prepare('DELETE FROM recurring WHERE id = ?')
-      .bind(id)
+      .prepare('DELETE FROM recurring WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .run();
 
     if (result.meta.changes === 0) {
@@ -309,6 +327,9 @@ recurring.delete('/:id', async (c) => {
 // Detect potential subscriptions from transaction history
 recurring.get('/detect', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const minOccurrences = parseInt(c.req.query('min') || '3');
     const lookbackMonths = parseInt(c.req.query('months') || '6');
 
@@ -330,13 +351,14 @@ recurring.get('/detect', async (c) => {
           AVG(ABS(t.amount)) as avg_amount
         FROM transactions t
         WHERE t.tx_date >= ?
+          AND t.user_id = ?
           AND t.amount < 0
         GROUP BY t.description, rounded_amount
         HAVING COUNT(*) >= ?
         ORDER BY occurrence_count DESC
         LIMIT 50
       `)
-      .bind(startDateStr, minOccurrences)
+      .bind(startDateStr, scopeUserId, minOccurrences)
       .all<{
         description: string;
         rounded_amount: number;

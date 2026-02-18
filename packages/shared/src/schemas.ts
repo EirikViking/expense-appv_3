@@ -251,6 +251,15 @@ export const updateBudgetSchema = z.object({
   end_date: dateSchema.nullable().optional(),
 });
 
+const optionalBudgetAmountSchema = z.number().positive().nullable().optional();
+
+export const updateBudgetSettingsSchema = z.object({
+  enabled: z.boolean(),
+  weekly_amount: optionalBudgetAmountSchema,
+  monthly_amount: optionalBudgetAmountSchema,
+  yearly_amount: optionalBudgetAmountSchema,
+});
+
 // ============================================
 // Recurring schemas
 // ============================================
@@ -285,6 +294,7 @@ export const updateRecurringSchema = z.object({
 // ============================================
 
 export const transactionsQuerySchema = z.object({
+  transaction_id: idSchema.optional(),
   date_from: dateSchema.optional(),
   date_to: dateSchema.optional(),
   status: z.enum(TRANSACTION_STATUSES).optional(),
@@ -337,6 +347,8 @@ export const ingestResponseSchema = z.object({
   skipped_duplicates: z.number(),
   skipped_invalid: z.number(),
   file_duplicate: z.boolean(),
+  min_tx_date: dateSchema.optional(),
+  max_tx_date: dateSchema.optional(),
   skipped_lines_summary: z.object({
     header: z.number(),
     section_marker: z.number(),

@@ -11,11 +11,13 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { getEnabledRules, applyRulesToBatch } from '../lib/rule-engine';
+import { getScopeUserId } from '../lib/request-scope';
 
 const rules = new Hono<{ Bindings: Env }>();
 
 async function applyCategoryRulesSqlGlobal(
   db: D1Database,
+  userId: string,
   defaultCategoryId: string
 ): Promise<{
   eligible: number;
@@ -34,7 +36,8 @@ async function applyCategoryRulesSqlGlobal(
       `
         SELECT COUNT(*) as c
         FROM transactions t
-        WHERE COALESCE(t.is_excluded, 0) = 0
+        WHERE t.user_id = ?
+          AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
           AND NOT EXISTS (
@@ -42,6 +45,7 @@ async function applyCategoryRulesSqlGlobal(
           )
       `
     )
+    .bind(userId)
     .first<{ c: number }>();
 
   // 1) Ensure every eligible row has a meta row (default category).
@@ -52,7 +56,8 @@ async function applyCategoryRulesSqlGlobal(
         SELECT t.id, ?, ?
         FROM transactions t
         LEFT JOIN transaction_meta tm ON tm.transaction_id = t.id
-        WHERE COALESCE(t.is_excluded, 0) = 0
+        WHERE t.user_id = ?
+          AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
           AND tm.transaction_id IS NULL
@@ -61,7 +66,7 @@ async function applyCategoryRulesSqlGlobal(
           )
       `
     )
-    .bind(defaultCategoryId, now)
+    .bind(defaultCategoryId, now, userId)
     .run();
 
   // 2) Ensure meta rows are never left NULL/empty (default them).
@@ -74,7 +79,8 @@ async function applyCategoryRulesSqlGlobal(
           AND transaction_id IN (
             SELECT t.id
             FROM transactions t
-            WHERE COALESCE(t.is_excluded, 0) = 0
+            WHERE t.user_id = ?
+              AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
               AND NOT EXISTS (
@@ -83,7 +89,7 @@ async function applyCategoryRulesSqlGlobal(
           )
       `
     )
-    .bind(defaultCategoryId, now)
+    .bind(defaultCategoryId, now, userId)
     .run();
 
   // 3) Upgrade default categories to best matching rule by priority.
@@ -106,8 +112,10 @@ async function applyCategoryRulesSqlGlobal(
               AND COALESCE(r.match_value, '') != ''
               AND COALESCE(r.action_value, '') != ''
               AND r.action_value != ?
+              AND (r.user_id IS NULL OR r.user_id = ?)
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
+              AND t2.user_id = ?
               AND t2.flow_type != 'transfer'
               AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
             ORDER BY r.priority ASC
@@ -118,7 +126,8 @@ async function applyCategoryRulesSqlGlobal(
           AND transaction_id IN (
             SELECT t.id
             FROM transactions t
-            WHERE COALESCE(t.is_excluded, 0) = 0
+            WHERE t.user_id = ?
+              AND COALESCE(t.is_excluded, 0) = 0
               AND COALESCE(t.is_transfer, 0) = 0
               AND t.flow_type != 'transfer'
               AND NOT EXISTS (
@@ -137,8 +146,10 @@ async function applyCategoryRulesSqlGlobal(
               AND COALESCE(r.match_value, '') != ''
               AND COALESCE(r.action_value, '') != ''
               AND r.action_value != ?
+              AND (r.user_id IS NULL OR r.user_id = ?)
               AND COALESCE(t2.is_excluded, 0) = 0
               AND COALESCE(t2.is_transfer, 0) = 0
+              AND t2.user_id = ?
               AND t2.flow_type != 'transfer'
               AND LOWER(COALESCE(t2.merchant, '') || ' ' || COALESCE(t2.description, '')) LIKE '%' || LOWER(r.match_value) || '%'
             ORDER BY r.priority ASC
@@ -147,7 +158,7 @@ async function applyCategoryRulesSqlGlobal(
       `
     )
     // defaultCategoryId used twice: (1) r.action_value != ? in SET, (2) r.action_value != ? in guard subquery
-    .bind(defaultCategoryId, now, defaultCategoryId, defaultCategoryId)
+    .bind(defaultCategoryId, userId, userId, now, defaultCategoryId, userId, defaultCategoryId, userId, userId)
     .run();
 
   const touched = Number((metaUpdateRes as any)?.meta?.changes || 0);
@@ -164,15 +175,18 @@ async function applyCategoryRulesSqlGlobal(
 // Get all rules
 rules.get('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const enabledOnly = c.req.query('enabled') === 'true';
 
-    let query = 'SELECT * FROM rules';
+    let query = 'SELECT * FROM rules WHERE (user_id IS NULL OR user_id = ?)';
     if (enabledOnly) {
-      query += ' WHERE enabled = 1';
+      query += ' AND enabled = 1';
     }
     query += ' ORDER BY priority ASC, name ASC';
 
-    const result = await c.env.DB.prepare(query).all<Rule>();
+    const result = await c.env.DB.prepare(query).bind(scopeUserId).all<Rule>();
 
     const rulesList = (result.results || []).map(r => ({
       ...r,
@@ -193,11 +207,14 @@ rules.get('/', async (c) => {
 // Get single rule
 rules.get('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB
-      .prepare('SELECT * FROM rules WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM rules WHERE id = ? AND (user_id IS NULL OR user_id = ?)')
+      .bind(id, scopeUserId)
       .first<Rule>();
 
     if (!result) {
@@ -217,6 +234,9 @@ rules.get('/:id', async (c) => {
 // Create rule
 rules.post('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = createRuleSchema.safeParse(body);
 
@@ -268,8 +288,8 @@ rules.post('/', async (c) => {
 
     await c.env.DB
       .prepare(`
-        INSERT INTO rules (id, name, priority, enabled, match_field, match_type, match_value, match_value_secondary, action_type, action_value, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rules (id, name, priority, enabled, match_field, match_type, match_value, match_value_secondary, action_type, action_value, created_at, updated_at, user_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .bind(
         id,
@@ -283,7 +303,8 @@ rules.post('/', async (c) => {
         action_type,
         action_value,
         now,
-        now
+        now,
+        scopeUserId
       )
       .run();
 
@@ -305,6 +326,9 @@ rules.post('/', async (c) => {
 // Update rule
 rules.put('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const body = await c.req.json();
     const parsed = updateRuleSchema.safeParse(body);
@@ -314,8 +338,8 @@ rules.put('/:id', async (c) => {
     }
 
     const existing = await c.env.DB
-      .prepare('SELECT * FROM rules WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM rules WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first<Rule>();
 
     if (!existing) {
@@ -404,14 +428,15 @@ rules.put('/:id', async (c) => {
     }
 
     params.push(id);
+    params.push(scopeUserId);
     await c.env.DB
-      .prepare(`UPDATE rules SET ${updates.join(', ')} WHERE id = ?`)
+      .prepare(`UPDATE rules SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`)
       .bind(...params)
       .run();
 
     const updated = await c.env.DB
-      .prepare('SELECT * FROM rules WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM rules WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .first<Rule>();
 
     return c.json({
@@ -427,11 +452,14 @@ rules.put('/:id', async (c) => {
 // Delete rule
 rules.delete('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB
-      .prepare('DELETE FROM rules WHERE id = ?')
-      .bind(id)
+      .prepare('DELETE FROM rules WHERE id = ? AND user_id = ?')
+      .bind(id, scopeUserId)
       .run();
 
     if (result.meta.changes === 0) {
@@ -448,12 +476,15 @@ rules.delete('/:id', async (c) => {
 // Test rule against sample transactions
 rules.post('/:id/test', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const limit = Math.min(parseInt(c.req.query('limit') || '10'), 100);
 
     const rule = await c.env.DB
-      .prepare('SELECT * FROM rules WHERE id = ?')
-      .bind(id)
+      .prepare('SELECT * FROM rules WHERE id = ? AND (user_id IS NULL OR user_id = ?)')
+      .bind(id, scopeUserId)
       .first<Rule>();
 
     if (!rule) {
@@ -462,8 +493,8 @@ rules.post('/:id/test', async (c) => {
 
     // Get sample transactions
     const transactions = await c.env.DB
-      .prepare('SELECT * FROM transactions ORDER BY tx_date DESC LIMIT ?')
-      .bind(limit)
+      .prepare('SELECT * FROM transactions WHERE user_id = ? ORDER BY tx_date DESC LIMIT ?')
+      .bind(scopeUserId, limit)
       .all<Transaction>();
 
     // Import and use getMatchingRules
@@ -497,6 +528,9 @@ rules.post('/:id/test', async (c) => {
 // Apply rules to transactions
   rules.post('/apply', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = applyRulesSchema.safeParse(body);
 
@@ -507,7 +541,7 @@ rules.post('/:id/test', async (c) => {
     const { transaction_ids, all, batch_size } = parsed.data;
 
     // Get enabled rules
-    const enabledRules = await getEnabledRules(c.env.DB);
+    const enabledRules = await getEnabledRules(c.env.DB, scopeUserId);
 
     if (enabledRules.length === 0) {
       return c.json({ processed: 0, updated: 0, errors: 0, message: 'No enabled rules' });
@@ -524,8 +558,8 @@ rules.post('/:id/test', async (c) => {
       // Apply to specific transactions
       const placeholders = transaction_ids.map(() => '?').join(',');
       const result = await c.env.DB
-        .prepare(`SELECT * FROM transactions WHERE id IN (${placeholders})`)
-        .bind(...transaction_ids)
+        .prepare(`SELECT * FROM transactions WHERE user_id = ? AND id IN (${placeholders})`)
+        .bind(scopeUserId, ...transaction_ids)
         .all<Transaction>();
 
       const batch = await applyRulesToBatch(c.env.DB, result.results || [], enabledRules);
@@ -547,7 +581,7 @@ rules.post('/:id/test', async (c) => {
         )
       );
 
-      const sqlRes = await applyCategoryRulesSqlGlobal(c.env.DB, 'cat_other');
+      const sqlRes = await applyCategoryRulesSqlGlobal(c.env.DB, scopeUserId, 'cat_other');
       totalProcessed = sqlRes.eligible;
       totalUpdatedReal = sqlRes.meta_updates;
       totalUpdatedAny = sqlRes.meta_updates;
@@ -570,10 +604,11 @@ rules.post('/:id/test', async (c) => {
           FROM transactions t
           LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
           WHERE t.id IN (${placeholders})
+            AND t.user_id = ?
             AND COALESCE(t.is_excluded, 0) = 0
             AND tm.category_id IS NULL
         `)
-        .bind(...transaction_ids)
+        .bind(...transaction_ids, scopeUserId)
         .first<{ c: number }>();
       stillUncategorized = Number(res?.c || 0);
     } else if (all) {
@@ -582,9 +617,11 @@ rules.post('/:id/test', async (c) => {
           SELECT COUNT(*) as c
           FROM transactions t
           LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
-          WHERE COALESCE(t.is_excluded, 0) = 0
+          WHERE t.user_id = ?
+            AND COALESCE(t.is_excluded, 0) = 0
             AND tm.category_id IS NULL
         `)
+        .bind(scopeUserId)
         .first<{ c: number }>();
       stillUncategorized = Number(res?.c || 0);
     }

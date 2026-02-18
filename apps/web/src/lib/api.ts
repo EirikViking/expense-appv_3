@@ -34,6 +34,9 @@ import type {
   BudgetWithSpent,
   CreateBudgetRequest,
   UpdateBudgetRequest,
+  BudgetSettingsResponse,
+  BudgetTrackingResponse,
+  UpdateBudgetSettingsRequest,
   RecurringResponse,
   Recurring,
   CreateRecurringRequest,
@@ -68,6 +71,7 @@ export interface ValidateIngestResponse {
     total?: number;
     excluded?: number;
     zero_amount?: { active?: number; excluded?: number };
+    suspicious_serial_amounts?: number;
     flow_type?: Record<string, number>;
     source_type?: Record<string, number>;
   };
@@ -76,6 +80,7 @@ export interface ValidateIngestResponse {
     tx_base_total?: number;
     analytics_delta?: number;
     flow_delta?: number;
+    wrong_sign_count?: number;
     income_leak_count?: number;
   };
   suspicious_income?: Array<{ description: string; count: number; total_abs: number }>;
@@ -107,42 +112,146 @@ export class ApiError extends Error {
   }
 }
 
+type RequestOptions = RequestInit & {
+  skipCache?: boolean;
+  cacheTtlMs?: number;
+  timeoutMs?: number;
+};
+
+type CachedResponse = {
+  expiresAt: number;
+  data: unknown;
+};
+
+const getResponseCache = new Map<string, CachedResponse>();
+const inflightGetRequests = new Map<string, Promise<unknown>>();
+
+function clearRequestCache() {
+  getResponseCache.clear();
+  inflightGetRequests.clear();
+}
+
+function getCacheTtlMs(endpoint: string, override?: number): number {
+  if (typeof override === 'number') return override;
+  if (endpoint.startsWith('/categories') || endpoint.startsWith('/tags')) return 5 * 60_000;
+  if (endpoint.startsWith('/analytics')) return 90_000;
+  if (endpoint.startsWith('/merchants')) return 60_000;
+  if (endpoint.startsWith('/transactions')) return 20_000;
+  if (endpoint.startsWith('/auth/me')) return 15_000;
+  return 20_000;
+}
+
+function getRequestTimeoutMs(endpoint: string, override?: number): number {
+  if (typeof override === 'number' && Number.isFinite(override) && override > 0) return override;
+  if (endpoint.startsWith('/analytics')) return 60_000;
+  if (endpoint.startsWith('/transactions')) return 45_000;
+  if (endpoint.startsWith('/ingest')) return 90_000;
+  return 30_000;
+}
+
+function readCachedResponse<T>(cacheKey: string): T | null {
+  const cached = getResponseCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    getResponseCache.delete(cacheKey);
+    return null;
+  }
+  return cached.data as T;
+}
+
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestOptions = {}
 ): Promise<T> {
+  const fetchOptions: RequestInit = { ...options };
+  delete (fetchOptions as RequestOptions).skipCache;
+  delete (fetchOptions as RequestOptions).cacheTtlMs;
+  delete (fetchOptions as RequestOptions).timeoutMs;
   const headers: Record<string, string> = {};
 
   // Only set Content-Type for requests with a body (POST, PUT, PATCH)
   const method = options.method?.toUpperCase() || 'GET';
+  const isGet = method === 'GET';
+  const skipCache = options.skipCache === true;
+  const cacheTtlMs = getCacheTtlMs(endpoint, options.cacheTtlMs);
+  const timeoutMs = getRequestTimeoutMs(endpoint, options.timeoutMs);
+  const shouldCacheGet = isGet && !skipCache && cacheTtlMs > 0;
+  const cacheKey = `${method}:${endpoint}`;
   if (method !== 'GET' && method !== 'DELETE') {
     headers['Content-Type'] = 'application/json';
   }
 
-  const apiUrl = getApiBaseUrl();
-  const response = await fetch(`${apiUrl}${endpoint}`, {
-    credentials: 'include',
-    ...options,
-    headers: {
-      ...headers,
-      ...(options.headers as Record<string, string>),
-    },
+  if (shouldCacheGet) {
+    const cached = readCachedResponse<T>(cacheKey);
+    if (cached !== null) return cached;
+    const inflight = inflightGetRequests.get(cacheKey) as Promise<T> | undefined;
+    if (inflight) return inflight;
+  }
+
+  const executeRequest = async (): Promise<T> => {
+    const apiUrl = getApiBaseUrl();
+    const hasExternalSignal = Boolean(fetchOptions.signal);
+    const timeoutController = !hasExternalSignal && typeof AbortController !== 'undefined'
+      ? new AbortController()
+      : null;
+    const timeoutHandle = timeoutController
+      ? setTimeout(() => timeoutController.abort(), timeoutMs)
+      : null;
+
+    let response: Response;
+    try {
+      response = await fetch(`${apiUrl}${endpoint}`, {
+        credentials: 'include',
+        ...fetchOptions,
+        signal: timeoutController?.signal ?? fetchOptions.signal,
+        headers: {
+          ...headers,
+          ...(fetchOptions.headers as Record<string, string>),
+        },
+      });
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') {
+        throw new ApiError('Request timed out. Please try again.', 408, null);
+      }
+      throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+
+    let data: unknown = null;
+    try {
+      data = await response.json();
+    } catch {
+      data = null;
+    }
+
+    if (!response.ok) {
+      const errObj = data as Partial<ErrorResponse> & { message?: string };
+      const msg = errObj?.message || errObj?.error || `HTTP ${response.status}`;
+      throw new ApiError(String(msg), response.status, data);
+    }
+
+    if (shouldCacheGet) {
+      getResponseCache.set(cacheKey, {
+        data,
+        expiresAt: Date.now() + cacheTtlMs,
+      });
+    } else if (!isGet) {
+      clearRequestCache();
+    }
+
+    return data as T;
+  };
+
+  if (!shouldCacheGet) {
+    return executeRequest();
+  }
+
+  const inflight = executeRequest().finally(() => {
+    inflightGetRequests.delete(cacheKey);
   });
-
-  let data: unknown = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    const errObj = data as Partial<ErrorResponse> & { message?: string };
-    const msg = errObj?.message || errObj?.error || `HTTP ${response.status}`;
-    throw new ApiError(String(msg), response.status, data);
-  }
-
-  return data as T;
+  inflightGetRequests.set(cacheKey, inflight);
+  return inflight;
 }
 
 // Build query string from params
@@ -174,7 +283,7 @@ export const api = {
   health: () => request<HealthResponse>('/health'),
 
   // Auth
-  authMe: () => request<AuthMeResponse>('/auth/me'),
+  authMe: () => request<AuthMeResponse>('/auth/me', { skipCache: true }),
 
   bootstrap: (data: BootstrapRequest) =>
     request<BootstrapResponse>('/auth/bootstrap', {
@@ -230,6 +339,21 @@ export const api = {
       method: 'POST',
     }),
 
+  adminImpersonateUser: (id: string) =>
+    request<{ success: boolean; impersonated_user_id: string }>(`/admin/users/${id}/impersonate`, {
+      method: 'POST',
+    }),
+
+  adminClearImpersonation: () =>
+    request<BasicSuccessResponse>('/admin/impersonation/clear', {
+      method: 'POST',
+    }),
+
+  adminDeleteUser: (id: string) =>
+    request<BasicSuccessResponse>(`/admin/users/${id}`, {
+      method: 'DELETE',
+    }),
+
   // Ingest
   ingestXlsx: (data: XlsxIngestRequest) =>
     request<IngestResponse>('/ingest/xlsx', {
@@ -249,9 +373,9 @@ export const api = {
     return request<TransactionsResponse>(`/transactions${qs}`);
   },
 
-  validateIngest: (params: { date_from: string; date_to: string }) => {
+  validateIngest: (params: { date_from: string; date_to: string; file_hash?: string }) => {
     const qs = buildQuery(params);
-    return request<ValidateIngestResponse>(`/transactions/admin/validate-ingest${qs}`);
+    return request<ValidateIngestResponse>(`/transactions/validate/ingest${qs}`);
   },
 
   reclassifyOther: (body: {
@@ -272,6 +396,15 @@ export const api = {
   getTransaction: (id: string) =>
     request<TransactionWithMeta>(`/transactions/${id}`),
 
+  getTransactionsCount: (query: {
+    transaction_id?: string;
+    include_transfers?: boolean;
+    include_excluded?: boolean;
+  } = {}) => {
+    const qs = buildQuery(toQueryRecord(query));
+    return request<{ total: number }>(`/transactions/count${qs}`);
+  },
+
   createTransaction: (data: CreateTransactionRequest) =>
     request<TransactionWithMeta>('/transactions', {
       method: 'POST',
@@ -290,7 +423,7 @@ export const api = {
     }),
 
   resetData: (confirm: boolean) =>
-    request<{ success: boolean; message: string }>('/transactions/admin/reset', {
+    request<{ success: boolean; message: string }>('/transactions/actions/reset', {
       method: 'DELETE',
       body: JSON.stringify({ confirm }),
     }),
@@ -494,6 +627,18 @@ export const api = {
       method: 'DELETE',
     }),
 
+  getBudgetSettings: () =>
+    request<BudgetSettingsResponse>('/budgets/settings'),
+
+  updateBudgetSettings: (data: UpdateBudgetSettingsRequest) =>
+    request<BudgetSettingsResponse>('/budgets/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getBudgetTracking: () =>
+    request<BudgetTrackingResponse>('/budgets/tracking'),
+
   // Recurring
   getRecurring: (activeOnly?: boolean, subscriptionsOnly?: boolean) => {
     const qs = buildQuery({
@@ -545,7 +690,15 @@ export const api = {
 
   getAnalyticsByMerchant: (query: Partial<AnalyticsQuery> & { limit?: number }) => {
     const qs = buildQuery(toQueryRecord(query));
-    return request<{ merchants: MerchantBreakdown[] }>(`/analytics/by-merchant${qs}`);
+    return request<{
+      merchants: MerchantBreakdown[];
+      comparison_period?: {
+        current_start: string;
+        current_end: string;
+        previous_start: string;
+        previous_end: string;
+      };
+    }>(`/analytics/by-merchant${qs}`);
   },
 
   getAnalyticsTimeseries: (query: Partial<AnalyticsQuery>) => {

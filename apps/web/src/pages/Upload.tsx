@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 import { api, ApiError, type ValidateIngestResponse } from '../lib/api';
 import { computeFileHash } from '../lib/hash';
 import { parseXlsxFile } from '../lib/xlsx-parser';
-import { extractPdfText } from '../lib/pdf-extractor';
 import type { IngestResponse } from '@expense/shared';
 import { useTranslation } from 'react-i18next';
+import { buildTransactionsLinkForRange, getRangeFromIngestResponse } from '@/lib/upload-range';
 
 const DEV_LOGS = import.meta.env.VITE_DEV_LOGS === 'true';
 
@@ -101,28 +101,17 @@ export function UploadPage() {
     return { date_from: dates[0], date_to: dates[dates.length - 1] };
   };
 
-  const rangeFromPdfText = (text: string) => {
-    const isoDates = new Set<string>();
-    const ddmmyyyy = /\b(\d{2})\.(\d{2})\.(\d{4})\b/g;
-    const yyyymmdd = /\b(\d{4})-(\d{2})-(\d{2})\b/g;
-
-    for (const m of text.matchAll(ddmmyyyy)) {
-      const [, dd, mm, yyyy] = m;
-      isoDates.add(`${yyyy}-${mm}-${dd}`);
-    }
-    for (const m of text.matchAll(yyyymmdd)) {
-      isoDates.add(m[0]);
-    }
-
-    const sorted = [...isoDates].filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(s)).sort();
-    if (sorted.length === 0) return fallbackRange();
-    return { date_from: sorted[0], date_to: sorted[sorted.length - 1] };
-  };
-
-  const runValidation = async (filename: string, range: { date_from: string; date_to: string }) => {
+  const runValidation = async (
+    filename: string,
+    range: { date_from: string; date_to: string },
+    fileHash?: string
+  ) => {
     updateResult(filename, { validation_range: range, validation_error: undefined });
     try {
-      const validation = await api.validateIngest(range);
+      const validation = await api.validateIngest({
+        ...range,
+        file_hash: fileHash,
+      });
       updateResult(filename, { validation });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Validation request failed';
@@ -252,49 +241,18 @@ export function UploadPage() {
           console.log(`[DEV] Ingest result:`, result);
         }
 
-        updateResult(filename, { status: 'success', result });
+        const ingestRange = getRangeFromIngestResponse(result) ?? rangeFromXlsxTransactions(transactions);
+        updateResult(filename, { status: 'success', result, validation_range: ingestRange });
         if (!result.file_duplicate && result.inserted > 0) {
-          const range = rangeFromXlsxTransactions(transactions);
-          void runValidation(filename, range);
+          void runValidation(filename, ingestRange, fileHash);
           // After validation, run an automatic "Other"/uncategorized reduction scoped to this file.
           // This keeps the app usable even when rules are incomplete.
-          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
-        }
-      } else if (file.name.toLowerCase().endsWith('.pdf')) {
-        // Extract text from PDF in browser
-        const { text, error } = await extractPdfText(arrayBuffer);
-
-        if (error) {
-          updateResult(filename, { status: 'error', error });
-          return;
-        }
-
-        if (DEV_LOGS) {
-          console.log(`[DEV] Extracted ${text.length} chars from PDF`);
-        }
-
-        // Send to API for parsing
-        const result = await api.ingestPdf({
-          file_hash: fileHash,
-          filename,
-          source: 'pdf',
-          extracted_text: text,
-        });
-
-        if (DEV_LOGS) {
-          console.log(`[DEV] Ingest result:`, result);
-        }
-
-        updateResult(filename, { status: 'success', result });
-        if (!result.file_duplicate && result.inserted > 0) {
-          const range = rangeFromPdfText(text);
-          void runValidation(filename, range);
-          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, range));
+          void runPostProcessOther(filename, fileHash).then(() => runValidation(filename, ingestRange, fileHash));
         }
       } else {
         updateResult(filename, {
           status: 'error',
-          error: 'Unsupported file type. Please upload .xlsx or .pdf files.',
+          error: t('upload.unsupportedFileType'),
         });
       }
     } catch (err) {
@@ -316,7 +274,7 @@ export function UploadPage() {
           : undefined,
       });
     }
-  }, []);
+  }, [t]);
 
   const queueFiles = useCallback((files: File[]) => {
     setPendingFiles((prev) => {
@@ -346,22 +304,6 @@ export function UploadPage() {
     setPendingFiles([]);
     setImporting(false);
   }, [pendingFiles, processFile]);
-
-  const downloadCsvTemplate = () => {
-    const template = [
-      'tx_date,description,amount,currency,booked_date,merchant',
-      '2026-02-14,Example purchase,-123.45,NOK,2026-02-15,Example Merchant',
-    ].join('\n');
-    const blob = new Blob([template], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'expense_import_template.csv';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  };
 
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
@@ -415,7 +357,7 @@ export function UploadPage() {
           <label className="inline-block">
             <input
               type="file"
-              accept=".xlsx,.pdf,.csv"
+              accept=".xlsx"
               multiple
               onChange={handleFileInput}
               className="hidden"
@@ -436,17 +378,10 @@ export function UploadPage() {
             <div>
               <p className="text-sm font-semibold text-white">Import preview ({pendingFiles.length} files)</p>
               <p className="text-xs text-white/60">
-                Review files before import. CSV preview/template is available, but CSV parsing is not enabled yet.
+                Review files before import. Only XLSX files are supported.
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={downloadCsvTemplate}
-                className="rounded-md border border-white/15 bg-white/5 px-3 py-2 text-xs text-white hover:bg-white/10"
-              >
-                Download CSV template
-              </button>
               <button
                 type="button"
                 onClick={() => setPendingFiles([])}
@@ -590,16 +525,9 @@ export function UploadPage() {
                               </div>
                               {result.validation_range && (
                                 <Link
-                                 to={
-                                    '/transactions?' +
-                                    new URLSearchParams({
-                                      date_from: result.validation_range.date_from,
-                                      date_to: result.validation_range.date_to,
-                                      include_excluded: 'true',
-                                    }).toString()
-                                  }
-                                   className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
-                                 >
+                                 to={buildTransactionsLinkForRange(result.validation_range)}
+                                    className="shrink-0 rounded-md bg-white/10 px-3 py-2 text-xs font-medium hover:bg-white/15"
+                                  >
                                    {t('upload.validation.viewTransactions')}
                                  </Link>
                                )}
@@ -633,12 +561,6 @@ export function UploadPage() {
                 {result.status === 'error' && (
                   <div className="mt-2 text-sm text-red-700">
                     <p className="font-medium">{result.error}</p>
-
-                    {result.api_error?.code === 'PDF_NO_TRANSACTIONS' && (
-                      <p className="mt-1 text-xs text-red-700/80">
-                        {t('upload.pdfNoTransactionsHelp')}
-                      </p>
-                    )}
 
                     {result.api_error?.debug != null && (
                       <details className="mt-2 rounded-md border border-red-200 bg-red-50 p-2">

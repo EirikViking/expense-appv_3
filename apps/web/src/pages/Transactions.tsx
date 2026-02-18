@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category } from '@expense/shared';
+import type { FlowType, TransactionWithMeta, TransactionStatus, SourceType, Category, BudgetTrackingPeriod } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -31,10 +31,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Label } from '@/components/ui/label';
 import { TransactionDetailsDialog } from '@/components/TransactionDetailsDialog';
 import { useTranslation } from 'react-i18next';
-import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
+import { clearLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
 import { localizeCategoryName } from '@/lib/category-localization';
+import {
+  clearDateFiltersInSearchParams,
+  hasNarrowingFilters,
+  isDateFilterActive,
+  resolveDateFiltersFromSearchParams,
+} from '@/lib/transactions-filters';
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
@@ -44,10 +50,14 @@ export function TransactionsPage() {
   const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
   const [total, setTotal] = useState(0);
+  const [overallTotal, setOverallTotal] = useState(0);
   const [aggregates, setAggregates] = useState<{ sum_amount: number; total_spent: number; total_income: number } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   // Filters
   const [dateFrom, setDateFrom] = useState('');
@@ -64,6 +74,7 @@ export function TransactionsPage() {
   const [showExcluded, setShowExcluded] = useState(false);
   const [merchantId, setMerchantId] = useState('');
   const [merchantName, setMerchantName] = useState('');
+  const [transactionId, setTransactionId] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
   const [flowType, setFlowType] = useState<FlowType | ''>('');
@@ -156,10 +167,12 @@ export function TransactionsPage() {
   };
 
   const fetchData = useCallback(async () => {
+    if (!filtersInitialized) return;
     if (!validateDateRange(dateFrom, dateTo)) {
-      setDateRangeError('Fra-dato kan ikke være etter til-dato.');
+      setDateRangeError(t('transactions.validation.invalidDateRange'));
       setTransactions([]);
       setTotal(0);
+      setOverallTotal(0);
       setAggregates(null);
       setIsLoading(false);
       return;
@@ -167,10 +180,27 @@ export function TransactionsPage() {
 
     setIsLoading(true);
     setError(null);
+    const requestId = ++requestIdRef.current;
 
     try {
-      const [txResult, catResult] = await Promise.all([
+      const shouldFetchOverallTotal = hasNarrowingFilters({
+        dateFrom,
+        dateTo,
+        transactionId,
+        status,
+        sourceType,
+        categoryId,
+        merchantId,
+        merchantName,
+        minAmount,
+        maxAmount,
+        searchQuery,
+        flowType,
+      });
+
+      const [txResult, overallResult] = await Promise.all([
         api.getTransactions({
+          transaction_id: transactionId || undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
           status: status || undefined,
@@ -182,12 +212,12 @@ export function TransactionsPage() {
           min_amount: (() => {
             if (!minAmount.trim()) return undefined;
             const n = Number(minAmount);
-            return Number.isFinite(n) ? n : undefined;
+            return Number.isFinite(n) ? Math.abs(n) : undefined;
           })(),
           max_amount: (() => {
             if (!maxAmount.trim()) return undefined;
             const n = Number(maxAmount);
-            return Number.isFinite(n) ? n : undefined;
+            return Number.isFinite(n) ? Math.abs(n) : undefined;
           })(),
           search: searchQuery || undefined,
           include_transfers: !excludeTransfers,
@@ -201,41 +231,89 @@ export function TransactionsPage() {
           })(),
           sort_order: sortKey.endsWith('_asc') ? 'asc' : 'desc',
         }),
-        categories.length === 0 ? api.getCategories() : Promise.resolve({ categories }),
+        shouldFetchOverallTotal
+          ? api.getTransactionsCount({
+              transaction_id: transactionId || undefined,
+              include_transfers: !excludeTransfers,
+              include_excluded: showExcluded ? true : undefined,
+            })
+          : Promise.resolve(null),
       ]);
 
-      setTransactions(txResult.transactions);
-      setTotal(txResult.total);
-      setAggregates(txResult.aggregates ?? null);
-      if ('categories' in catResult && catResult.categories) {
-        setCategories(catResult.categories);
+      if (requestId === requestIdRef.current) {
+        setTransactions(txResult.transactions);
+        setTotal(txResult.total);
+        setOverallTotal(overallResult?.total ?? txResult.total);
+        setAggregates(txResult.aggregates ?? null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('transactions.failedFetch'));
+      if (requestId === requestIdRef.current) {
+        setError(err instanceof Error ? err.message : t('transactions.failedFetch'));
+      }
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
-  }, [dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, categories.length, excludeTransfers, showExcluded, flowType, sortKey]);
+  }, [filtersInitialized, transactionId, dateFrom, dateTo, status, sourceType, categoryId, merchantId, merchantName, minAmount, maxAmount, searchQuery, page, excludeTransfers, showExcluded, flowType, sortKey, t]);
 
   useEffect(() => {
+    if (!filtersInitialized) return;
     fetchData();
-  }, [fetchData]);
+  }, [filtersInitialized, fetchData]);
+
+  useEffect(() => {
+    let active = true;
+    if (categories.length > 0) return;
+    api
+      .getCategories()
+      .then((res) => {
+        if (!active) return;
+        setCategories(res.categories || []);
+      })
+      .catch(() => {
+        // Keep page usable even if category lookup fails temporarily.
+      });
+    return () => {
+      active = false;
+    };
+  }, [categories.length]);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .getBudgetTracking()
+      .then((res) => {
+        if (!active) return;
+        setBudgetsEnabled(Boolean(res.enabled));
+        setBudgetTracking(res.periods || []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setBudgetsEnabled(false);
+        setBudgetTracking([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!dateFrom || !dateTo) {
       setDateRangeError(null);
       return;
     }
-    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : 'Fra-dato kan ikke være etter til-dato.');
-  }, [dateFrom, dateTo]);
+    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : t('transactions.validation.invalidDateRange'));
+  }, [dateFrom, dateTo, t]);
 
   // Initialize from URL query params (drilldown support)
   useEffect(() => {
-    const qDateFrom = searchParams.get('date_from') || '';
-    const qDateTo = searchParams.get('date_to') || '';
+    const { dateFrom: qDateFrom, dateTo: qDateTo } = resolveDateFiltersFromSearchParams(searchParams);
     const qStatus = (searchParams.get('status') || '') as TransactionStatus | '';
     const qSource = (searchParams.get('source_type') || '') as SourceType | '';
     const qCategory = searchParams.get('category_id') || '';
+    const qTransactionId = searchParams.get('transaction_id') || '';
     const qMerchantId = searchParams.get('merchant_id') || '';
     const qMerchantName = searchParams.get('merchant_name') || '';
     const qMinAmount = searchParams.get('min_amount') || '';
@@ -249,29 +327,21 @@ export function TransactionsPage() {
     const qPageRaw = searchParams.get('page');
     const qPage = qPageRaw ? Number(qPageRaw) : 0;
 
-    if (qDateFrom) setDateFrom(qDateFrom);
-    if (qDateTo) setDateTo(qDateTo);
-
-    // If URL doesn't specify dates, fall back to last used range.
-    if (!qDateFrom && !qDateTo) {
-      const stored = loadLastDateRange();
-      if (stored) {
-        setDateFrom(stored.start);
-        setDateTo(stored.end);
-      }
-    }
-    if (qStatus) setStatus(qStatus);
-    if (qSource) setSourceType(qSource);
-    if (qCategory) setCategoryId(qCategory);
-    if (qMerchantId) setMerchantId(qMerchantId);
-    if (qMerchantName) setMerchantName(qMerchantName);
-    if (qMinAmount) setMinAmount(qMinAmount);
-    if (qMaxAmount) setMaxAmount(qMaxAmount);
-    if (qSearch) setSearchQuery(qSearch);
-    if (qIncludeTransfers === '1' || qIncludeTransfers === 'true') setExcludeTransfers(false);
-    if (qIncludeExcluded === '1' || qIncludeExcluded === 'true') setShowExcluded(true);
-    if (qFlowType) setFlowType(qFlowType);
-    if (Number.isInteger(qPage) && qPage >= 0) setPage(qPage);
+    setDateFrom(qDateFrom);
+    setDateTo(qDateTo);
+    setStatus(qStatus);
+    setSourceType(qSource);
+    setCategoryId(qCategory);
+    setTransactionId(qTransactionId);
+    setMerchantId(qMerchantId);
+    setMerchantName(qMerchantName);
+    setMinAmount(qMinAmount);
+    setMaxAmount(qMaxAmount);
+    setSearchQuery(qSearch);
+    setExcludeTransfers(!(qIncludeTransfers === '1' || qIncludeTransfers === 'true'));
+    setShowExcluded(qIncludeExcluded === '1' || qIncludeExcluded === 'true');
+    setFlowType(qFlowType);
+    setPage(Number.isInteger(qPage) && qPage >= 0 ? qPage : 0);
 
     // Sort init (keep backward compatibility)
     if (qSortBy || qSortOrder) {
@@ -280,10 +350,11 @@ export function TransactionsPage() {
       if (by === 'merchant') setSortKey(order === 'asc' ? 'merchant_asc' : 'merchant_desc');
       else if (by === 'amount_abs') setSortKey(order === 'asc' ? 'amount_abs_asc' : 'amount_abs_desc');
       else setSortKey(order === 'asc' ? 'date_asc' : 'date_desc');
+    } else {
+      setSortKey('date_desc');
     }
-    setFiltersInitialized(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!filtersInitialized) setFiltersInitialized(true);
+  }, [filtersInitialized, searchParams]);
 
   useEffect(() => {
     if (!filtersInitialized) return;
@@ -293,6 +364,7 @@ export function TransactionsPage() {
     if (status) next.set('status', status);
     if (sourceType) next.set('source_type', sourceType);
     if (categoryId) next.set('category_id', categoryId);
+    if (transactionId) next.set('transaction_id', transactionId);
     if (merchantId) next.set('merchant_id', merchantId);
     if (merchantName) next.set('merchant_name', merchantName);
     if (minAmount) next.set('min_amount', minAmount);
@@ -316,6 +388,7 @@ export function TransactionsPage() {
     status,
     sourceType,
     categoryId,
+    transactionId,
     merchantId,
     merchantName,
     minAmount,
@@ -369,6 +442,7 @@ export function TransactionsPage() {
     setStatus('');
     setSourceType('');
     setCategoryId('');
+    setTransactionId('');
     setMerchantId('');
     setMerchantName('');
     setMinAmount('');
@@ -381,11 +455,20 @@ export function TransactionsPage() {
     setPage(0);
   };
 
-  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const clearDateFilter = () => {
+    setDateFrom('');
+    setDateTo('');
+    setPage(0);
+    setSearchParams(clearDateFiltersInSearchParams(searchParams), { replace: true });
+  };
+
+  const hasFilters = dateFrom || dateTo || status || sourceType || categoryId || transactionId || merchantId || merchantName || minAmount || maxAmount || searchQuery || !excludeTransfers || showExcluded || flowType;
+  const hasActiveDateRange = isDateFilterActive(dateFrom, dateTo);
   const hasDrilldownContext = Boolean(
-    (searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
-      searchParams.get('date_from') &&
-      searchParams.get('date_to')
+    searchParams.get('transaction_id') ||
+      ((searchParams.get('category_id') || searchParams.get('merchant_id') || searchParams.get('merchant_name')) &&
+        searchParams.get('date_from') &&
+        searchParams.get('date_to'))
   );
 
   return (
@@ -447,6 +530,27 @@ export function TransactionsPage() {
           </Button>
         </div>
       </div>
+
+      {budgetsEnabled && budgetTracking.length > 0 && (
+        <div className="rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2">
+          <p className="text-xs text-cyan-100/90 mb-1">{t('transactions.budgetSummaryTitle')}</p>
+          <div className="flex flex-wrap gap-3 text-xs text-cyan-50">
+            {budgetTracking.map((item) => {
+              const label =
+                item.period === 'weekly'
+                  ? t('budgetsPage.period.weekly')
+                  : item.period === 'monthly'
+                    ? t('budgetsPage.period.monthly')
+                    : t('budgetsPage.period.yearly');
+              return (
+                <span key={item.period}>
+                  <strong>{label}</strong>: {formatCurrency(item.spent_amount)} / {formatCurrency(item.budget_amount)}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -555,8 +659,8 @@ export function TransactionsPage() {
                 <SmartDateInput
                   value={dateFrom}
                   ariaLabel={t('common.fromDate')}
-                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
-                  invalidDateMessage="Ugyldig dato."
+                  invalidFormatMessage={t('transactions.validation.invalidDateFormat')}
+                  invalidDateMessage={t('transactions.validation.invalidDate')}
                   onChange={(next) => {
                     setDateFrom(next);
                     setPage(0);
@@ -572,8 +676,8 @@ export function TransactionsPage() {
                 <SmartDateInput
                   value={dateTo}
                   ariaLabel={t('common.toDate')}
-                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
-                  invalidDateMessage="Ugyldig dato."
+                  invalidFormatMessage={t('transactions.validation.invalidDateFormat')}
+                  invalidDateMessage={t('transactions.validation.invalidDate')}
                   onChange={(next) => {
                     setDateTo(next);
                     setPage(0);
@@ -668,7 +772,7 @@ export function TransactionsPage() {
                 <Input
                   type="number"
                   inputMode="decimal"
-                  placeholder="e.g. -500"
+                  placeholder="500"
                   value={minAmount}
                   onChange={(e) => {
                     setMinAmount(e.target.value);
@@ -683,7 +787,7 @@ export function TransactionsPage() {
                 <Input
                   type="number"
                   inputMode="decimal"
-                  placeholder="e.g. 0"
+                  placeholder="5000"
                   value={maxAmount}
                   onChange={(e) => {
                     setMaxAmount(e.target.value);
@@ -692,6 +796,7 @@ export function TransactionsPage() {
                 />
               </div>
             </div>
+            <p className="mt-2 text-xs text-white/60">{t('transactions.amountFilterHelp')}</p>
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -799,9 +904,26 @@ export function TransactionsPage() {
         </Card>
       ) : (
         <>
+          {hasActiveDateRange && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
+              <span>
+                {t('transactions.dateFilterActive', {
+                  from: dateFrom || t('transactions.dateOpenStart'),
+                  to: dateTo || t('transactions.dateOpenEnd'),
+                })}
+              </span>
+              <Button variant="ghost" size="sm" onClick={clearDateFilter} className="h-7 px-2">
+                {t('transactions.clearDateFilter')}
+              </Button>
+            </div>
+          )}
+
           {/* Results count */}
           <p className="text-sm text-white/70">
             {t('transactions.showingCount', { shown: transactions.length, total })}
+          </p>
+          <p className="text-sm text-white/70">
+            {t('transactions.filteredVsTotal', { filtered: total, total: overallTotal })}
           </p>
           {aggregates && (
             <p className="text-sm text-white/70">
@@ -927,7 +1049,9 @@ export function TransactionsPage() {
                             {tx.merchant_name && (
                               <>
                                 <span className="text-white/25">|</span>
-                                <span>{tx.merchant_name}</span>
+                                <span title={tx.merchant_raw && tx.merchant_raw !== tx.merchant_name ? tx.merchant_raw : undefined}>
+                                  {tx.merchant_name}
+                                </span>
                               </>
                             )}
                             {tx.category_name && (

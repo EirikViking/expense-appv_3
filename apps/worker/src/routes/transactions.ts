@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import {
   transactionsQuerySchema,
   createTransactionSchema,
@@ -12,12 +12,15 @@ import {
 } from '@expense/shared';
 import type { Env } from '../types';
 import { applyRulesToTransaction, getEnabledRules } from '../lib/rule-engine';
-import { detectIsTransfer, isStraksbetalingDescription } from '../lib/transfer-detect';
+import { detectIsTransfer, isFelleskontoDescription, isStraksbetalingDescription } from '../lib/transfer-detect';
 import { extractMerchantFromPdfLine, parsePdfTransactionLine } from '../lib/pdf-parser';
 import { extractSectionLabelFromRawJson, isPaymentLikeRow, isPurchaseSection, isRefundLike } from '../lib/xlsx-normalize';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
+import { getCategoryHint } from '../lib/category-hints';
+import { normalizeMerchant } from '../lib/merchant-normalize';
+import { ensureAdmin, getEffectiveUser, getScopeUserId } from '../lib/request-scope';
 
 const transactions = new Hono<{ Bindings: Env }>();
 
@@ -27,10 +30,35 @@ type DbTransactionRow = Omit<Transaction, 'is_excluded' | 'is_transfer'> & {
   is_transfer: DbBool;
 };
 
+const UNKNOWN_MERCHANT_FILTERS = new Set([
+  'ukjent brukersted',
+  'unknown merchant',
+  'unknown',
+]);
+
+function isUnknownMerchantFilter(value: string): boolean {
+  return UNKNOWN_MERCHANT_FILTERS.has(value.trim().toLowerCase());
+}
+
+const UNKNOWN_MERCHANT_VALUE_SQL = `UPPER(TRIM(COALESCE(NULLIF(TRIM(t.merchant), ''), '')))`;
+const UNKNOWN_MERCHANT_SQL = `(
+  ${UNKNOWN_MERCHANT_VALUE_SQL} = '' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} IN ('UKJENT BRUKERSTED', 'UNKNOWN MERCHANT', 'UNKNOWN', 'NOK', 'KR') OR
+  (
+    ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]*'
+    AND ${UNKNOWN_MERCHANT_VALUE_SQL} NOT LIKE '% %'
+  ) OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* NOK [0-9.,-]*' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* KR [0-9.,-]*' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* NOK' OR
+  ${UNKNOWN_MERCHANT_VALUE_SQL} GLOB '[0-9][0-9][0-9]* KR'
+)`;
+
 // Helper to enrich transactions with metadata
 async function enrichTransactions(
   db: D1Database,
-  txs: DbTransactionRow[]
+  txs: DbTransactionRow[],
+  scopeUserId?: string | null
 ): Promise<TransactionWithMeta[]> {
   if (txs.length === 0) return [];
 
@@ -123,8 +151,12 @@ async function enrichTransactions(
   if (fileHashes.length > 0) {
     for (const hashes of chunk(fileHashes, CHUNK_SIZE)) {
       const filePlaceholders = hashes.map(() => '?').join(',');
-      const filesQuery = `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
-      const filesResult = await db.prepare(filesQuery).bind(...hashes).all<{ file_hash: string; original_filename: string }>();
+      const filesQuery = scopeUserId
+        ? `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders}) AND user_id = ?`
+        : `SELECT file_hash, original_filename FROM ingested_files WHERE file_hash IN (${filePlaceholders})`;
+      const filesResult = scopeUserId
+        ? await db.prepare(filesQuery).bind(...hashes, scopeUserId).all<{ file_hash: string; original_filename: string }>()
+        : await db.prepare(filesQuery).bind(...hashes).all<{ file_hash: string; original_filename: string }>();
       for (const f of filesResult.results || []) {
         filesMap.set(f.file_hash, f.original_filename);
       }
@@ -136,6 +168,7 @@ async function enrichTransactions(
     const meta = metaMap.get(tx.id);
     const tags = tagsMap.get(tx.id) || [];
     const sourceFilename = filesMap.get(tx.source_file_hash);
+    const merchantNormalized = normalizeMerchant((tx as any).merchant || '', tx.description || '');
 
     return {
       ...tx,
@@ -145,7 +178,7 @@ async function enrichTransactions(
       category_name: meta?.category_name || null,
       category_color: meta?.category_color || null,
       merchant_id: meta?.merchant_id || null,
-      merchant_name: meta?.merchant_name || null,
+      merchant_name: meta?.merchant_name || ((tx as any).merchant ? merchantNormalized.merchant : null),
       notes: meta?.notes || null,
       is_recurring: meta?.is_recurring === 1,
       source_filename: sourceFilename || null,
@@ -154,8 +187,22 @@ async function enrichTransactions(
   });
 }
 
+transactions.use('/admin/*', async (c, next) => {
+  // Legacy self-service reset path was placed under /admin by mistake.
+  // Allow authenticated users through for this specific route; handler itself is user-scoped.
+  if (c.req.path.endsWith('/admin/reset')) {
+    await next();
+    return;
+  }
+  if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
+  await next();
+});
+
 transactions.get('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const query = c.req.query();
     const parsed = transactionsQuerySchema.safeParse(query);
 
@@ -164,6 +211,7 @@ transactions.get('/', async (c) => {
     }
 
     const {
+      transaction_id,
       date_from,
       date_to,
       status,
@@ -187,6 +235,13 @@ transactions.get('/', async (c) => {
     // Build query dynamically
     const conditions: string[] = [];
     const params: (string | number)[] = [];
+    conditions.push('t.user_id = ?');
+    params.push(scopeUserId);
+
+    if (transaction_id) {
+      conditions.push('t.id = ?');
+      params.push(transaction_id);
+    }
 
     if (date_from) {
       conditions.push('t.tx_date >= ?');
@@ -209,13 +264,13 @@ transactions.get('/', async (c) => {
     }
 
     if (min_amount !== undefined) {
-      conditions.push('t.amount >= ?');
-      params.push(min_amount);
+      conditions.push('ABS(t.amount) >= ?');
+      params.push(Math.abs(min_amount));
     }
 
     if (max_amount !== undefined) {
-      conditions.push('t.amount <= ?');
-      params.push(max_amount);
+      conditions.push('ABS(t.amount) <= ?');
+      params.push(Math.abs(max_amount));
     }
 
     if (flow_type) {
@@ -277,20 +332,30 @@ transactions.get('/', async (c) => {
         joinClause += merchantsJoin;
       }
 
-      // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
-      // rather than an exact string match to a single row's description. Use a case-insensitive contains
-      // match so variants like "KIWI 505 BARCODE ..." are included.
       const mn = merchant_name.trim();
-      const needle = `%${mn}%`;
-      conditions.push(`(
-        COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
-        COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
-        t.description LIKE ? COLLATE NOCASE
-      )`);
-      params.push(needle, needle, needle);
+      if (isUnknownMerchantFilter(mn)) {
+        // Unknown merchant groups in insights are synthesized from noisy values.
+        // Match using a safe SQL predicate instead of plain text equality.
+        conditions.push(UNKNOWN_MERCHANT_SQL);
+      } else {
+        // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
+        // rather than an exact string match to a single row's description. Use a case-insensitive contains
+        // match so variants like "KIWI 505 BARCODE ..." are included.
+        const needle = `%${mn}%`;
+        conditions.push(`(
+          COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
+          COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
+          t.description LIKE ? COLLATE NOCASE
+        )`);
+        params.push(needle, needle, needle);
+      }
     }
 
     if (search && search.trim()) {
+      const searchNeedleRaw = search.trim();
+      if (isUnknownMerchantFilter(searchNeedleRaw)) {
+        conditions.push(UNKNOWN_MERCHANT_SQL);
+      } else {
       // Make "search" useful by matching:
       // - description
       // - canonical merchant name (if available)
@@ -302,7 +367,7 @@ transactions.get('/', async (c) => {
       if (!joinClause.includes('merchants m')) {
         joinClause += merchantsJoin;
       }
-      const needle = `%${search.trim()}%`;
+      const needle = `%${searchNeedleRaw}%`;
       conditions.push(`(
         t.description LIKE ? COLLATE NOCASE OR
         COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
@@ -317,6 +382,7 @@ transactions.get('/', async (c) => {
         )
       )`);
       params.push(needle, needle, needle, needle, needle);
+      }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -380,7 +446,7 @@ transactions.get('/', async (c) => {
       .all<DbTransactionRow>();
 
     // Enrich with metadata
-    const enrichedTransactions = await enrichTransactions(c.env.DB, results.results || []);
+    const enrichedTransactions = await enrichTransactions(c.env.DB, results.results || [], scopeUserId);
 
     const response: TransactionsResponse = {
       transactions: enrichedTransactions,
@@ -401,20 +467,67 @@ transactions.get('/', async (c) => {
   }
 });
 
+// Lightweight count endpoint used by UI for "filtered vs total" without running full list enrichment.
+transactions.get('/count', async (c) => {
+  try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
+    const transactionId = c.req.query('transaction_id');
+    const includeTransfers = c.req.query('include_transfers') === '1' || c.req.query('include_transfers') === 'true';
+    const includeExcluded = c.req.query('include_excluded') === '1' || c.req.query('include_excluded') === 'true';
+
+    const conditions: string[] = ['t.user_id = ?'];
+    const params: (string | number)[] = [scopeUserId];
+
+    if (transactionId) {
+      conditions.push('t.id = ?');
+      params.push(transactionId);
+    }
+
+    if (!includeExcluded) {
+      if (includeTransfers) {
+        conditions.push('(COALESCE(t.is_excluded, 0) = 0 OR COALESCE(t.is_transfer, 0) = 1 OR t.flow_type = \'transfer\')');
+      } else {
+        conditions.push('COALESCE(t.is_excluded, 0) = 0');
+      }
+    }
+
+    if (!includeTransfers) {
+      conditions.push('COALESCE(t.is_transfer, 0) = 0');
+      conditions.push("t.flow_type != 'transfer'");
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+    const result = await c.env.DB
+      .prepare(`SELECT COUNT(*) as total FROM transactions t ${whereClause}`)
+      .bind(...params)
+      .first<{ total: number }>();
+
+    return c.json({ total: result?.total || 0 });
+  } catch (error) {
+    console.error('Transactions count error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 // Get single transaction with full details
 transactions.get('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'SELECT * FROM transactions WHERE id = ?'
-    ).bind(id).first<DbTransactionRow>();
+      'SELECT * FROM transactions WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).first<DbTransactionRow>();
 
     if (!result) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
 
-    const enriched = await enrichTransactions(c.env.DB, [result]);
+    const enriched = await enrichTransactions(c.env.DB, [result], scopeUserId);
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction get error:', error);
@@ -425,6 +538,9 @@ transactions.get('/:id', async (c) => {
 // Patch transaction core fields (transfer/excluded flags, merchant override, and optional category_id)
 transactions.patch('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
     const body = await c.req.json();
     const parsed = updateTransactionSchema.safeParse(body);
@@ -434,7 +550,7 @@ transactions.patch('/:id', async (c) => {
     }
 
     // Ensure transaction exists
-    const existing = await c.env.DB.prepare('SELECT 1 FROM transactions WHERE id = ?').bind(id).first();
+    const existing = await c.env.DB.prepare('SELECT 1 FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first();
     if (!existing) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
@@ -446,8 +562,18 @@ transactions.patch('/:id', async (c) => {
     const params: (string | number | null)[] = [];
 
     if (merchant !== undefined) {
-      updates.push('merchant = ?');
-      params.push(merchant);
+      if (merchant) {
+        const normalizedMerchant = normalizeMerchant(merchant);
+        updates.push('merchant = ?');
+        params.push(normalizedMerchant.merchant);
+        updates.push('merchant_raw = ?');
+        params.push(normalizedMerchant.merchant_raw);
+      } else {
+        updates.push('merchant = ?');
+        params.push(null);
+        updates.push('merchant_raw = ?');
+        params.push(null);
+      }
     }
 
     if (is_transfer !== undefined) {
@@ -469,8 +595,8 @@ transactions.patch('/:id', async (c) => {
         // Recompute flow_type from amount sign for non-transfer rows.
         // This makes "was incorrectly marked transfer" immediately show up in Expenses/Travel etc.
         const amtRow = await c.env.DB
-          .prepare('SELECT amount FROM transactions WHERE id = ?')
-          .bind(id)
+          .prepare('SELECT amount FROM transactions WHERE id = ? AND user_id = ?')
+          .bind(id, scopeUserId)
           .first<{ amount: number }>();
         const amount = Number(amtRow?.amount ?? 0);
         const inferred = amount < 0 ? 'expense' : amount > 0 ? 'income' : 'unknown';
@@ -489,7 +615,7 @@ transactions.patch('/:id', async (c) => {
 
     if (updates.length > 0) {
       params.push(id);
-      await c.env.DB.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ?`).bind(...params).run();
+      await c.env.DB.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`).bind(...params, scopeUserId).run();
     }
 
     // Optional category update via transaction_meta (keeps existing meta endpoint working)
@@ -512,9 +638,9 @@ transactions.patch('/:id', async (c) => {
       }
     }
 
-    const updated = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
+    const updated = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first<DbTransactionRow>();
     if (!updated) return c.json({ error: 'Transaction not found' }, 404);
-    const enriched = await enrichTransactions(c.env.DB, [updated]);
+    const enriched = await enrichTransactions(c.env.DB, [updated], scopeUserId);
     return c.json(enriched[0]);
   } catch (error) {
     console.error('Transaction patch error:', error);
@@ -525,6 +651,9 @@ transactions.patch('/:id', async (c) => {
 // Create manual transaction
 transactions.post('/', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json();
     const parsed = createTransactionSchema.safeParse(body);
 
@@ -556,34 +685,35 @@ transactions.post('/', async (c) => {
 
     const id = generateId();
     const now = new Date().toISOString();
-    const txHash = await computeTxHash(date, description, amount, 'manual');
-    const sourceFileHash = await computeTxHash(date, `${description}-manual`, amount, 'manual');
+    const txHash = `${scopeUserId}:${await computeTxHash(date, description, amount, 'manual')}`;
+    const sourceFileHash = `${scopeUserId}:${await computeTxHash(date, `${description}-manual`, amount, 'manual')}`;
 
     const duplicate = await c.env.DB
-      .prepare('SELECT 1 FROM transactions WHERE tx_hash = ?')
-      .bind(txHash)
+      .prepare('SELECT 1 FROM transactions WHERE tx_hash = ? AND user_id = ?')
+      .bind(txHash, scopeUserId)
       .first();
     if (duplicate) {
       return c.json({ error: 'Duplicate transaction', code: 'duplicate_transaction' }, 409);
     }
 
     await c.env.DB.prepare(`
-      INSERT OR IGNORE INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json)
-      VALUES (?, ?, 'manual', ?, ?, ?)
+      INSERT OR IGNORE INTO ingested_files (id, file_hash, source_type, original_filename, uploaded_at, metadata_json, user_id)
+      VALUES (?, ?, 'manual', ?, ?, ?, ?)
     `).bind(
       generateId(),
       sourceFileHash,
       'Manual entry',
       now,
-      JSON.stringify({ source: 'manual', created_at: now })
+      JSON.stringify({ source: 'manual', created_at: now }),
+      scopeUserId
     ).run();
 
     // Insert transaction
     const flowType: 'expense' | 'income' = amount < 0 ? 'expense' : 'income';
     await c.env.DB.prepare(`
       INSERT INTO transactions
-        (id, tx_hash, tx_date, booked_date, description, merchant, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0)
+        (id, tx_hash, tx_date, booked_date, description, merchant, merchant_raw, amount, currency, status, source_type, source_file_hash, raw_json, created_at, flow_type, is_excluded, is_transfer, user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NOK', 'booked', 'manual', ?, ?, ?, ?, 0, 0, ?)
     `).bind(
       id,
       txHash,
@@ -591,11 +721,13 @@ transactions.post('/', async (c) => {
       date,
       description,
       null,
+      null,
       amount,
       sourceFileHash,
       JSON.stringify({ source: 'manual', notes: notes || null }),
       now,
-      flowType
+      flowType,
+      scopeUserId
     ).run();
 
     // Insert meta
@@ -605,7 +737,7 @@ transactions.post('/', async (c) => {
         VALUES (?, ?, ?, ?, 0, ?)
       `).bind(id, category_id || null, merchant_id || null, notes || null, now).run();
     } else {
-      const rules = await getEnabledRules(c.env.DB);
+      const rules = await getEnabledRules(c.env.DB, scopeUserId);
       if (rules.length > 0) {
         await applyRulesToTransaction(c.env.DB, {
           id,
@@ -629,12 +761,12 @@ transactions.post('/', async (c) => {
     }
 
     // Return the enriched transaction
-    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ?').bind(id).first<DbTransactionRow>();
+    const newTx = await c.env.DB.prepare('SELECT * FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first<DbTransactionRow>();
     if (!newTx) {
       return c.json({ error: 'Failed to create transaction' }, 500);
     }
 
-    const enriched = await enrichTransactions(c.env.DB, [newTx]);
+    const enriched = await enrichTransactions(c.env.DB, [newTx], scopeUserId);
     return c.json(enriched[0], 201);
   } catch (error) {
     console.error('Create transaction error:', error);
@@ -645,10 +777,13 @@ transactions.post('/', async (c) => {
 // Delete specific transaction
 transactions.delete('/:id', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     // Check if exists
-    const exists = await c.env.DB.prepare('SELECT id FROM transactions WHERE id = ?').bind(id).first();
+    const exists = await c.env.DB.prepare('SELECT id FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId).first();
     if (!exists) {
       return c.json({ error: 'Transaction not found' }, 404);
     }
@@ -657,7 +792,7 @@ transactions.delete('/:id', async (c) => {
     await c.env.DB.batch([
       c.env.DB.prepare('DELETE FROM transaction_meta WHERE transaction_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM transaction_tags WHERE transaction_id = ?').bind(id),
-      c.env.DB.prepare('DELETE FROM transactions WHERE id = ?').bind(id)
+      c.env.DB.prepare('DELETE FROM transactions WHERE id = ? AND user_id = ?').bind(id, scopeUserId)
     ]);
 
     return c.json({ success: true });
@@ -670,11 +805,14 @@ transactions.delete('/:id', async (c) => {
 // Exclude a single transaction from analytics
 transactions.post('/:id/exclude', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'UPDATE transactions SET is_excluded = 1 WHERE id = ?'
-    ).bind(id).run();
+      'UPDATE transactions SET is_excluded = 1 WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).run();
 
     if (result.meta.changes === 0) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -690,11 +828,14 @@ transactions.post('/:id/exclude', async (c) => {
 // Include a transaction back into analytics
 transactions.post('/:id/include', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
-      'UPDATE transactions SET is_excluded = 0 WHERE id = ?'
-    ).bind(id).run();
+      'UPDATE transactions SET is_excluded = 0 WHERE id = ? AND user_id = ?'
+    ).bind(id, scopeUserId).run();
 
     if (result.meta.changes === 0) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -710,6 +851,9 @@ transactions.post('/:id/include', async (c) => {
 // Bulk exclude transactions by criteria
 transactions.post('/bulk/exclude', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json() as {
       transaction_ids?: string[];
       amount_threshold?: number; // Exclude transactions >= this absolute amount
@@ -724,20 +868,20 @@ transactions.post('/bulk/exclude', async (c) => {
       // Exclude specific transactions
       const placeholders = transaction_ids.map(() => '?').join(',');
       const result = await c.env.DB.prepare(
-        `UPDATE transactions SET is_excluded = 1 WHERE id IN (${placeholders})`
-      ).bind(...transaction_ids).run();
+        `UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND id IN (${placeholders})`
+      ).bind(scopeUserId, ...transaction_ids).run();
       updated = result.meta.changes || 0;
     } else if (amount_threshold !== undefined) {
       // Exclude by amount threshold (absolute value)
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 1 WHERE ABS(amount) >= ?'
-      ).bind(amount_threshold).run();
+        'UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND ABS(amount) >= ?'
+      ).bind(scopeUserId, amount_threshold).run();
       updated = result.meta.changes || 0;
     } else if (merchant_name) {
       // Exclude by merchant name (matches description)
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 1 WHERE description LIKE ?'
-      ).bind(`%${merchant_name}%`).run();
+        'UPDATE transactions SET is_excluded = 1 WHERE user_id = ? AND description LIKE ?'
+      ).bind(scopeUserId, `%${merchant_name}%`).run();
       updated = result.meta.changes || 0;
     } else {
       return c.json({ error: 'No criteria provided. Use transaction_ids, amount_threshold, or merchant_name.' }, 400);
@@ -753,6 +897,9 @@ transactions.post('/bulk/exclude', async (c) => {
 // Bulk include (un-exclude) transactions
 transactions.post('/bulk/include', async (c) => {
   try {
+    const scopeUserId = getScopeUserId(c as any);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const body = await c.req.json() as {
       transaction_ids?: string[];
       all?: boolean; // Include all excluded transactions back
@@ -765,15 +912,15 @@ transactions.post('/bulk/include', async (c) => {
     if (all === true) {
       // Un-exclude all transactions
       const result = await c.env.DB.prepare(
-        'UPDATE transactions SET is_excluded = 0 WHERE is_excluded = 1'
-      ).run();
+        'UPDATE transactions SET is_excluded = 0 WHERE user_id = ? AND is_excluded = 1'
+      ).bind(scopeUserId).run();
       updated = result.meta.changes || 0;
     } else if (transaction_ids && transaction_ids.length > 0) {
       // Include specific transactions
       const placeholders = transaction_ids.map(() => '?').join(',');
       const result = await c.env.DB.prepare(
-        `UPDATE transactions SET is_excluded = 0 WHERE id IN (${placeholders})`
-      ).bind(...transaction_ids).run();
+        `UPDATE transactions SET is_excluded = 0 WHERE user_id = ? AND id IN (${placeholders})`
+      ).bind(scopeUserId, ...transaction_ids).run();
       updated = result.meta.changes || 0;
     } else {
       return c.json({ error: 'No criteria provided. Use transaction_ids or all=true.' }, 400);
@@ -786,31 +933,44 @@ transactions.post('/bulk/include', async (c) => {
   }
 });
 
-// Reset all data (DANGER)
-transactions.delete('/admin/reset', async (c) => {
+// Reset all current-user data (DANGER)
+const handleResetData = async (c: Context<{ Bindings: Env }>) => {
   try {
-    // Verify some secret or just allow it? User requested it.
-    // Ideally requires a confirmation flag in body?
     const { confirm } = await c.req.json() as { confirm: boolean };
     if (confirm !== true) {
       return c.json({ error: 'Confirmation required' }, 400);
     }
 
+    const effectiveUser = getEffectiveUser(c as any);
+    if (!effectiveUser) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const userId = effectiveUser.id;
+
     await c.env.DB.batch([
-      c.env.DB.prepare('DELETE FROM transaction_meta'),
-      c.env.DB.prepare('DELETE FROM transaction_tags'),
-      c.env.DB.prepare('DELETE FROM transactions'),
-      c.env.DB.prepare('DELETE FROM ingested_files'),
-      // Also clear budgets and rules?? User said "delete all data".
-      // Maybe not config? I'll stick to transaction data for now.
+      // Scope strictly to the currently effective user (impersonated user when active).
+      c.env.DB.prepare(
+        `DELETE FROM transaction_tags
+         WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ?)`
+      ).bind(userId),
+      c.env.DB.prepare(
+        `DELETE FROM transaction_meta
+         WHERE transaction_id IN (SELECT id FROM transactions WHERE user_id = ?)`
+      ).bind(userId),
+      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM ingested_files WHERE user_id = ?').bind(userId),
     ]);
 
-    return c.json({ success: true, message: 'All transaction data deleted' });
+    return c.json({ success: true, message: 'All transaction data for current user deleted' });
   } catch (error) {
     console.error('Reset error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-});
+};
+
+transactions.delete('/actions/reset', handleResetData);
+transactions.delete('/admin/reset', handleResetData);
 
 // Detect transfers in existing data (heuristic backfill)
 transactions.post('/admin/detect-transfers', async (c) => {
@@ -1350,13 +1510,18 @@ transactions.get('/admin/diagnostics/suspicious-positive-purchases', async (c) =
   }
 });
 
-// Validate the integrity of ingested data for a date range (read-only; admin-protected by auth middleware).
+// Validate the integrity of ingested data for a date range (read-only; scoped to effective user).
 // This is designed to be fast and summary-only so scripts/UI can fail fast after imports.
-transactions.get('/admin/validate-ingest', async (c) => {
+const handleValidateIngest = async (c: Context<{ Bindings: Env }>) => {
   try {
+    const scopeUserId = getScopeUserId(c);
+    if (!scopeUserId) return c.json({ error: 'Unauthorized' }, 401);
+
     const q = c.req.query();
     const dateFrom = q.date_from;
     const dateTo = q.date_to;
+    const fileHashRaw = typeof q.file_hash === 'string' ? q.file_hash.trim() : '';
+    const fileHash = fileHashRaw.length > 0 ? fileHashRaw : null;
 
     const isIsoDate = (s: unknown) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
     if (!isIsoDate(dateFrom) || !isIsoDate(dateTo)) {
@@ -1369,9 +1534,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
         SELECT t.flow_type as flow_type, COUNT(*) as count
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
         GROUP BY t.flow_type
       `
-    ).bind(dateFrom, dateTo).all<{ flow_type: string; count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).all<{ flow_type: string; count: number }>();
 
     const flow_counts: Record<string, number> = {};
     for (const r of flowCountsRes.results || []) {
@@ -1388,8 +1554,9 @@ transactions.get('/admin/validate-ingest', async (c) => {
           SUM(CASE WHEN t.amount = 0 AND COALESCE(t.is_excluded, 0) = 0 THEN 1 ELSE 0 END) as zero_amount_active
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
       `
-    ).bind(dateFrom, dateTo).first<{
+    ).bind(dateFrom, dateTo, scopeUserId).first<{
       total: number;
       excluded: number;
       zero_amount_excluded: number;
@@ -1401,9 +1568,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
         SELECT t.source_type as source_type, COUNT(*) as count
         FROM transactions t
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
         GROUP BY t.source_type
       `
-    ).bind(dateFrom, dateTo).all<{ source_type: string; count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).all<{ source_type: string; count: number }>();
 
     const source_counts: Record<string, number> = {};
     for (const r of sourceCountsRes.results || []) {
@@ -1420,11 +1588,12 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND t.flow_type = 'expense'
       `
-    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ tx_count: number; sum_abs: number }>();
 
     const groceriesFallback = await c.env.DB.prepare(
       `
@@ -1434,6 +1603,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND (
@@ -1441,7 +1611,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
             (t.flow_type = 'unknown' AND t.amount < 0)
           )
       `
-    ).bind(dateFrom, dateTo).first<{ tx_count: number; sum_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ tx_count: number; sum_abs: number }>();
 
     const groceriesIncomeLeak = await c.env.DB.prepare(
       `
@@ -1449,11 +1619,29 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND tm.category_id = 'cat_food_groceries'
           AND t.flow_type = 'income'
       `
-    ).bind(dateFrom, dateTo).first<{ count: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
+
+    // True sign mismatch for groceries: positive amounts on active, non-transfer groceries rows.
+    // This is a stricter and less noisy signal than comparing strict-vs-fallback flow buckets.
+    const groceriesWrongSign = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM transactions t
+        JOIN transaction_meta tm ON t.id = tm.transaction_id
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          AND COALESCE(t.is_transfer, 0) = 0
+          AND t.flow_type != 'transfer'
+          AND tm.category_id = 'cat_food_groceries'
+          AND t.amount > 0
+      `
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ count: number }>();
 
     // Match /analytics/by-category behavior for groceries, including splits and excluding transfers by default.
     const groceriesAnalytics = await c.env.DB.prepare(
@@ -1466,6 +1654,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           FROM transactions t
           LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
           WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND t.user_id = ?
             AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
             AND COALESCE(t.is_excluded, 0) = 0
             AND COALESCE(t.is_transfer, 0) = 0
@@ -1481,6 +1670,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           FROM transactions t
           JOIN transaction_splits ts ON ts.parent_transaction_id = t.id
           WHERE t.tx_date >= ? AND t.tx_date <= ?
+            AND t.user_id = ?
             AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
             AND COALESCE(t.is_excluded, 0) = 0
             AND COALESCE(t.is_transfer, 0) = 0
@@ -1491,7 +1681,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM categorized
         WHERE categorized.category_id = 'cat_food_groceries'
       `
-    ).bind(dateFrom, dateTo, dateFrom, dateTo).first<{ total: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId, dateFrom, dateTo, scopeUserId).first<{ total: number }>();
 
     // Base-transaction sum (matches /transactions listing without splits).
     const groceriesTxBase = await c.env.DB.prepare(
@@ -1500,13 +1690,14 @@ transactions.get('/admin/validate-ingest', async (c) => {
         FROM transactions t
         JOIN transaction_meta tm ON t.id = tm.transaction_id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND COALESCE(t.is_transfer, 0) = 0
           AND t.flow_type != 'transfer'
           AND tm.category_id = 'cat_food_groceries'
           AND (t.flow_type = 'expense' OR (t.flow_type = 'unknown' AND t.amount < 0))
       `
-    ).bind(dateFrom, dateTo).first<{ total: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId).first<{ total: number }>();
 
     const groceries_strict_sum = Number(groceriesStrict?.sum_abs || 0);
     const groceries_fallback_sum = Number(groceriesFallback?.sum_abs || 0);
@@ -1538,6 +1729,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         LEFT JOIN transaction_meta tm ON t.id = tm.transaction_id
         LEFT JOIN merchants m ON tm.merchant_id = m.id
         WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
           AND COALESCE(t.is_excluded, 0) = 0
           AND t.flow_type = 'income'
           AND (${keywordClause})
@@ -1545,7 +1737,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
         ORDER BY count DESC, total_abs DESC
         LIMIT 20
       `
-    ).bind(dateFrom, dateTo, ...keywordParams).all<{ description: string; count: number; total_abs: number }>();
+    ).bind(dateFrom, dateTo, scopeUserId, ...keywordParams).all<{ description: string; count: number; total_abs: number }>();
 
     const suspicious_income = (suspiciousIncomeRes.results || []).map((r) => ({
       description: r.description,
@@ -1553,13 +1745,39 @@ transactions.get('/admin/validate-ingest', async (c) => {
       total_abs: r.total_abs,
     }));
 
+    const suspiciousSerialAmountRes = await c.env.DB.prepare(
+      `
+        SELECT COUNT(*) as count
+        FROM transactions t
+        WHERE t.tx_date >= ? AND t.tx_date <= ?
+          AND t.user_id = ?
+          AND COALESCE(t.is_excluded, 0) = 0
+          ${fileHash ? 'AND t.source_file_hash = ?' : ''}
+          AND ABS(t.amount) BETWEEN 30000 AND 60000
+          AND CAST(ABS(t.amount) AS INTEGER) = ABS(t.amount)
+          AND (
+            ABS(
+              ABS(t.amount) - CAST(julianday(t.tx_date) - julianday('1899-12-30') AS INTEGER)
+            ) <= 3
+            OR (
+              t.booked_date IS NOT NULL
+              AND ABS(
+                ABS(t.amount) - CAST(julianday(t.booked_date) - julianday('1899-12-30') AS INTEGER)
+              ) <= 3
+            )
+          )
+      `
+    ).bind(...(fileHash ? [dateFrom, dateTo, scopeUserId, fileHash] : [dateFrom, dateTo, scopeUserId])).first<{ count: number }>();
+    const suspicious_serial_amounts = Number(suspiciousSerialAmountRes?.count || 0);
+
     const zero_active = Number(statsRes?.zero_amount_active || 0);
     const suspicious_count = suspicious_income.reduce((acc, r) => acc + (r.count || 0), 0);
 
     const failures: string[] = [];
     if (zero_active > 0) failures.push('zero_amount_rows_active');
     if (suspicious_count > 0) failures.push('suspicious_income_purchases');
-    if (groceries_flow_delta > 1) failures.push('groceries_flow_type_mismatch');
+    if (suspicious_serial_amounts > 0) failures.push('suspicious_serial_amounts');
+    if (Number(groceriesWrongSign?.count || 0) > 0) failures.push('groceries_flow_type_mismatch');
     if (groceries_analytics_delta > 1) failures.push('groceries_analytics_mismatch');
     if (Number(groceriesIncomeLeak?.count || 0) > 0) failures.push('groceries_income_leak');
 
@@ -1575,6 +1793,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           active: zero_active,
           excluded: Number(statsRes?.zero_amount_excluded || 0),
         },
+        suspicious_serial_amounts,
         source_type: source_counts,
       },
       groceries: {
@@ -1590,6 +1809,7 @@ transactions.get('/admin/validate-ingest', async (c) => {
           sum_abs: groceries_fallback_sum,
         },
         flow_delta: groceries_flow_delta,
+        wrong_sign_count: Number(groceriesWrongSign?.count || 0),
         income_leak_count: Number(groceriesIncomeLeak?.count || 0),
       },
       suspicious_income,
@@ -1598,7 +1818,10 @@ transactions.get('/admin/validate-ingest', async (c) => {
     console.error('Validate ingest error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-});
+};
+
+transactions.get('/validate/ingest', handleValidateIngest);
+transactions.get('/admin/validate-ingest', handleValidateIngest);
 
 // Hard D1 diagnostics for categorization within a date range (admin-only; source of truth).
 // This intentionally uses the same join shape as analytics (transaction_meta.category_id),
@@ -1936,6 +2159,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
           t.amount,
           t.description,
           t.merchant,
+          t.merchant_raw,
           t.source_type,
           t.tx_hash,
           t.raw_json,
@@ -1954,6 +2178,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       amount: number;
       description: string;
       merchant: string | null;
+      merchant_raw: string | null;
       source_type: 'xlsx' | 'pdf' | 'manual';
       tx_hash: string;
       raw_json: string;
@@ -2020,6 +2245,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       // This addresses historical cases where a year token (e.g. 2026) became the amount.
       let nextDescription = r.description;
       let nextMerchant = r.merchant;
+      let nextMerchantRaw = r.merchant_raw || r.merchant;
       let amountForClassify = r.amount;
 
       if (r.source_type === 'pdf' && rawLine) {
@@ -2040,7 +2266,10 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         }
 
         const merchantHint = extractMerchantFromPdfLine(rawLine);
-        if (merchantHint) nextMerchant = merchantHint;
+        if (merchantHint) {
+          nextMerchant = merchantHint;
+          nextMerchantRaw = merchantHint;
+        }
 
         if (rawObj && typeof rawObj === 'object') {
           rawObj.parsed_description = nextDescription;
@@ -2062,7 +2291,10 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         }
       }
 
-      const forcedTransfer = r.is_transfer === 1 && !isStraksbetalingDescription(nextDescription);
+      const forcedTransfer =
+        r.is_transfer === 1 &&
+        !isStraksbetalingDescription(nextDescription) &&
+        !isFelleskontoDescription(nextDescription);
       const classification = forcedTransfer
         ? { flow_type: 'transfer' as const, reason: 'forced-is_transfer' }
         : classifyFlowType({
@@ -2089,18 +2321,25 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       })();
 
       const normalized = normalizeAmountAndFlags({ flow_type: nextFlow, amount: preNormalizedAmount });
+      const merchantNormalized = normalizeMerchant(nextMerchant || '', nextDescription || '');
+      const finalMerchant = merchantNormalized.merchant;
+      const finalMerchantRaw = nextMerchantRaw || merchantNormalized.merchant_raw || null;
 
       const nextAmount = normalized.amount;
-      const wasLegacyStraksTransfer = r.is_transfer === 1 && isStraksbetalingDescription(nextDescription);
+      const wasLegacyForcedExpenseTransfer =
+        r.is_transfer === 1 &&
+        (isStraksbetalingDescription(nextDescription) || isFelleskontoDescription(nextDescription));
       const nextIsTransfer = nextFlow === 'transfer' ? 1 : 0;
-      const nextIsExcluded = nextFlow === 'transfer' ? 1 : (wasLegacyStraksTransfer ? 0 : r.is_excluded);
+      const nextIsExcluded = nextFlow === 'transfer' ? 1 : (wasLegacyForcedExpenseTransfer ? 0 : r.is_excluded);
 
       const flowDiff = String(r.flow_type || 'unknown') !== nextFlow;
       const signDiff = nextAmount !== r.amount;
       const transferDiff = nextIsTransfer !== r.is_transfer;
       const excludedDiff = nextIsExcluded !== r.is_excluded;
       const descriptionDiff = nextDescription !== r.description;
-      const merchantDiff = (nextMerchant || null) !== (r.merchant || null);
+      const merchantDiff =
+        (finalMerchant || null) !== (r.merchant || null) ||
+        (finalMerchantRaw || null) !== (r.merchant_raw || null);
 
       if (flowDiff) flowChanged++;
       if (signDiff) signFixed++;
@@ -2138,7 +2377,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
         c.env.DB.prepare(
           `
             UPDATE transactions
-            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?, description = ?, merchant = ?, raw_json = ?
+            SET flow_type = ?, amount = ?, tx_hash = ?, is_transfer = ?, is_excluded = ?, description = ?, merchant = ?, merchant_raw = ?, raw_json = ?
             WHERE id = ?
           `
         ).bind(
@@ -2148,7 +2387,8 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
           nextIsTransfer,
           nextIsExcluded,
           nextDescription,
-          nextMerchant || null,
+          finalMerchant || null,
+          finalMerchantRaw,
           rawObj ? JSON.stringify(rawObj) : r.raw_json,
           r.id
         )
@@ -2375,6 +2615,15 @@ transactions.post('/admin/reclassify-other', async (c) => {
 
     for (const r of rows) {
       const combined = buildCombinedText(r.merchant, r.description);
+
+      // Deterministic high-confidence hints first.
+      const hintCategory = getCategoryHint(combined, Number(r.amount));
+      if (hintCategory) {
+        const nextNotes = r.notes ? `${r.notes}\n${stamp}` : stamp;
+        updates.push({ id: r.id, category_id: hintCategory, notes: nextNotes });
+        continue;
+      }
+
       const s = score(combined);
       if (!s || !s.topCat) {
         skipped_no_score++;
@@ -2463,6 +2712,108 @@ transactions.post('/admin/reclassify-other', async (c) => {
     });
   } catch (error) {
     console.error('Reclassify other error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Normalize merchant values across existing rows.
+// Useful after introducing deterministic merchant normalization logic.
+transactions.post('/admin/normalize-merchants', async (c) => {
+  try {
+    const body = (await c.req.json().catch(() => null)) as
+      | {
+          cursor?: unknown;
+          limit?: unknown;
+          dry_run?: unknown;
+        }
+      | null;
+
+    const cursor = typeof body?.cursor === 'string' ? body.cursor : '';
+    const limitRaw = typeof body?.limit === 'number' ? body.limit : Number(body?.limit);
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(50, limitRaw), 1000) : 300;
+    const dryRun = body?.dry_run === true;
+
+    const rows = await c.env.DB
+      .prepare(
+        `
+          SELECT id, description, merchant, merchant_raw, raw_json
+          FROM transactions
+          WHERE id > ?
+          ORDER BY id ASC
+          LIMIT ?
+        `
+      )
+      .bind(cursor, limit)
+      .all<{
+        id: string;
+        description: string;
+        merchant: string | null;
+        merchant_raw: string | null;
+        raw_json: string | null;
+      }>();
+
+    const txs = rows.results || [];
+    const scanned = txs.length;
+    const nextCursor = scanned > 0 ? txs[scanned - 1].id : null;
+
+    const updates: D1PreparedStatement[] = [];
+    let wouldUpdate = 0;
+
+    for (const tx of txs) {
+      const sourceRaw = tx.merchant_raw || tx.merchant || tx.description || '';
+      const normalized = normalizeMerchant(sourceRaw, tx.description || '');
+
+      const merchantNext = normalized.merchant || null;
+      const merchantRawNext = normalized.merchant_raw || null;
+      const merchantChanged = (tx.merchant || null) !== merchantNext || (tx.merchant_raw || null) !== merchantRawNext;
+      if (!merchantChanged) continue;
+
+      wouldUpdate++;
+      if (dryRun) continue;
+
+      let nextRawJson = tx.raw_json;
+      try {
+        if (tx.raw_json) {
+          const parsed = JSON.parse(tx.raw_json);
+          if (parsed && typeof parsed === 'object') {
+            (parsed as any).merchant_raw = merchantRawNext;
+            (parsed as any).merchant_normalized = merchantNext;
+            (parsed as any).merchant_kind = normalized.merchant_kind;
+            nextRawJson = JSON.stringify(parsed);
+          }
+        }
+      } catch {
+        // keep old raw_json when malformed
+      }
+
+      updates.push(
+        c.env.DB
+          .prepare(
+            `
+              UPDATE transactions
+              SET merchant = ?, merchant_raw = ?, raw_json = ?
+              WHERE id = ?
+            `
+          )
+          .bind(merchantNext, merchantRawNext, nextRawJson, tx.id)
+      );
+    }
+
+    if (!dryRun && updates.length > 0) {
+      await c.env.DB.batch(updates);
+    }
+
+    return c.json({
+      success: true,
+      dry_run: dryRun,
+      scanned,
+      would_update: wouldUpdate,
+      updated: dryRun ? 0 : updates.length,
+      next_cursor: scanned === limit ? nextCursor : null,
+      done: scanned < limit,
+    });
+  } catch (error) {
+    console.error('Normalize merchants error:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });

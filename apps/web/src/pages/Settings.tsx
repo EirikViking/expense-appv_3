@@ -9,6 +9,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from '@/components/ui/input';
 import { useTranslation } from 'react-i18next';
 import { InviteShareCard } from '@/components/InviteShareCard';
+import { GIT_COMMIT } from '@/lib/version';
+import { Link } from 'react-router-dom';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+
+const buildId = GIT_COMMIT.slice(0, 7);
 
 type UserDraft = {
   name: string;
@@ -18,8 +24,8 @@ type UserDraft = {
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const { user, actorUser, isImpersonating, checkAuth } = useAuth();
+  const isAdmin = actorUser?.role === 'admin';
 
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetPhrase, setResetPhrase] = useState('');
@@ -30,6 +36,8 @@ export function SettingsPage() {
   const [usersError, setUsersError] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, UserDraft>>({});
   const [savingUserId, setSavingUserId] = useState<string | null>(null);
+  const [impersonatingUserId, setImpersonatingUserId] = useState<string | null>(null);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
@@ -146,6 +154,43 @@ export function SettingsPage() {
     }
   };
 
+  const impersonateUser = async (targetUserId: string) => {
+    setImpersonatingUserId(targetUserId);
+    setUsersError(null);
+    try {
+      await api.adminImpersonateUser(targetUserId);
+      await checkAuth();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.impersonateFailed'));
+    } finally {
+      setImpersonatingUserId(null);
+    }
+  };
+
+  const clearImpersonation = async () => {
+    setUsersError(null);
+    try {
+      await api.adminClearImpersonation();
+      await checkAuth();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.impersonateFailed'));
+    }
+  };
+
+  const deleteUser = async (targetUser: AppUser) => {
+    if (!window.confirm(t('settingsUsers.deleteConfirm', { name: targetUser.name }))) return;
+    setDeletingUserId(targetUser.id);
+    setUsersError(null);
+    try {
+      await api.adminDeleteUser(targetUser.id);
+      await loadUsers();
+    } catch (err) {
+      setUsersError(err instanceof Error ? err.message : t('settingsUsers.deleteFailed'));
+    } finally {
+      setDeletingUserId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
@@ -159,14 +204,25 @@ export function SettingsPage() {
           <CardDescription>{t('settingsPage.appearanceDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div className="flex flex-wrap items-center gap-6 p-4 border border-white/15 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-white/70">{t('lang.language')}</span>
+              <LanguageSwitcher />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-white/70">{t('theme.label')}</span>
+              <ThemeSwitcher />
+            </div>
+          </div>
+
           <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
             <div className="space-y-0.5">
               <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>
-              <p className="text-sm text-white/70">{t('settingsPage.showBudgetsDisabledHelp')}</p>
+              <p className="text-sm text-white/70">{t('settingsPage.showBudgetsHelp')}</p>
             </div>
-            <span className="rounded bg-white/10 px-2 py-1 text-xs text-white/70">
-              {t('budgetsPage.comingSoon')}
-            </span>
+            <Link to="/budgets" className="rounded bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15">
+              {t('settingsPage.manageInBudgets')}
+            </Link>
           </div>
         </CardContent>
       </Card>
@@ -244,6 +300,17 @@ export function SettingsPage() {
               </div>
             )}
 
+            {isImpersonating && actorUser && (
+              <div className="rounded-md border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+                <p className="mb-2">
+                  {t('settingsUsers.impersonatingAs')}: <strong>{user?.name || user?.email}</strong>
+                </p>
+                <Button variant="outline" size="sm" onClick={() => void clearImpersonation()}>
+                  {t('settingsUsers.stopImpersonation')}
+                </Button>
+              </div>
+            )}
+
             <div className="space-y-2">
               {usersLoading && <p className="text-sm text-white/70">{t('settingsUsers.loading')}</p>}
               {!usersLoading && users.map((u) => {
@@ -282,9 +349,25 @@ export function SettingsPage() {
                         {t('settingsUsers.active')}
                       </label>
                     </div>
-                    <div className="flex items-end gap-2 md:justify-end">
+                    <div className="flex flex-wrap items-end gap-2 md:col-span-7 md:justify-end">
                       <Button size="sm" variant="outline" onClick={() => void createResetLink(u.id)}>
                         {t('settingsUsers.resetLink')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={impersonatingUserId === u.id || isImpersonating || u.id === actorUser?.id}
+                        onClick={() => void impersonateUser(u.id)}
+                      >
+                        {impersonatingUserId === u.id ? t('settingsUsers.loading') : t('settingsUsers.impersonate')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingUserId === u.id || u.id === actorUser?.id}
+                        onClick={() => void deleteUser(u)}
+                      >
+                        {deletingUserId === u.id ? t('settingsPage.deleting') : t('transactions.delete')}
                       </Button>
                       <Button size="sm" disabled={savingUserId === u.id} onClick={() => void saveUser(u)}>
                         {savingUserId === u.id ? t('settingsUsers.saving') : t('settingsUsers.save')}
@@ -369,6 +452,10 @@ export function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <p className="text-right text-xs text-white/55">
+        {t('settingsPage.buildLabel')}: <code className="rounded bg-white/10 px-1.5 py-0.5">{buildId}</code>
+      </p>
     </div>
   );
 }

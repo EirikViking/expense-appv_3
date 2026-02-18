@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import nb from '@/i18n/locales/nb.json';
 
 describe('nb locale encoding and required strings', () => {
@@ -21,8 +21,10 @@ describe('nb locale encoding and required strings', () => {
     ];
 
     for (const str of candidates) {
-      expect(str).not.toContain('�');
+      expect(str).not.toContain('\uFFFD');
+      expect(str).not.toContain('Ã');
       expect(str).not.toContain('?');
     }
   });
 });
+

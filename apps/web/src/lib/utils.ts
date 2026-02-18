@@ -44,8 +44,8 @@ export function formatCurrency(amount: number, showSign = false): string {
   const safeAmount = toFiniteNumber(amount);
   const formatted = new Intl.NumberFormat('nb-NO', {
     style: 'decimal',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(Math.abs(safeAmount));
 
   const sign = showSign ? (safeAmount >= 0 ? '+' : '-') : (safeAmount < 0 ? '-' : '');
@@ -57,12 +57,12 @@ export function formatCompactCurrency(amount: number): string {
   const safeAmount = toFiniteNumber(amount);
   if (!Number.isFinite(safeAmount)) return '0 kr';
   if (Math.abs(safeAmount) >= 1000000) {
-    return `${(safeAmount / 1000000).toFixed(1)}M kr`;
+    return `${Math.round(safeAmount / 1000000)}M kr`;
   }
   if (Math.abs(safeAmount) >= 1000) {
-    return `${(safeAmount / 1000).toFixed(1)}k kr`;
+    return `${Math.round(safeAmount / 1000)}k kr`;
   }
-  return `${safeAmount.toFixed(0)} kr`;
+  return `${Math.round(safeAmount)} kr`;
 }
 
 // Format percentage

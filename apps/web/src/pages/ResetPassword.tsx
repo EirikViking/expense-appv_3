@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 function normalizeTokenFromQuery(value: string): string {
@@ -15,6 +16,7 @@ function normalizeTokenFromQuery(value: string): string {
 
 export function ResetPasswordPage() {
   const { t } = useTranslation();
+  const { logout } = useAuth();
   const [searchParams] = useSearchParams();
   const token = useMemo(() => normalizeTokenFromQuery(searchParams.get('token') || ''), [searchParams]);
   const navigate = useNavigate();
@@ -23,6 +25,11 @@ export function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Avoid leaking the currently signed-in account into password-reset flows on shared devices.
+    void logout();
+  }, [logout]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

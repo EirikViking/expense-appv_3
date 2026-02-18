@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+﻿import { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BarChart,
@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Tag,
+  Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +31,7 @@ import {
   formatCurrency,
   formatCompactCurrency,
   formatPercentage,
+  formatDate,
   formatDateShort,
   formatDateLocal,
   formatMonth,
@@ -47,6 +49,7 @@ import type {
   FlowType,
   TransactionStatus,
   AnalyticsOverview,
+  BudgetTrackingPeriod,
 } from '@expense/shared';
 import { CATEGORY_IDS } from '@expense/shared';
 import { TransactionsDrilldownDialog } from '@/components/TransactionsDrilldownDialog';
@@ -54,9 +57,18 @@ import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { localizeCategoryName } from '@/lib/category-localization';
+import { darkenHexColor, getCategoryChartColor } from '@/lib/category-chart-colors';
+import { useAuth } from '@/context/AuthContext';
+import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
+import { SpendingConstellation } from '@/components/dashboard/SpendingConstellation';
+import { computeSpendingMomentum } from '@/lib/dashboard-momentum';
 
 export function DashboardPage() {
+  const DASHBOARD_CACHE_TTL_MS = 30_000;
+  const DASHBOARD_MERCHANTS_CACHE_TTL_MS = 30_000;
+  const DASHBOARD_TREND_CACHE_TTL_MS = 45_000;
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -66,14 +78,26 @@ export function DashboardPage() {
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown[]>([]);
   const [merchants, setMerchants] = useState<MerchantBreakdown[]>([]);
+  const [merchantComparisonPeriod, setMerchantComparisonPeriod] = useState<{
+    current_start: string;
+    current_end: string;
+    previous_start: string;
+    previous_end: string;
+  } | null>(null);
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([]);
   const [trendSeries, setTrendSeries] = useState<TimeSeriesPoint[]>([]);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
   const [trendMonths, setTrendMonths] = useState<3 | 6 | 12>(12);
   const [trendCategoryId, setTrendCategoryId] = useState<string>(CATEGORY_IDS.groceries);
   const [flatCategories, setFlatCategories] = useState<Category[]>([]);
   // Default ON: this is the main value of the dashboard for most users.
   const [showCategoryDetails, setShowCategoryDetails] = useState(true);
+  const [showConstellation, setShowConstellation] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('dashboard_show_constellation') !== '0';
+  });
   const baseRequestIdRef = useRef(0);
   const merchantRequestIdRef = useRef(0);
   const trendRequestIdRef = useRef(0);
@@ -81,6 +105,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCategoryId = searchParams.get('category_id') || '';
+  const userId = user?.id || 'anonymous';
 
   const defaultRange = useMemo(() => {
     const stored = loadLastDateRange();
@@ -145,6 +170,11 @@ export function DashboardPage() {
     else if (!dateFrom && !dateTo) clearLastDateRange();
   }, [dateFrom, dateTo]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('dashboard_show_constellation', showConstellation ? '1' : '0');
+  }, [showConstellation]);
+
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);
   const [drilldownTitle, setDrilldownTitle] = useState('');
@@ -152,6 +182,7 @@ export function DashboardPage() {
   const [drilldownCategory, setDrilldownCategory] = useState<string | undefined>();
   const [drilldownMerchantId, setDrilldownMerchantId] = useState<string | undefined>();
   const [drilldownMerchantName, setDrilldownMerchantName] = useState<string | undefined>();
+  const [drilldownTransactionId, setDrilldownTransactionId] = useState<string | undefined>();
   const [drilldownDateFrom, setDrilldownDateFrom] = useState<string | undefined>();
   const [drilldownDateTo, setDrilldownDateTo] = useState<string | undefined>();
   const [drilldownStatus, setDrilldownStatus] = useState<TransactionStatus | undefined>();
@@ -171,6 +202,7 @@ export function DashboardPage() {
     setDrilldownCategory(undefined);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
+    setDrilldownTransactionId(undefined);
     setDrilldownDateFrom(overview?.period.start);
     setDrilldownDateTo(overview?.period.end);
     setDrilldownOpen(true);
@@ -190,6 +222,7 @@ export function DashboardPage() {
     setDrilldownCategory(trendCategoryId);
     setDrilldownMerchantId(undefined);
     setDrilldownMerchantName(undefined);
+    setDrilldownTransactionId(undefined);
     setDrilldownDateFrom(start);
     setDrilldownDateTo(end);
     setDrilldownStatus(statusFilter ? (statusFilter as TransactionStatus) : undefined);
@@ -210,12 +243,58 @@ export function DashboardPage() {
   useEffect(() => {
     const requestId = ++baseRequestIdRef.current;
     const hasLoadedOnce = Boolean(overview);
+    const baseCacheKey = makePageCacheKey('dashboard:base', {
+      userId,
+      dateFrom,
+      dateTo,
+      status: statusFilter || '',
+      includeTransfers: !excludeTransfers,
+    });
+    const cached = readPageCache<{
+      overview: AnalyticsOverview | null;
+      categories: CategoryBreakdown[];
+      timeseries: TimeSeriesPoint[];
+      anomalies: AnomalyItem[];
+      budgetTracking: BudgetTrackingPeriod[];
+      budgetsEnabled: boolean;
+    }>(baseCacheKey);
+    if (cached) {
+      setOverview(cached.overview);
+      setCategories(cached.categories);
+      setTimeseries(cached.timeseries);
+      setAnomalies(cached.anomalies);
+      setBudgetTracking(cached.budgetTracking);
+      setBudgetsEnabled(cached.budgetsEnabled);
+      setLoading(false);
+      setIsRefreshing(false);
+      setLoadingAnomalies(false);
+    }
     if (hasLoadedOnce) setIsRefreshing(true);
     else setLoading(true);
 
     async function loadBaseData() {
       setLoadingAnomalies(true);
       try {
+        const overviewPromise = api.getAnalyticsOverview({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+        });
+        const categoriesPromise = api.getAnalyticsByCategory({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          include_transfers: !excludeTransfers,
+        });
+        const timeseriesPromise = api.getAnalyticsTimeseries({
+          date_from: dateFrom,
+          date_to: dateTo,
+          status: statusFilter || undefined,
+          granularity: 'day',
+          include_transfers: !excludeTransfers,
+        });
+        const budgetTrackingPromise = api.getBudgetTracking();
         const anomaliesPromise = api.getAnalyticsAnomalies({
           date_from: dateFrom,
           date_to: dateTo,
@@ -223,47 +302,43 @@ export function DashboardPage() {
           include_transfers: !excludeTransfers,
         });
 
-        const [overviewRes, categoriesRes, timeseriesRes] =
-          await Promise.allSettled([
-            api.getAnalyticsOverview({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-            }),
-            api.getAnalyticsByCategory({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              include_transfers: !excludeTransfers,
-            }),
-            api.getAnalyticsTimeseries({
-              date_from: dateFrom,
-              date_to: dateTo,
-              status: statusFilter || undefined,
-              granularity: 'day',
-              include_transfers: !excludeTransfers,
-            }),
-          ]);
+        const overviewRes = await overviewPromise;
+
+        if (requestId !== baseRequestIdRef.current) return;
+        setOverview(overviewRes);
+        setLoading(false);
+        setIsRefreshing(false);
+        const [categoriesRes, timeseriesRes, budgetTrackingRes, anomaliesRes] =
+          await Promise.allSettled([categoriesPromise, timeseriesPromise, budgetTrackingPromise, anomaliesPromise]);
 
         if (requestId !== baseRequestIdRef.current) return;
 
-        if (overviewRes.status === 'fulfilled') {
-          setOverview(overviewRes.value);
-        }
         if (categoriesRes.status === 'fulfilled') {
           setCategories(categoriesRes.value.categories);
         }
         if (timeseriesRes.status === 'fulfilled') {
           setTimeseries(timeseriesRes.value.series);
         }
+        if (budgetTrackingRes.status === 'fulfilled') {
+          setBudgetTracking(budgetTrackingRes.value.periods || []);
+          setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
+        }
+        if (anomaliesRes.status === 'fulfilled') {
+          setAnomalies(anomaliesRes.value.anomalies.slice(0, 5));
+        }
 
-        setLoading(false);
-        setIsRefreshing(false);
-
-        const anomaliesRes = await anomaliesPromise;
-        if (requestId !== baseRequestIdRef.current) return;
-        setAnomalies(anomaliesRes.anomalies.slice(0, 5));
+        writePageCache(
+          baseCacheKey,
+          {
+            overview: overviewRes,
+            categories: categoriesRes.status === 'fulfilled' ? categoriesRes.value.categories : categories,
+            timeseries: timeseriesRes.status === 'fulfilled' ? timeseriesRes.value.series : timeseries,
+            anomalies: anomaliesRes.status === 'fulfilled' ? anomaliesRes.value.anomalies.slice(0, 5) : anomalies,
+            budgetTracking: budgetTrackingRes.status === 'fulfilled' ? (budgetTrackingRes.value.periods || []) : budgetTracking,
+            budgetsEnabled: budgetTrackingRes.status === 'fulfilled' ? Boolean(budgetTrackingRes.value.enabled) : budgetsEnabled,
+          },
+          DASHBOARD_CACHE_TTL_MS
+        );
       } catch (err) {
         if (requestId !== baseRequestIdRef.current) return;
         console.error('Failed to load dashboard data:', err);
@@ -277,10 +352,32 @@ export function DashboardPage() {
     }
 
     void loadBaseData();
-  }, [excludeTransfers, dateFrom, dateTo, statusFilter]);
+  }, [excludeTransfers, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
     const requestId = ++merchantRequestIdRef.current;
+    const merchantsCacheKey = makePageCacheKey('dashboard:merchants', {
+      userId,
+      dateFrom,
+      dateTo,
+      status: statusFilter || '',
+      includeTransfers: !excludeTransfers,
+      selectedCategoryId,
+    });
+    const cached = readPageCache<{
+      merchants: MerchantBreakdown[];
+      comparison_period: {
+        current_start: string;
+        current_end: string;
+        previous_start: string;
+        previous_end: string;
+      } | null;
+    }>(merchantsCacheKey);
+    if (cached) {
+      setMerchants(cached.merchants);
+      setMerchantComparisonPeriod(cached.comparison_period);
+      setLoadingMerchants(false);
+    }
     setLoadingMerchants(true);
 
     async function loadMerchants() {
@@ -288,13 +385,19 @@ export function DashboardPage() {
         const merchantsRes = await api.getAnalyticsByMerchant({
           date_from: dateFrom,
           date_to: dateTo,
-          limit: 20,
+          limit: 12,
           status: statusFilter || undefined,
           include_transfers: !excludeTransfers,
           category_id: selectedCategoryId || undefined,
         });
         if (requestId !== merchantRequestIdRef.current) return;
         setMerchants(merchantsRes.merchants);
+        setMerchantComparisonPeriod(merchantsRes.comparison_period ?? null);
+        writePageCache(
+          merchantsCacheKey,
+          { merchants: merchantsRes.merchants, comparison_period: merchantsRes.comparison_period ?? null },
+          DASHBOARD_MERCHANTS_CACHE_TTL_MS
+        );
       } catch (err) {
         if (requestId !== merchantRequestIdRef.current) return;
         console.error('Failed to load dashboard merchants:', err);
@@ -306,10 +409,21 @@ export function DashboardPage() {
     }
 
     void loadMerchants();
-  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter]);
+  }, [excludeTransfers, selectedCategoryId, dateFrom, dateTo, statusFilter, userId]);
 
   useEffect(() => {
     const requestId = ++trendRequestIdRef.current;
+    const trendCacheKey = makePageCacheKey('dashboard:trend', {
+      userId,
+      trendMonths,
+      trendCategoryId,
+      status: statusFilter || '',
+    });
+    const cached = readPageCache<TimeSeriesPoint[]>(trendCacheKey);
+    if (cached) {
+      setTrendSeries(cached);
+      setLoadingTrend(false);
+    }
     setLoadingTrend(true);
 
     async function loadTrend() {
@@ -323,6 +437,7 @@ export function DashboardPage() {
         });
         if (requestId !== trendRequestIdRef.current) return;
         setTrendSeries(trendRes.series);
+        writePageCache(trendCacheKey, trendRes.series, DASHBOARD_TREND_CACHE_TTL_MS);
       } catch (err) {
         if (requestId !== trendRequestIdRef.current) return;
         console.error('Failed to load dashboard trend:', err);
@@ -334,15 +449,25 @@ export function DashboardPage() {
     }
 
     void loadTrend();
-  }, [trendMonths, trendCategoryId, statusFilter]);
+  }, [trendMonths, trendCategoryId, statusFilter, userId]);
 
-  const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280'];
   const categorizedCount = categories.filter((cat) => cat.category_id).length;
   const hasCategorization = categorizedCount > 0;
 
   const selectedCategory = selectedCategoryId
     ? categories.find((c) => c.category_id === selectedCategoryId) || null
     : null;
+
+  const getSafeTrend = (merchant: MerchantBreakdown): number | null => {
+    const prevTotal = Number(merchant.previous_total ?? 0);
+    const trend = Number(merchant.trend);
+    if (!Number.isFinite(trend) || prevTotal <= 0) return null;
+    if (merchant.trend_basis_valid === false) return null;
+    const expected = ((Number(merchant.total) - prevTotal) / prevTotal) * 100;
+    if (!Number.isFinite(expected)) return null;
+    if (Math.abs(expected - trend) > 0.25) return null;
+    return trend;
+  };
 
   const topExpenseCategoryTiles = useMemo(() => {
     const rows = categories
@@ -354,6 +479,107 @@ export function DashboardPage() {
       .sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
       .slice(0, 4);
   }, [categories]);
+
+  const constellationItems = useMemo(() => {
+    return topExpenseCategoryTiles.slice(0, 6).map((category, index) => {
+      const seed = String(category.category_id || category.category_name || index);
+      const fill = category.category_color || getCategoryChartColor(seed);
+      return {
+        id: String(category.category_id || category.category_name || index),
+        name: localizeCategoryName(category.category_name, currentLanguage),
+        total: Math.abs(category.total),
+        count: category.count,
+        fill,
+        depthFill: darkenHexColor(fill, 0.32),
+      };
+    });
+  }, [topExpenseCategoryTiles, currentLanguage]);
+
+  const momentumEndDate = useMemo(() => {
+    const today = formatDateLocal(new Date());
+    return dateTo > today ? today : dateTo;
+  }, [dateTo]);
+
+  const spendingMomentum = useMemo(
+    () => computeSpendingMomentum(timeseries, { start: dateFrom, end: momentumEndDate }),
+    [timeseries, dateFrom, momentumEndDate]
+  );
+
+  const formatAbsolutePercent = (value: number) => {
+    const locale = currentLanguage === 'nb' ? 'nb-NO' : 'en-US';
+    const formatted = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(Math.abs(value));
+    return `${formatted}%`;
+  };
+
+  const momentumText = useMemo(() => {
+    if (!spendingMomentum || spendingMomentum.changePct === null) {
+      return currentLanguage === 'nb' ? 'For lite historikk ennÃ¥' : 'Not enough history yet';
+    }
+
+    const pct = formatAbsolutePercent(spendingMomentum.changePct);
+    if (spendingMomentum.trend === 'heating') {
+      return currentLanguage === 'nb' ? `${pct} opp mot fÃ¸rste halvdel` : `${pct} up vs first half`;
+    }
+    if (spendingMomentum.trend === 'cooling') {
+      return currentLanguage === 'nb' ? `${pct} ned mot fÃ¸rste halvdel` : `${pct} down vs first half`;
+    }
+    return currentLanguage === 'nb' ? 'Stabil utvikling i perioden' : 'Stable movement in this period';
+  }, [spendingMomentum, currentLanguage]);
+
+  const momentumHelpText = useMemo(() => {
+    return currentLanguage === 'nb'
+      ? 'Momentum sammenligner total forbruk i andre halvdel av valgt periode mot f\u00F8rste halvdel.'
+      : 'Momentum compares total spending in the second half of the selected period against the first half.';
+  }, [currentLanguage]);
+
+  const momentumBreakdownText = useMemo(() => {
+    if (!spendingMomentum || spendingMomentum.changePct === null) return '';
+    if (currentLanguage === 'nb') {
+      const firstRange = spendingMomentum
+        ? `${formatDate(spendingMomentum.firstFrom)}-${formatDate(spendingMomentum.firstTo)}`
+        : '';
+      const secondRange = spendingMomentum
+        ? `${formatDate(spendingMomentum.secondFrom)}-${formatDate(spendingMomentum.secondTo)}`
+        : '';
+      return `1. halvdel${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
+    }
+    const firstRange = spendingMomentum
+      ? `${spendingMomentum.firstFrom}-${spendingMomentum.firstTo}`
+      : '';
+    const secondRange = spendingMomentum
+      ? `${spendingMomentum.secondFrom}-${spendingMomentum.secondTo}`
+      : '';
+    return `First half${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | Second half${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
+  }, [spendingMomentum, currentLanguage]);
+
+  const topCategoryPieData = useMemo(() => {
+    return categories.slice(0, 8).map((category, index) => {
+      const seed = String(category.category_id || category.category_name || index);
+      const fill = category.category_color || getCategoryChartColor(seed);
+      return {
+        ...category,
+        name: localizeCategoryName(category.category_name, currentLanguage),
+        fill,
+        depthFill: darkenHexColor(fill, 0.3),
+      };
+    });
+  }, [categories, currentLanguage]);
+
+  const openCategoryDrilldown = (entry: CategoryBreakdown) => {
+    const qs = new URLSearchParams();
+    qs.set('date_from', dateFrom);
+    qs.set('date_to', dateTo);
+    qs.set('include_transfers', excludeTransfers ? '0' : '1');
+    if (statusFilter) qs.set('status', statusFilter);
+    if (entry.category_id) qs.set('category_id', String(entry.category_id));
+    qs.set('flow_type', 'expense');
+    qs.set('sort_by', 'amount_abs');
+    qs.set('sort_order', 'desc');
+    navigate(`/transactions?${qs.toString()}`);
+  };
 
   if (loading && !overview) {
     return (
@@ -565,6 +791,52 @@ export function DashboardPage() {
         </Card>
       </div>
 
+      {budgetsEnabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('dashboard.budgetPulse')}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {budgetTracking.length === 0 ? (
+              <p className="text-sm text-white/65">{t('dashboard.budgetNoTargets')}</p>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-3">
+                {budgetTracking.map((item) => {
+                  const pct = Math.round(Math.min(100, Math.max(0, item.progress_ratio * 100)));
+                  const label =
+                    item.period === 'weekly'
+                      ? t('budgetsPage.period.weekly')
+                      : item.period === 'monthly'
+                        ? t('budgetsPage.period.monthly')
+                        : t('budgetsPage.period.yearly');
+                  const statusText =
+                    item.status === 'on_track'
+                      ? t('budgetsPage.status.on_track')
+                      : item.status === 'warning'
+                        ? t('budgetsPage.status.warning')
+                        : t('budgetsPage.status.over_budget');
+
+                  return (
+                    <div key={item.period} className="rounded-lg border border-white/12 bg-white/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium">{label}</p>
+                        <span className="text-xs text-white/70">{statusText}</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-cyan-300" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-xs text-white/70">
+                        {t('budgetsPage.spent')}: {formatCurrency(item.spent_amount)} / {formatCurrency(item.budget_amount)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Quick shortcuts */}
       {topExpenseCategoryTiles.length > 0 && (
         <section className="space-y-3" aria-labelledby="top-expense-categories-heading">
@@ -603,6 +875,59 @@ export function DashboardPage() {
         </section>
       )}
 
+            {constellationItems.length > 0 && (
+        <section className="space-y-3" aria-labelledby="spending-constellation-heading">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="spending-constellation-heading" className="text-sm font-semibold text-white/80">
+              {currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowConstellation((prev) => !prev)}
+              className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-white/10"
+            >
+              {showConstellation
+                ? currentLanguage === 'nb' ? 'Skjul' : 'Hide'
+                : currentLanguage === 'nb' ? 'Vis' : 'Show'}
+            </button>
+          </div>
+          {showConstellation ? (
+            <SpendingConstellation
+              title={currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+              subtitle={
+                currentLanguage === 'nb'
+                  ? 'Klikk en boble for å åpne transaksjoner i valgt kategori.'
+                  : 'Click a node to open transactions for that category.'
+              }
+              emptyLabel={t('dashboard.noCategorizedTransactions')}
+              hintLabel={
+                currentLanguage === 'nb'
+                  ? 'Størrelsen viser totalbeløp i perioden. Perfekt for rask sammenligning.'
+                  : 'Node size shows period totals for quick comparison.'
+              }
+              momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
+              momentumText={momentumText}
+              momentumHelpText={momentumHelpText}
+              momentumBreakdownText={momentumBreakdownText}
+              items={constellationItems}
+              onSelect={(id) => {
+                const selected = topExpenseCategoryTiles.find((category, index) => {
+                  const categoryId = String(category.category_id || category.category_name || index);
+                  return categoryId === id;
+                });
+                if (selected) openCategoryDrilldown(selected);
+              }}
+            />
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/65">
+              {currentLanguage === 'nb'
+                ? 'Forbruks-konstellasjon er skjult. Trykk "Vis" for å åpne den igjen.'
+                : 'Spending constellation is hidden. Press "Show" to open it again.'}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Charts */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Spending Trend */}
@@ -625,6 +950,7 @@ export function DashboardPage() {
                       setDrilldownCategory(undefined);
                       setDrilldownMerchantId(undefined);
                       setDrilldownMerchantName(undefined);
+                      setDrilldownTransactionId(undefined);
                       setDrilldownFlowType(undefined);
                       setDrilldownIncludeTransfers(!excludeTransfers);
                       setDrilldownMinAmount(undefined);
@@ -688,8 +1014,28 @@ export function DashboardPage() {
             {showCategoryDetails && hasCategorization ? (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
+                  <defs>
+                    <filter id="categoryPieShadow" x="-30%" y="-30%" width="160%" height="160%">
+                      <feDropShadow dx="0" dy="7" stdDeviation="5" floodColor="rgba(0,0,0,0.45)" />
+                    </filter>
+                  </defs>
                   <Pie
-                    data={categories.slice(0, 8).map(c => ({ ...c, name: c.category_name }))}
+                    data={topCategoryPieData}
+                    cx="50%"
+                    cy="52%"
+                    innerRadius={62}
+                    outerRadius={102}
+                    dataKey="total"
+                    nameKey="name"
+                    stroke="none"
+                    isAnimationActive={false}
+                  >
+                    {topCategoryPieData.map((entry, index) => (
+                      <Cell key={`cell-depth-${index}`} fill={entry.depthFill} opacity={0.95} />
+                    ))}
+                  </Pie>
+                  <Pie
+                    data={topCategoryPieData}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -697,26 +1043,19 @@ export function DashboardPage() {
                     paddingAngle={2}
                     dataKey="total"
                     nameKey="name"
+                    style={{ filter: 'url(#categoryPieShadow)' }}
                     label={({ name, percent }) =>
                       (percent ?? 0) > 0.05 ? `${name} ${((percent ?? 0) * 100).toFixed(0)}%` : ''
                     }
                     labelLine={false}
                     className="cursor-pointer outline-none"
                   >
-                    {categories.slice(0, 8).map((entry, index) => (
+                    {topCategoryPieData.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
-                        fill={entry.category_color || COLORS[index % COLORS.length]}
+                        fill={entry.fill}
                         className="cursor-pointer hover:opacity-80 transition-opacity"
-                        onClick={() => {
-                          updateSearch((next) => {
-                            if (entry.category_id) {
-                              next.set('category_id', entry.category_id);
-                            } else {
-                              next.delete('category_id');
-                            }
-                          });
-                        }}
+                        onClick={() => openCategoryDrilldown(entry)}
                       />
                     ))}
                   </Pie>
@@ -862,7 +1201,41 @@ export function DashboardPage() {
         {/* Top Merchants */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</CardTitle>
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <span>{selectedCategory ? t('dashboard.merchantsInCategory') : t('dashboard.topMerchants')}</span>
+                <span
+                  className="inline-flex text-white/60 cursor-help"
+                  title={
+                    merchantComparisonPeriod
+                      ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                          from: merchantComparisonPeriod.previous_start,
+                          to: merchantComparisonPeriod.previous_end,
+                        })
+                      : t('dashboard.topMerchantsTrendHint')
+                  }
+                  aria-label={
+                    merchantComparisonPeriod
+                      ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                          from: merchantComparisonPeriod.previous_start,
+                          to: merchantComparisonPeriod.previous_end,
+                        })
+                      : t('dashboard.topMerchantsTrendHint')
+                  }
+                  tabIndex={0}
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+              </CardTitle>
+              <p className="mt-1 text-xs text-white/60">
+                {merchantComparisonPeriod
+                  ? t('dashboard.topMerchantsTrendHintWithPeriod', {
+                      from: merchantComparisonPeriod.previous_start,
+                      to: merchantComparisonPeriod.previous_end,
+                    })
+                  : t('dashboard.topMerchantsTrendHint')}
+              </p>
+            </div>
             <Link to="/transactions" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
               {t('dashboard.viewAll')} <ArrowRight className="h-3 w-3" />
             </Link>
@@ -888,8 +1261,10 @@ export function DashboardPage() {
                       if (statusFilter) qs.set('status', statusFilter);
                       if (selectedCategoryId) qs.set('category_id', selectedCategoryId);
                       qs.set('flow_type', 'expense');
-                      // Prefer free-text search to include variants of the store name (e.g. "KIWI 505 BARCODE").
-                      qs.set('search', merchant.merchant_name);
+                      // Use merchant_name filter so backend can apply the same unknown-merchant semantics.
+                      if (merchant.merchant_name) {
+                        qs.set('merchant_name', merchant.merchant_name);
+                      }
                       navigate(`/transactions?${qs.toString()}`);
                     }}
                   >
@@ -904,9 +1279,12 @@ export function DashboardPage() {
                     </div>
                     <div className="text-right">
                       <p className="font-medium">{formatCurrency(merchant.total)}</p>
-                      {merchant.trend !== 0 && (
+                      {getSafeTrend(merchant) !== null && (
                         <p className={`text-xs ${merchant.trend > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                          {formatPercentage(merchant.trend)}
+                          {t('dashboard.trendVsPreviousPeriodWithTotal', {
+                            value: formatPercentage(getSafeTrend(merchant) as number),
+                            total: formatCurrency(merchant.previous_total || 0),
+                          })}
                         </p>
                       )}
                     </div>
@@ -937,7 +1315,27 @@ export function DashboardPage() {
             ) : anomalies.length > 0 ? (
               <div className="space-y-3">
                 {anomalies.map((anomaly, i) => (
-                  <div key={i} className="flex items-center justify-between p-2 rounded-lg bg-white/5">
+                  <button
+                    key={i}
+                    type="button"
+                    className="w-full flex items-center justify-between p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors text-left"
+                    onClick={() => {
+                      setDrilldownTitle(t('dashboard.unusualSpending'));
+                      setDrilldownSubtitle(anomaly.reason);
+                      setDrilldownCategory(undefined);
+                      setDrilldownMerchantId(undefined);
+                      setDrilldownMerchantName(undefined);
+                      setDrilldownTransactionId(anomaly.transaction_id);
+                      setDrilldownDateFrom(undefined);
+                      setDrilldownDateTo(undefined);
+                      setDrilldownStatus(undefined);
+                      setDrilldownFlowType(undefined);
+                      setDrilldownIncludeTransfers(undefined);
+                      setDrilldownMinAmount(undefined);
+                      setDrilldownMaxAmount(undefined);
+                      setDrilldownOpen(true);
+                    }}
+                  >
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">{anomaly.description}</p>
                       <p className="text-xs text-white/60">{anomaly.reason}</p>
@@ -953,7 +1351,7 @@ export function DashboardPage() {
                         {anomaly.severity}
                       </Badge>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             ) : (
@@ -968,6 +1366,7 @@ export function DashboardPage() {
         onOpenChange={setDrilldownOpen}
         title={drilldownTitle}
         subtitle={drilldownSubtitle}
+        transactionId={drilldownTransactionId}
         dateFrom={drilldownDateFrom}
         dateTo={drilldownDateTo}
         categoryId={drilldownCategory}
@@ -982,3 +1381,4 @@ export function DashboardPage() {
     </div>
   );
 }
+

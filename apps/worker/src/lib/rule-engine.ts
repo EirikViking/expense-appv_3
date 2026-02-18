@@ -334,14 +334,24 @@ export async function applyRulesToBatch(
 }
 
 // Get all enabled rules from database
-export async function getEnabledRules(db: D1Database): Promise<Rule[]> {
-  const result = await db
-    .prepare(`
-      SELECT * FROM rules
-      WHERE enabled = 1
-      ORDER BY priority ASC
-    `)
-    .all<Rule>();
+export async function getEnabledRules(db: D1Database, userId?: string | null): Promise<Rule[]> {
+  const result = userId
+    ? await db
+        .prepare(`
+          SELECT * FROM rules
+          WHERE enabled = 1
+            AND (user_id IS NULL OR user_id = ?)
+          ORDER BY priority ASC
+        `)
+        .bind(userId)
+        .all<Rule>()
+    : await db
+        .prepare(`
+          SELECT * FROM rules
+          WHERE enabled = 1
+          ORDER BY priority ASC
+        `)
+        .all<Rule>();
 
   return (result.results || []).map(r => ({
     ...r,

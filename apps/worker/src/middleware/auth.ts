@@ -27,7 +27,6 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next
         effectiveUser = sanitizeUser(target);
         impersonating = true;
       } else {
-        // Cleanup stale impersonation pointers.
         await c.env.DB
           .prepare('UPDATE sessions SET impersonated_user_id = NULL WHERE id = ?')
           .bind(sessionId)

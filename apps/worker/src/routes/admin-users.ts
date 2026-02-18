@@ -4,31 +4,17 @@ import {
   generateId,
   updateUserRequestSchema,
   type AdminUsersResponse,
-  type AppUser,
   type CreateUserResponse,
   type ResetLinkResponse,
 } from '@expense/shared';
 import type { Env } from '../types';
-import { issuePasswordToken, sanitizeUser, type SessionUser } from '../lib/auth';
+import { issuePasswordToken, sanitizeUser } from '../lib/auth';
+import { ensureAdmin, getSessionId } from '../lib/request-scope';
 
 const adminUsers = new Hono<{ Bindings: Env }>();
-
-function getAuthUser(c: any): SessionUser | null {
-  return (c.get('authUser') as SessionUser | undefined) ?? null;
-}
-function getSessionId(c: any): string | null {
-  return (c.get('sessionId') as string | undefined) ?? null;
-}
-
-function ensureAdmin(c: any): SessionUser | null {
-  const user = getAuthUser(c);
-  if (!user || user.role !== 'admin') return null;
-  return user;
-}
-
 adminUsers.get('/users', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const result = await c.env.DB
       .prepare(
@@ -49,7 +35,7 @@ adminUsers.get('/users', async (c) => {
 
 adminUsers.post('/users', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const body = await c.req.json();
     const parsed = createUserRequestSchema.safeParse(body);
@@ -100,7 +86,7 @@ adminUsers.post('/users', async (c) => {
 
 adminUsers.patch('/users/:id', async (c) => {
   try {
-    const authUser = ensureAdmin(c);
+    const authUser = ensureAdmin(c as any);
     if (!authUser) return c.json({ error: 'Forbidden' }, 403);
 
     const id = c.req.param('id');
@@ -172,7 +158,7 @@ adminUsers.patch('/users/:id', async (c) => {
 
 adminUsers.post('/users/:id/reset-link', async (c) => {
   try {
-    if (!ensureAdmin(c)) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
     const id = c.req.param('id');
     const existing = await c.env.DB
@@ -192,10 +178,9 @@ adminUsers.post('/users/:id/reset-link', async (c) => {
 
 adminUsers.post('/users/:id/impersonate', async (c) => {
   try {
-    const admin = ensureAdmin(c);
-    if (!admin) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
-    const sessionId = getSessionId(c);
+    const sessionId = getSessionId(c as any);
     if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
 
     const id = c.req.param('id');
@@ -219,10 +204,9 @@ adminUsers.post('/users/:id/impersonate', async (c) => {
 
 adminUsers.post('/impersonation/clear', async (c) => {
   try {
-    const admin = ensureAdmin(c);
-    if (!admin) return c.json({ error: 'Forbidden' }, 403);
+    if (!ensureAdmin(c as any)) return c.json({ error: 'Forbidden' }, 403);
 
-    const sessionId = getSessionId(c);
+    const sessionId = getSessionId(c as any);
     if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
 
     await c.env.DB
@@ -239,7 +223,7 @@ adminUsers.post('/impersonation/clear', async (c) => {
 
 adminUsers.delete('/users/:id', async (c) => {
   try {
-    const admin = ensureAdmin(c);
+    const admin = ensureAdmin(c as any);
     if (!admin) return c.json({ error: 'Forbidden' }, 403);
 
     const id = c.req.param('id');
@@ -254,6 +238,9 @@ adminUsers.delete('/users/:id', async (c) => {
     if (!existing) return c.json({ error: 'User not found' }, 404);
 
     await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM rules WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(id),
+      c.env.DB.prepare('DELETE FROM recurring WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM ingested_files WHERE user_id = ?').bind(id),
       c.env.DB.prepare('DELETE FROM password_tokens WHERE user_id = ?').bind(id),

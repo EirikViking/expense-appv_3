@@ -31,6 +31,7 @@ export interface Transaction {
   booked_date: string | null;
   description: string;
   merchant: string | null;
+  merchant_raw?: string | null;
   amount: number;
   currency: string;
   status: TransactionStatus;
@@ -165,6 +166,40 @@ export interface BudgetWithSpent {
   category_id: string | null;
   start_date: string | null;
   end_date: string | null;
+}
+
+export interface BudgetSettings {
+  enabled: boolean;
+  weekly_amount: number | null;
+  monthly_amount: number | null;
+  yearly_amount: number | null;
+  updated_at: string | null;
+}
+
+export type BudgetTrackingStatus = 'on_track' | 'warning' | 'over_budget';
+
+export interface BudgetTrackingPeriod {
+  period: Extract<BudgetPeriodType, 'weekly' | 'monthly' | 'yearly'>;
+  label: string;
+  start_date: string;
+  end_date: string;
+  budget_amount: number;
+  spent_amount: number;
+  remaining_amount: number;
+  progress_ratio: number;
+  status: BudgetTrackingStatus;
+  days_elapsed: number;
+  days_total: number;
+  days_remaining: number;
+  projected_spent: number;
+  projected_variance: number;
+}
+
+export interface BudgetTrackingResponse {
+  enabled: boolean;
+  settings: BudgetSettings;
+  periods: BudgetTrackingPeriod[];
+  generated_at: string;
 }
 
 export interface Recurring {
@@ -391,6 +426,13 @@ export interface UpdateBudgetRequest {
   end_date?: string | null;
 }
 
+export interface UpdateBudgetSettingsRequest {
+  enabled: boolean;
+  weekly_amount?: number | null;
+  monthly_amount?: number | null;
+  yearly_amount?: number | null;
+}
+
 // Recurring CRUD
 export interface CreateRecurringRequest {
   name: string;
@@ -473,6 +515,8 @@ export interface IngestResponse {
   skipped_duplicates: number;
   skipped_invalid: number;
   file_duplicate: boolean;
+  min_tx_date?: string;
+  max_tx_date?: string;
   /**
    * For PDF parsing: summary of skipped lines by reason
    * This helps users understand why some lines weren't parsed as transactions
@@ -539,6 +583,10 @@ export interface RulesResponse {
 
 export interface BudgetsResponse {
   budgets: BudgetWithSpent[];
+}
+
+export interface BudgetSettingsResponse {
+  settings: BudgetSettings;
 }
 
 export interface RecurringResponse {
@@ -610,6 +658,8 @@ export interface MerchantBreakdown {
   count: number;
   avg: number;
   trend: number; // Percentage change from previous period
+  previous_total?: number;
+  trend_basis_valid?: boolean;
 }
 
 export interface TimeSeriesPoint {
@@ -666,6 +716,7 @@ export interface PeriodComparison {
 // ============================================
 
 export interface TransactionsQuery {
+  transaction_id?: string;
   date_from?: string;
   date_to?: string;
   status?: TransactionStatus;
@@ -732,6 +783,12 @@ export interface CategoryBreakdownResponse {
 
 export interface MerchantBreakdownResponse {
   merchants: MerchantBreakdown[];
+  comparison_period?: {
+    current_start: string;
+    current_end: string;
+    previous_start: string;
+    previous_end: string;
+  };
 }
 
 export interface TimeSeriesResponse {

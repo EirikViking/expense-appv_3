@@ -14,6 +14,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { ArrowUpRight, ArrowDownRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import { TransactionDetailsDialog } from './TransactionDetailsDialog';
+import { useTranslation } from 'react-i18next';
+import { localizeCategoryName } from '@/lib/category-localization';
 
 interface TransactionsDrilldownDialogProps {
     open: boolean;
@@ -21,6 +23,7 @@ interface TransactionsDrilldownDialogProps {
     title: string;
     subtitle?: string;
     // Filter params
+    transactionId?: string;
     dateFrom?: string;
     dateTo?: string;
     merchantId?: string;
@@ -39,6 +42,7 @@ export function TransactionsDrilldownDialog({
     onOpenChange,
     title,
     subtitle,
+    transactionId,
     dateFrom,
     dateTo,
     merchantId,
@@ -51,6 +55,8 @@ export function TransactionsDrilldownDialog({
     minAmount,
     maxAmount,
 }: TransactionsDrilldownDialogProps) {
+    const { t, i18n } = useTranslation();
+    const currentLanguage = i18n.resolvedLanguage || i18n.language;
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<TransactionWithMeta[]>([]);
     const [total, setTotal] = useState(0);
@@ -62,24 +68,21 @@ export function TransactionsDrilldownDialog({
         if (open) {
             loadTransactions();
         }
-    }, [open, page, dateFrom, dateTo, merchantId, merchantName, categoryId, status, flowType, includeTransfers, minAmount, maxAmount]);
+    }, [open, page, transactionId, dateFrom, dateTo, merchantId, merchantName, categoryId, status, flowType, includeTransfers, minAmount, maxAmount]);
 
     const loadTransactions = async () => {
         setLoading(true);
         try {
-            // Merchant drilldown should include all variants of a store name.
-            // Exact equality (merchant_name=...) and merchant_id-only filtering often undercounts
-            // because many rows don't have merchant_id yet, or have slightly different text variants.
-            // Prefer free-text search when merchantName is provided.
             const merchantNeedle = merchantName?.trim() ? merchantName.trim() : undefined;
-            const effectiveSearch = (search && search.trim()) ? search.trim() : merchantNeedle;
-            const useMerchantIdFilter = Boolean(merchantId) && !merchantNeedle && !effectiveSearch;
+            const effectiveSearch = search?.trim() ? search.trim() : undefined;
+            const useMerchantIdFilter = Boolean(merchantId) && !merchantNeedle;
 
             const response = await api.getTransactions({
+                transaction_id: transactionId,
                 date_from: dateFrom,
                 date_to: dateTo,
                 merchant_id: useMerchantIdFilter ? merchantId : undefined,
-                merchant_name: undefined,
+                merchant_name: merchantNeedle,
                 search: effectiveSearch,
                 category_id: categoryId,
                 status: status,
@@ -176,7 +179,7 @@ export function TransactionsDrilldownDialog({
                                                         color: tx.category_color ?? undefined
                                                     }}
                                                 >
-                                                    {tx.category_name}
+                                                    {localizeCategoryName(tx.category_name, currentLanguage)}
                                                 </Badge>
                                             )}
                                             <span
@@ -194,7 +197,7 @@ export function TransactionsDrilldownDialog({
                             </div>
                         ) : (
                             <div className="flex items-center justify-center h-32 text-gray-500">
-                                No transactions found
+                                {t('transactions.noTransactionsFound')}
                             </div>
                         )}
                     </div>

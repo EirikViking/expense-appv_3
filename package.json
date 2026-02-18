@@ -5,18 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"pnpm:dev:*\"",
-    "dev:web": "pnpm --filter web dev",
-    "dev:worker": "pnpm --filter worker dev",
-    "build": "pnpm -r build",
-    "build:web": "pnpm --filter web build",
-    "build:worker": "pnpm --filter worker build",
-    "test": "pnpm --filter worker test",
-    "test:watch": "pnpm --filter worker test:watch",
+    "dev:web": "corepack pnpm --filter web dev",
+    "dev:worker": "corepack pnpm --filter worker dev",
+    "build": "corepack pnpm -r build",
+    "build:web": "corepack pnpm --filter web build",
+    "build:worker": "corepack pnpm --filter worker build",
+    "test": "corepack pnpm -r test",
+    "test:worker": "corepack pnpm --filter worker test",
+    "test:web": "corepack pnpm --filter web test",
+    "test:watch": "corepack pnpm --filter worker test:watch",
     "test:parsers": "npx tsx scripts/test-parsers.ts",
     "test:e2e": "npx playwright test",
     "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
-    "verify": "pnpm test:parsers && pnpm --filter worker test",
-    "typecheck": "pnpm -r typecheck",
+    "verify": "corepack pnpm -r typecheck && corepack pnpm -r test && corepack pnpm -r build",
+    "typecheck": "corepack pnpm -r typecheck",
     "rebuild:dry": "node scripts/run_rebuild.mjs --dry",
     "rebuild:apply": "node scripts/run_rebuild.mjs --apply",
     "diag:prod": "node scripts/diag_prod.mjs",
@@ -28,9 +30,10 @@
     "ingest:pdf:verify": "node scripts/ingest_pdf.mjs --verify",
     "ingest:xlsx": "npx tsx scripts/ingest_xlsx.ts",
     "ingest:xlsx:verify": "npx tsx scripts/ingest_xlsx.ts --verify",
-    "setup:local": "pnpm install && pnpm db:migrate:local",
-    "db:migrate:local": "pnpm --filter worker db:migrate:local",
-    "db:migrate:remote": "pnpm --filter worker db:migrate:remote",
+    "merchant:normalize:backfill": "node scripts/backfill-merchant-normalization.mjs",
+    "setup:local": "corepack pnpm install && corepack pnpm db:migrate:local",
+    "db:migrate:local": "corepack pnpm --filter worker db:migrate:local",
+    "db:migrate:remote": "corepack pnpm --filter worker db:migrate:remote",
     "db:seed": "npx tsx scripts/seed-data.ts > seed.sql && echo 'Seed SQL generated to seed.sql'",
     "apply-rules": "node scripts/quick-apply-rules.mjs"
   },
@@ -40,6 +43,11 @@
     "tsx": "^4.19.1",
     "typescript": "^5.3.3",
     "xlsx": "^0.18.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "@remix-run/router": "1.23.2"
+    }
   },
   "engines": {
     "node": ">=20.0.0"

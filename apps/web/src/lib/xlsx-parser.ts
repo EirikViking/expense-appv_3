@@ -20,6 +20,62 @@ export interface XlsxParseResult {
 
 const MAX_HEADER_SCAN_ROWS = 50;
 const DATE_VALUE_PATTERN = /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/;
+const DATE_SERIAL_INTEGER_MIN = 30000;
+const DATE_SERIAL_INTEGER_MAX = 60000;
+const SERIAL_AMOUNT_ERROR_MESSAGE =
+  'Importfeil: Beløpskolonnen ser ut til å være en datokolonne. Bruk en kontoutskrift med beløp i egen kolonne.';
+
+function isExcelSerialInteger(value: number): boolean {
+  return Number.isInteger(value) && value >= DATE_SERIAL_INTEGER_MIN && value <= DATE_SERIAL_INTEGER_MAX;
+}
+
+function isSuspiciousSerialAmount(value: number): boolean {
+  const abs = Math.abs(value);
+  return Number.isFinite(abs) && Number.isInteger(abs) && abs >= DATE_SERIAL_INTEGER_MIN && abs <= DATE_SERIAL_INTEGER_MAX;
+}
+
+function isoDateToSerial(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const utc = Date.UTC(year, month - 1, day);
+  if (!Number.isFinite(utc)) return null;
+
+  const excelEpoch = Date.UTC(1900, 0, 1);
+  const days = Math.floor((utc - excelEpoch) / (24 * 60 * 60 * 1000)) + 1;
+  if (days >= 60) return days + 1; // Excel leap year bug compatibility
+  return days;
+}
+
+function looksLikeDateSerialCollision(amount: number, dateCandidates: unknown[]): boolean {
+  if (!isSuspiciousSerialAmount(amount)) return false;
+  const target = Math.abs(Math.round(amount));
+
+  for (const candidate of dateCandidates) {
+    if (candidate === null || candidate === undefined || candidate === '') continue;
+
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      const rounded = Math.round(candidate);
+      if (isExcelSerialInteger(rounded) && Math.abs(target - rounded) <= 2) return true;
+      continue;
+    }
+
+    const parsedIso = parseNorwegianDate(candidate);
+    if (!parsedIso) continue;
+    const serial = isoDateToSerial(parsedIso);
+    if (serial !== null && Math.abs(target - serial) <= 2) return true;
+  }
+
+  return false;
+}
+
+function assertNotSuspiciousSerialAmount(value: number, dateCandidates: unknown[]): void {
+  if (looksLikeDateSerialCollision(value, dateCandidates)) {
+    throw new Error(SERIAL_AMOUNT_ERROR_MESSAGE);
+  }
+}
 
 const SUMMARY_LABEL_PATTERNS: RegExp[] = [
   /^saldo\s+fra\s+forrige\s+m[aå]ned$/i,
@@ -65,7 +121,10 @@ const COLUMN_VARIATIONS = {
     'Kreditert', 'Debitert', 'Saldo endring', 'Kr', 'Verdi',
     // Storebrand specific
     'Transaksjons beløp', 'Beløp NOK', 'Beløp (NOK)', 'NOK beløp',
+    'Ut fra konto', 'Inn på konto',
   ],
+  OUT_AMOUNT: ['Ut fra konto', 'Utbetaling', 'Debit', 'Ut av konto'],
+  IN_AMOUNT: ['Inn på konto', 'Innbetaling', 'Kredit', 'Inn til konto'],
   CURRENCY: ['Valuta', 'Currency', 'Valutakode', 'Myntslag'],
   MERCHANT: [
     'Sted', 'Mottaker', 'Avsender', 'Fra/Til', 'Recipient', 'Location',
@@ -194,6 +253,7 @@ function parseNorwegianDate(dateValue: unknown): string | null {
  */
 function parseNorwegianAmount(value: unknown): number | null {
   if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
     return value;
   }
 
@@ -216,7 +276,8 @@ function parseNorwegianAmount(value: unknown): number | null {
     cleaned = cleaned.replace(',', '.');
 
     const num = parseFloat(cleaned);
-    return isNaN(num) ? null : num;
+    if (isNaN(num)) return null;
+    return num;
   }
 
   return null;
@@ -233,6 +294,15 @@ function parsePreferredAmount(belopRaw: unknown, utlBelopRaw: unknown): number |
   if (utl !== null && utl !== 0) return utl;
 
   // Never default to 0 on parse failure or empty cells.
+  return null;
+}
+
+function parseDnbDirectionalAmount(outRaw: unknown, inRaw: unknown): number | null {
+  const outAmount = parseNorwegianAmount(outRaw);
+  const inAmount = parseNorwegianAmount(inRaw);
+
+  if (outAmount !== null && outAmount !== 0) return -Math.abs(outAmount);
+  if (inAmount !== null && inAmount !== 0) return Math.abs(inAmount);
   return null;
 }
 
@@ -314,7 +384,8 @@ function isLikelyDateValue(value: unknown): boolean {
     if (!Number.isFinite(value)) return false;
     const rounded = Math.round(value);
     const isInteger = Math.abs(value - rounded) < 0.000001;
-    return isInteger && value >= 30000 && value <= 60000;
+    if (!isInteger) return false;
+    return isExcelSerialInteger(rounded);
   }
 
   if (typeof value === 'string') {
@@ -334,7 +405,7 @@ function isLikelyAmountValue(value: unknown): boolean {
     if (!Number.isFinite(value)) return false;
     const rounded = Math.round(value);
     const isInteger = Math.abs(value - rounded) < 0.000001;
-    if (isInteger && value >= 30000 && value <= 60000) return false;
+    if (isInteger && isExcelSerialInteger(rounded)) return false;
     return true;
   }
 
@@ -428,6 +499,8 @@ type SectionColumnIndexMapping = {
   bookedDateColIdx?: number;
   descColIdx?: number;
   amountColIdx: number;
+  outAmountColIdx?: number;
+  inAmountColIdx?: number;
   foreignAmountColIdx?: number;
   currencyColIdx?: number;
   merchantColIdx?: number;
@@ -443,6 +516,8 @@ const HEADER_SETS = {
   BOOKED_DATE: buildNormalizedSet(COLUMN_VARIATIONS.BOOKED_DATE),
   DESCRIPTION: buildNormalizedSet(COLUMN_VARIATIONS.DESCRIPTION),
   AMOUNT: buildNormalizedSet(COLUMN_VARIATIONS.AMOUNT),
+  OUT_AMOUNT: buildNormalizedSet(COLUMN_VARIATIONS.OUT_AMOUNT),
+  IN_AMOUNT: buildNormalizedSet(COLUMN_VARIATIONS.IN_AMOUNT),
   CURRENCY: buildNormalizedSet(COLUMN_VARIATIONS.CURRENCY),
   MERCHANT: buildNormalizedSet(COLUMN_VARIATIONS.MERCHANT),
 };
@@ -481,6 +556,8 @@ function detectHeaderSectionAtRow(
   const bookedIdx = findHeaderIndex(headers, HEADER_SETS.BOOKED_DATE);
   const currencyIdx = findHeaderIndex(headers, HEADER_SETS.CURRENCY);
   const merchantIdx = findHeaderIndex(headers, HEADER_SETS.MERCHANT);
+  const outAmountIdx = findHeaderIndex(headers, HEADER_SETS.OUT_AMOUNT);
+  const inAmountIdx = findHeaderIndex(headers, HEADER_SETS.IN_AMOUNT);
 
   // Try to locate "Utl. beløp" style column if present (we treat it as a foreign amount candidate).
   const foreignIdx = headers.findIndex((h) => /utl/i.test(h) && /bel[oø]p/i.test(h));
@@ -493,6 +570,8 @@ function detectHeaderSectionAtRow(
     bookedDateColIdx: bookedIdx,
     descColIdx: descIdx,
     amountColIdx: amountIdx,
+    outAmountColIdx: outAmountIdx,
+    inAmountColIdx: inAmountIdx,
     foreignAmountColIdx,
     currencyColIdx: currencyIdx,
     merchantColIdx: merchantIdx,
@@ -591,10 +670,21 @@ function parseSheetByHeaderSections(
     const amountRaw = rowValues[current.amountColIdx];
     const foreignAmountRaw =
       current.foreignAmountColIdx !== undefined ? rowValues[current.foreignAmountColIdx] : undefined;
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    const outAmountRaw =
+      current.outAmountColIdx !== undefined ? rowValues[current.outAmountColIdx] : undefined;
+    const inAmountRaw =
+      current.inAmountColIdx !== undefined ? rowValues[current.inAmountColIdx] : undefined;
+    const hasDirectionalAmountColumns =
+      current.outAmountColIdx !== undefined || current.inAmountColIdx !== undefined;
+    const amount = hasDirectionalAmountColumns
+      ? parseDnbDirectionalAmount(outAmountRaw, inAmountRaw)
+      : parsePreferredAmount(amountRaw, foreignAmountRaw);
     if (amount === null) {
       debug.rows_skipped_no_amount++;
       continue;
+    }
+    if (!hasDirectionalAmountColumns) {
+      assertNotSuspiciousSerialAmount(amount, [txDateRaw]);
     }
     if (amount === 0) {
       debug.rows_skipped_zero_amount++;
@@ -689,7 +779,7 @@ function detectStorebrandHeaderlessFormat(
   const firstRow = findFirstNonEmptyRow(sheet, range);
   if (!firstRow) return null;
 
-  const [dateValue, descriptionValue, amountValue, currencyValue] = firstRow.values;
+  const [dateValue, descriptionValue, amountValue, _balanceValue, currencyValue] = firstRow.values;
   const currency = typeof currencyValue === 'string' ? currencyValue.trim().toUpperCase() : '';
 
   const matchesPattern = isLikelyDateValue(dateValue)
@@ -704,9 +794,11 @@ function detectStorebrandHeaderlessFormat(
   return {
     dateCol: '__COL_0',
     amountCol: '__COL_2',
+    outAmountCol: null,
+    inAmountCol: null,
     descriptionCol: '__COL_1',
     bookedDateCol: null,
-    currencyCol: '__COL_3',
+    currencyCol: '__COL_4',
     merchantCol: null,
     headerRow: -1,
     foundHeaders: [],
@@ -717,12 +809,15 @@ function detectStorebrandHeaderlessFormat(
 interface ColumnMapping {
   dateCol: string;
   amountCol: string;
+  outAmountCol?: string | null;
+  inAmountCol?: string | null;
   descriptionCol: string | null;
   bookedDateCol: string | null;
   currencyCol: string | null;
   merchantCol: string | null;
   headerRow: number;
   foundHeaders: string[];
+  formatHint?: 'dnb_header' | 'simple_5col';
 }
 
 interface HeadersOnlyResult {
@@ -763,18 +858,24 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
 
     const dateCol = findColumnName(headers, COLUMN_VARIATIONS.DATE);
     const amountCol = findColumnName(headers, COLUMN_VARIATIONS.AMOUNT);
+    const outAmountCol = findColumnName(headers, COLUMN_VARIATIONS.OUT_AMOUNT);
+    const inAmountCol = findColumnName(headers, COLUMN_VARIATIONS.IN_AMOUNT);
+    const isDnbDirectional = Boolean(outAmountCol && inAmountCol);
 
     if (dateCol && amountCol && !looksLikeDataRow) {
       console.log(`[XLSX Parser] Found header row ${row}: Date="${dateCol}", Amount="${amountCol}"`);
       return {
         dateCol,
         amountCol,
+        outAmountCol: outAmountCol || null,
+        inAmountCol: inAmountCol || null,
         descriptionCol: findColumnName(headers, COLUMN_VARIATIONS.DESCRIPTION),
         bookedDateCol: findColumnName(headers, COLUMN_VARIATIONS.BOOKED_DATE),
         currencyCol: findColumnName(headers, COLUMN_VARIATIONS.CURRENCY),
         merchantCol: findColumnName(headers, COLUMN_VARIATIONS.MERCHANT),
         headerRow: row,
         foundHeaders: nonEmptyHeaders,
+        formatHint: isDnbDirectional ? 'dnb_header' : undefined,
       };
     }
 
@@ -799,6 +900,58 @@ function findHeaderRowAndColumns(sheet: XLSX.WorkSheet): ColumnMapping | Headers
  * Analyze first few rows to detect column roles based on data types
  * Used for headerless files like some Storebrand exports
  */
+function detectSimple5ColumnMapping(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range,
+  startRow: number,
+  endRow: number
+): ColumnMapping | null {
+  const colCount = range.e.c - range.s.c + 1;
+  if (colCount !== 5) return null;
+
+  let checked = 0;
+  let matched = 0;
+
+  for (let row = startRow; row <= endRow; row++) {
+    const values = getRowValues(sheet, range, row);
+    if (values.every((v) => v === null || v === undefined || String(v).trim() === '')) continue;
+    checked++;
+
+    const dateLooksValid = isLikelyDateValue(values[0]);
+    const descriptionLooksValid = typeof values[1] === 'string' && values[1].trim().length > 3;
+    const amount = parseNorwegianAmount(values[2]);
+    const amountLooksValid = amount !== null && !isSuspiciousSerialAmount(amount) && amount !== 0;
+    const currencyRaw = values[4];
+    const currencyLooksValid =
+      currencyRaw === null ||
+      currencyRaw === undefined ||
+      String(currencyRaw).trim() === '' ||
+      isLikelyCurrencyValue(currencyRaw);
+
+    if (dateLooksValid && descriptionLooksValid && amountLooksValid && currencyLooksValid) {
+      matched++;
+    }
+  }
+
+  if (checked >= 3 && matched >= 3) {
+    return {
+      dateCol: `__COL_${range.s.c + 0}`,
+      amountCol: `__COL_${range.s.c + 2}`,
+      outAmountCol: null,
+      inAmountCol: null,
+      descriptionCol: `__COL_${range.s.c + 1}`,
+      bookedDateCol: null,
+      currencyCol: `__COL_${range.s.c + 4}`,
+      merchantCol: null,
+      headerRow: -1,
+      foundHeaders: [],
+      formatHint: 'simple_5col',
+    };
+  }
+
+  return null;
+}
+
 function detectColumnsFromData(
   sheet: XLSX.WorkSheet,
   options?: { startRow?: number; maxRows?: number }
@@ -813,6 +966,12 @@ function detectColumnsFromData(
   }
 
   console.log(`[XLSX Parser] Attempting headerless detection (rows ${startRow}-${endRow})...`);
+
+  const simple5Col = detectSimple5ColumnMapping(sheet, range, startRow, endRow);
+  if (simple5Col) {
+    console.log('[XLSX Parser] Headerless simple 5-column layout detected');
+    return simple5Col;
+  }
 
   // Storebrand export: 5 columns, frequently no header row:
   // col0 date, col1 text, col2 amount, col3 balance, col4 currency.
@@ -836,12 +995,15 @@ function detectColumnsFromData(
       return {
         dateCol: `__COL_${range.s.c + 0}`,
         amountCol: `__COL_${range.s.c + 2}`,
+        outAmountCol: null,
+        inAmountCol: null,
         descriptionCol: `__COL_${range.s.c + 1}`,
         bookedDateCol: null,
         currencyCol: `__COL_${range.s.c + 4}`,
         merchantCol: null,
         headerRow: -1,
         foundHeaders: [],
+        formatHint: 'simple_5col',
       };
     }
   }
@@ -945,6 +1107,8 @@ function detectColumnsFromData(
     return {
       dateCol: `__COL_${dateColIdx}`,
       amountCol: `__COL_${amountColIdx}`,
+      outAmountCol: null,
+      inAmountCol: null,
       descriptionCol: descColIdx >= 0 ? `__COL_${descColIdx}` : null,
       bookedDateCol: null,
       currencyCol: currencyColIdx >= 0 ? `__COL_${currencyColIdx}` : null,
@@ -1007,6 +1171,7 @@ function parseHeaderlessFile(
         currency: v4,
       });
       if (!parsed) continue;
+      assertNotSuspiciousSerialAmount(parsed.amount, [v0]);
 
       transactions.push({
         tx_date: parsed.tx_date,
@@ -1031,6 +1196,7 @@ function parseHeaderlessFile(
 
     const amount = parseNorwegianAmount(amountCell.v);
     if (amount === null || amount === 0) continue;
+    assertNotSuspiciousSerialAmount(amount, [dateCell.v]);
 
     let descriptionStr = '';
     if (descColIdx >= 0) {
@@ -1090,6 +1256,8 @@ function parseFileWithHeaders(
     // Get values using detected column names
     const txDateRaw = row[mapping.dateCol];
     const amountRaw = row[mapping.amountCol];
+    const outAmountRaw = mapping.outAmountCol ? row[mapping.outAmountCol] : undefined;
+    const inAmountRaw = mapping.inAmountCol ? row[mapping.inAmountCol] : undefined;
     const foreignAmountRaw =
       row['Utl. beløp'] ?? row['Utl beløp'] ?? row['Utl. belop'] ?? row['Utl belop'];
 
@@ -1111,8 +1279,14 @@ function parseFileWithHeaders(
     if (!txDate) continue;
 
     // Parse amount (required)
-    const amount = parsePreferredAmount(amountRaw, foreignAmountRaw);
+    const amount =
+      mapping.outAmountCol || mapping.inAmountCol
+        ? parseDnbDirectionalAmount(outAmountRaw, inAmountRaw)
+        : parsePreferredAmount(amountRaw, foreignAmountRaw);
     if (amount === null) continue;
+    if (!mapping.outAmountCol && !mapping.inAmountCol) {
+      assertNotSuspiciousSerialAmount(amount, [txDateRaw, bookedDateRaw]);
+    }
 
     // Parse optional fields
     const bookedDate = parseNorwegianDate(bookedDateRaw) || undefined;
@@ -1219,9 +1393,11 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
 
     const fullMapping = mapping as ColumnMapping;
     const usesIndexMapping = fullMapping.dateCol.startsWith('__COL_') || fullMapping.amountCol.startsWith('__COL_');
-    const detectedFormat = usesIndexMapping
-      ? `Index mapping - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol}${fullMapping.headerRow >= 0 ? ` (header row ${fullMapping.headerRow + 1})` : ''}`
-      : `Date: "${fullMapping.dateCol}", Amount: "${fullMapping.amountCol}"${fullMapping.descriptionCol ? `, Desc: "${fullMapping.descriptionCol}"` : ''}`;
+    const detectedFormat = fullMapping.formatHint
+      ? fullMapping.formatHint
+      : usesIndexMapping
+        ? `Index mapping - Date col: ${fullMapping.dateCol}, Amount col: ${fullMapping.amountCol}${fullMapping.headerRow >= 0 ? ` (header row ${fullMapping.headerRow + 1})` : ''}`
+        : `Date: "${fullMapping.dateCol}", Amount: "${fullMapping.amountCol}"${fullMapping.descriptionCol ? `, Desc: "${fullMapping.descriptionCol}"` : ''}`;
     console.log(`[XLSX Parser] Detected format: ${detectedFormat}`);
 
     // Parse transactions based on file type
@@ -1240,6 +1416,9 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
     return { transactions, detectedFormat };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message === SERIAL_AMOUNT_ERROR_MESSAGE) {
+      return { transactions: [], error: message };
+    }
     console.error(`[XLSX Parser] Error:`, err);
     return { transactions: [], error: `Failed to parse XLSX: ${message}` };
   }

@@ -27,7 +27,7 @@
     "booked": "Bokført",
     "pending": "Reservert",
     "creditCardXlsx": "Kredittkort (XLSX)",
-    "bankStatementPdf": "Kontoutskrift (PDF)",
+    "bankStatementPdf": "Kontoutskrift",
     "excludeTransfers": "Ekskluder overføringer",
     "thisMonth": "Denne måneden",
     "lastMonth": "Forrige måned",
@@ -68,6 +68,10 @@
     "noCategorizedTransactions": "Ingen kategoriserte transaksjoner enda",
     "categoryDrilldownHint": "Klikk en kategori for å se kjøpmenn.",
     "topMerchants": "Topp brukersteder",
+    "topMerchantsTrendHint": "Prosent viser endring mot forrige like lange periode.",
+    "topMerchantsTrendHintWithPeriod": "Prosent viser endring mot {{from}} til {{to}} (forrige like lange periode).",
+    "trendVsPreviousPeriod": "{{value}} vs forrige like lange periode",
+    "trendVsPreviousPeriodWithTotal": "{{value}} vs forrige ({{total}})",
     "merchantsInCategory": "Kjøpmenn i kategori",
     "viewAll": "Se alle",
     "unusualSpending": "Uvanlig forbruk",
@@ -91,7 +95,9 @@
     "topExpenseCards": "Største utgiftsposter",
     "txCountShort": "Tx",
     "clickToDrilldown": "Klikk for drilldown",
-    "transactionsOnDate": "Transaksjoner: {{date}}"
+    "transactionsOnDate": "Transaksjoner: {{date}}",
+    "budgetPulse": "Budsjettstatus",
+    "budgetNoTargets": "Budsjett er aktivert, men ingen uke/måned/år-mål er satt enda."
   },
   "transactions": {
     "title": "Transaksjoner",
@@ -100,6 +106,11 @@
     "saveTransaction": "Lagre transaksjon",
     "showingCount": "Viser {{shown}} av {{total}} transaksjoner",
     "totalSpentFiltered": "Totalt brukt (filtrert)",
+    "filteredVsTotal": "Filtrert totalt: {{filtered}} av {{total}}",
+    "dateFilterActive": "Filter aktivt: {{from}} til {{to}}",
+    "clearDateFilter": "Fjern filter",
+    "dateOpenStart": "start",
+    "dateOpenEnd": "slutt",
     "bulkSelectCategory": "Velg kategori",
     "bulkSetCategory": "Sett kategori",
     "failedBulkSetCategory": "Kunne ikke oppdatere kategori for valgte transaksjoner",
@@ -108,6 +119,7 @@
     "excludeTransfersDefault": "Ekskluder overføringer (standard)",
     "showExcluded": "Vis utelatte",
     "excluded": "Utelatt",
+    "amountFilterHelp": "Beløpsfilter bruker absoluttverdi. Skriv 500 for transaksjoner på minst 500 kr.",
     "sort": {
       "label": "Sorter",
       "dateDesc": "Dato (nyest først)",
@@ -145,8 +157,12 @@
     "validation": {
       "dateRequired": "Dato er påkrevd",
       "descriptionRequired": "Beskrivelse er påkrevd",
-      "amountInvalid": "Beløp må være et gyldig tall"
-    }
+      "amountInvalid": "Beløp må være et gyldig tall",
+      "invalidDateFormat": "Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY.",
+      "invalidDate": "Ugyldig dato.",
+      "invalidDateRange": "Fra-dato kan ikke være etter til-dato."
+    },
+    "budgetSummaryTitle": "Budsjettstatus"
   },
   "theme": {
     "label": "Tema",
@@ -169,14 +185,19 @@
     "signingIn": "Logger inn...",
     "failed": "Innlogging feilet",
     "email": "E-post",
-    "rememberMe": "Husk meg"
+    "rememberMe": "Husk meg",
+    "alreadySignedInTitle": "Du er allerede logget inn",
+    "alreadySignedInAs": "Logget inn som {{name}}",
+    "continueAsCurrent": "Fortsett som nåværende bruker",
+    "switchAccount": "Bytt bruker",
+    "signingOut": "Logger ut..."
   },
   "upload": {
     "title": "Last opp filer",
     "dragDrop": "Dra og slipp filer her",
     "or": "eller",
     "browse": "Velg filer",
-    "supportedFormats": "Støttede formater: .xlsx (kredittkort-eksport), .pdf (kontoutskrift)",
+    "supportedFormats": "Støttet format: .xlsx",
     "results": "Resultat",
     "processing": "Behandler...",
     "duplicate": "Fil er allerede lastet opp (duplikat)",
@@ -208,13 +229,15 @@
       "failures": {
         "validate_request_failed": "Kunne ikke kjøre validering (forespørsel feilet)",
         "zero_amount_rows_active": "Det finnes aktive 0-beløp-rader (skal være utelatt)",
+        "suspicious_serial_amounts": "Mistenkelige beløp ser ut som Excel-datoserial (30k-60k)",
         "suspicious_income_purchases": "Mistenkelige kjøp er klassifisert som inntekt",
-        "groceries_flow_type_mismatch": "Dagligvarer har feil flyt-type/fortegn",
+        "groceries_flow_type_mismatch": "Dagligvarer inneholder positive beløp som bør være inntekt/refusjon eller omkategoriseres",
         "groceries_analytics_mismatch": "Dagligvarer i innsikt matcher ikke sum av transaksjoner",
         "groceries_income_leak": "Dagligvarer inneholder inntektsrader (skal være utgifter)"
       }
     },
-    "pdfNoTransactionsHelp": "Hvis PDF-en tydelig inneholder transaksjoner, kan det være Storebrand \"Detaljer\"-formatet. Prøv igjen etter at backend-parseren er oppdatert.",
+    "unsupportedFileType": "Ugyldig filtype. Last opp .xlsx-filer.",
+    "pdfNoTransactionsHelp": "Ingen transaksjoner ble funnet i den opplastede filen.",
     "showErrorDetails": "Vis feildetaljer"
   },
   "categoriesPage": {
@@ -268,34 +291,76 @@
     "noRules": "Ingen regler enda. Opprett en for automatisk kategorisering.",
     "setCategoryTo": "Sett kategori ->",
     "showingCount": "Viser {{shown}} av {{total}}",
-    "addTagTo": "Legg til tag ->"
+    "addTagTo": "Legg til tag ->",
+    "enableRule": "Aktiver regel",
+    "disableRule": "Deaktiver regel"
   },
   "settingsPage": {
     "title": "Innstillinger",
     "appearanceTitle": "Utseende og navigasjon",
     "appearanceDescription": "Tilpass opplevelsen",
     "showBudgets": "Vis budsjetter",
-    "showBudgetsHelp": "Aktiver budsjett-navigasjon og visninger.",
+    "showBudgetsHelp": "Administrer budsjetter og mål på Budsjetter-siden.",
     "showBudgetsDisabledHelp": "Budsjetter er skjult til hele budsjettflyten er produksjonsklar.",
     "dangerZone": "Faresone",
     "dangerHelp": "Irreversible handlinger. Vær forsiktig.",
-    "deleteAllData": "Slett all data",
-    "deleteAllDataHelp": "Sletter permanent alle transaksjoner, opplastinger og metadata.",
+    "deleteAllData": "Slett mine data",
+    "deleteAllDataHelp": "Sletter permanent dine transaksjoner, opplastinger og metadata.",
     "confirmDeleteTitle": "Bekreft sletting av all data",
-    "confirmDeleteHelp": "Dette sletter permanent alle transaksjoner, opplastinger og metadata. Skriv",
+    "confirmDeleteHelp": "Dette sletter permanent dine transaksjoner, opplastinger og metadata. Skriv",
     "deleteKeyword": "DELETE",
     "confirmDeleteHelpSuffix": "for å fortsette.",
     "typeDelete": "Skriv DELETE",
     "deleting": "Sletter...",
     "confirmDeleteAction": "Bekreft sletting av all data",
-    "resetSuccess": "All data ble slettet.",
+    "resetSuccess": "Dine data ble slettet.",
     "resetFailed": "Kunne ikke slette data",
-    "unknownError": "Ukjent feil"
+    "unknownError": "Ukjent feil",
+    "buildLabel": "Build",
+    "manageInBudgets": "Åpne Budsjetter"
   },
   "budgetsPage": {
     "title": "Budsjetter",
-    "comingSoon": "Kommer snart",
-    "notReady": "Budsjettfunksjonen er ikke produksjonsklar enda."
+    "description": "Sett valgfrie forbruksmål per uke, måned og år. Budsjettvisning i resten av appen vises kun når budsjettering er aktiv.",
+    "toggleTitle": "Budsjettering",
+    "toggleHelp": "Du kan aktivere budsjettering uten å fylle ut alle perioder. Tomme felt behandles som ikke satt.",
+    "enabled": "Budsjettering er på",
+    "disabled": "Budsjettering er av",
+    "weekly": "Ukebudsjett",
+    "monthly": "Månedsbudsjett",
+    "yearly": "Årsbudsjett",
+    "optionalAmount": "Valgfritt beløp",
+    "save": "Lagre innstillinger",
+    "saving": "Lagrer...",
+    "saved": "Budsjettinnstillinger lagret.",
+    "invalidAmount": "Beløpet må være et positivt tall.",
+    "configuredCount": "Konfigurerte mål: {{count}}",
+    "trackingTitle": "Budsjettoppfølging",
+    "trackingEmpty": "Ingen uke/måned/år-mål er satt enda.",
+    "disabledHint": "Aktiver budsjettering for å vise oppfølging og budsjettkontekst i appen.",
+    "budget": "Budsjett",
+    "spent": "Brukt",
+    "remaining": "Igjen",
+    "projected": "Prognose",
+    "daysLeft": "{{count}} dager igjen",
+    "period": {
+      "weekly": "Uke",
+      "monthly": "Måned",
+      "yearly": "År"
+    },
+    "status": {
+      "on_track": "I rute",
+      "warning": "Følg med",
+      "over_budget": "Over budsjett"
+    },
+    "feedback": {
+      "underBudget": "Fantastisk! Du er under budsjett i alle periodene du har satt opp.",
+      "warning": "Obs: Forbrukstakten øker. Følg med på budsjettet.",
+      "overBudget": "Advarsel: Du er over budsjett i minst én periode. Stram inn forbruket nå."
+    },
+    "loadFailed": "Kunne ikke laste budsjettinnstillinger.",
+    "saveFailed": "Kunne ikke lagre budsjettinnstillinger.",
+    "loading": "Laster budsjettoppfølging..."
   },
   "bootstrap": {
     "title": "Opprett første admin",
@@ -340,12 +405,35 @@
   "onboarding": {
     "title": "Velkommen",
     "titleWithName": "Velkommen, {{name}}.",
-    "description": "Slik kommer du raskt i gang:",
-    "stepUpload": "1. Gå til Last opp, og importer XLSX eller PDF.",
+    "description": "Slik hjelper appen deg i hverdagen:",
+    "wizardIntro": "Her får du raskt oversikt over forbruket ditt, uten regneark-kaos.",
+    "featureClarityTitle": "Full oversikt",
+    "featureClarityBody": "Se hvor pengene går og hva som faktisk driver forbruket.",
+    "featureUploadTitle": "Rask import",
+    "featureUploadBody": "Eksporter kontoutskrift fra nettbank eller kortutsteder til Excel (XLSX), og last opp filen for oppdatert innsikt.",
+    "featureInsightsTitle": "Bedre beslutninger",
+    "featureInsightsBody": "Oppdag mønstre, avvik og forbedringsmuligheter tidligere.",
+    "stepCounter": "Steg {{current}}/{{total}}",
+    "soundToggleAria": "Slå lyd for onboarding av eller på",
+    "soundOn": "Lyd: På",
+    "soundOff": "Lyd: Av",
+    "purpose": "Utgiftsanalyse gir deg ett sted for å forstå forbruket ditt, rydde i transaksjoner og få bedre oversikt over tid.",
+    "stepTwoTitle": "Eksporter kontoutskrifter fra nettbank eller kortutsteder til Excel (XLSX)",
+    "stepTwoSubtitle": "Kort guide for å holde appen oppdatert:",
+    "wizardStepExport": "1. Eksporter kontoutskrift som Excel (XLSX) fra nettbank eller kortutsteder.",
+    "wizardStepImport": "2. Gå til Last opp og importer XLSX-filen i appen.",
+    "wizardStepReview": "3. Gå gjennom importerte transaksjoner, og rett eventuelle feil.",
+    "wizardStepRules": "4. Bruk Kategorier og Regler jevnlig for bedre innsikt.",
+    "stepUpload": "1. Gå til Last opp og importer XLSX-fil.",
     "stepReview": "2. Gå gjennom importerte transaksjoner, og rett eventuelle feil.",
     "stepCategorize": "3. Bruk Kategorier og Regler for bedre innsikt.",
+    "stepCadence": "4. Gjenta jevnlig, for eksempel månedlig, for fersk innsikt.",
+    "tip": "Tips: Jo bedre transaksjonene er kategorisert, jo mer presis blir innsikten.",
     "goToUpload": "Gå til Last opp",
-    "close": "Lukk"
+    "close": "Lukk",
+    "skip": "Hopp over",
+    "next": "Neste",
+    "back": "Tilbake"
   },
   "settingsUsers": {
     "title": "Brukere",
@@ -373,6 +461,12 @@
     "shareFacebook": "Facebook",
     "resetReady": "Reset-lenke generert (vises kun én gang):",
     "resetLink": "Reset-lenke",
+    "impersonate": "Impersoner",
+    "impersonatingAs": "Impersonerer som",
+    "stopImpersonation": "Stopp impersonering",
+    "impersonateFailed": "Kunne ikke starte impersonering.",
+    "deleteFailed": "Kunne ikke slette bruker.",
+    "deleteConfirm": "Slette brukeren {{name}}?",
     "loadFailed": "Kunne ikke laste brukere.",
     "createFailed": "Kunne ikke opprette bruker.",
     "saveFailed": "Kunne ikke lagre bruker.",

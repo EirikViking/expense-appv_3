@@ -38,6 +38,17 @@ async function readJsonBody(c: any): Promise<{ ok: true; body: unknown } | { ok:
   }
 }
 
+async function consumePasswordTokenFlexible(
+  db: D1Database,
+  token: string,
+  preferredType: 'invite' | 'reset'
+) {
+  const primary = await consumePasswordToken(db, token, preferredType);
+  if (primary) return primary;
+  const fallbackType = preferredType === 'invite' ? 'reset' : 'invite';
+  return consumePasswordToken(db, token, fallbackType);
+}
+
 auth.post('/bootstrap', async (c) => {
   try {
     const userCount = await countUsers(c.env.DB);
@@ -150,8 +161,12 @@ auth.post('/login', async (c) => {
       return c.json({ error: 'Bootstrap required', bootstrap_required: true }, 400);
     }
 
-    const body = await c.req.json();
-    const parsed = loginRequestSchema.safeParse(body);
+    const parsedBody = await readJsonBody(c);
+    if (!parsedBody.ok) {
+      return c.json({ error: 'Invalid request body' }, 400);
+    }
+
+    const parsed = loginRequestSchema.safeParse(parsedBody.body);
     if (!parsed.success) {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
@@ -159,7 +174,6 @@ auth.post('/login', async (c) => {
     const { email, password, remember_me } = parsed.data;
     const prevSessionId = readSessionCookie(c);
     if (prevSessionId) {
-      // Avoid stale/parallel sessions from leaking old identity in immediate follow-up calls.
       await deleteSession(c.env.DB, prevSessionId);
     }
     const user = await getUserByEmail(c.env.DB, email);
@@ -274,7 +288,7 @@ auth.post('/set-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'invite');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'invite');
     if (!used) {
       return c.json(
         {
@@ -311,7 +325,7 @@ auth.post('/reset-password', async (c) => {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
 
-    const used = await consumePasswordToken(c.env.DB, parsed.data.token, 'reset');
+    const used = await consumePasswordTokenFlexible(c.env.DB, parsed.data.token, 'reset');
     if (!used) {
       return c.json(
         {
@@ -327,7 +341,7 @@ auth.post('/reset-password', async (c) => {
     await c.env.DB
       .prepare(
         `UPDATE users
-         SET password_salt = ?, password_hash = ?, password_iters = ?, updated_at = ?
+         SET password_salt = ?, password_hash = ?, password_iters = ?, active = 1, updated_at = ?
          WHERE id = ?`
       )
       .bind(hashed.salt, hashed.hash, hashed.iterations, now, used.user_id)
@@ -344,13 +358,25 @@ auth.post('/onboarding-complete', async (c) => {
   try {
     const sessionId = readSessionCookie(c);
     if (!sessionId) return c.json({ error: 'Unauthorized' }, 401);
-    const user = await getSessionUser(c.env.DB, sessionId);
-    if (!user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const actorUser = await getSessionUser(c.env.DB, sessionId);
+    if (!actorUser) return c.json({ error: 'Unauthorized' }, 401);
+
+    let targetUserId = actorUser.id;
+    if (actorUser.role === 'admin') {
+      const sessionRow = await c.env.DB
+        .prepare('SELECT impersonated_user_id FROM sessions WHERE id = ?')
+        .bind(sessionId)
+        .first<{ impersonated_user_id: string | null }>();
+      if (sessionRow?.impersonated_user_id) {
+        targetUserId = sessionRow.impersonated_user_id;
+      }
+    }
 
     const now = new Date().toISOString();
     await c.env.DB
       .prepare('UPDATE users SET onboarding_done_at = ?, updated_at = ? WHERE id = ?')
-      .bind(now, now, user.id)
+      .bind(now, now, targetUserId)
       .run();
 
     return c.json({ success: true });

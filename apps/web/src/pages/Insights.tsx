@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import type {
   AnalyticsCompareResponse,
@@ -8,13 +8,14 @@ import type {
   RecurringItem,
   TimeSeriesPoint,
   TransactionWithMeta,
+  BudgetTrackingPeriod,
 } from '@expense/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatCompactCurrency, getMonthRange, getPreviousMonthRange } from '@/lib/utils';
-import { Calendar, RefreshCw, Sparkles, Wand2 } from 'lucide-react';
+import { Brain, Calendar, RefreshCw, Sparkles, Target, Trophy, Wand2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { clearLastDateRange, loadLastDateRange, saveLastDateRange } from '@/lib/date-range-store';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +23,7 @@ import { SmartDateInput } from '@/components/SmartDateInput';
 import { validateDateRange } from '@/lib/date-input';
 import { localizeCategoryName } from '@/lib/category-localization';
 import { useAuth } from '@/context/AuthContext';
+import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
 
 type Lang = 'en' | 'nb';
 
@@ -46,6 +48,32 @@ type InsightCopy = {
   leaderboardTitle: string;
   leaderboardHint: string;
   topCategories: string;
+  quizTitle: string;
+  quizSubtitle: string;
+  quizProgress: string;
+  quizScore: string;
+  quizPerfect: string;
+  quizGood: string;
+  quizTryAgain: string;
+  quizShowData: string;
+  quizShuffle: string;
+  wisdomTitle: string;
+  wisdomSubtitle: string;
+  missionTitle: string;
+  praiseTitle: string;
+};
+
+type QuizQuestion = {
+  id: string;
+  prompt: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  drilldown?:
+    | { type: 'category'; categoryId?: string | null }
+    | { type: 'merchant'; merchantId?: string | null; merchantName?: string | null }
+    | { type: 'day'; date: string }
+    | { type: 'period' };
 };
 
 function clamp01(n: number) {
@@ -112,6 +140,22 @@ function getTopSpendDay(timeseries: TimeSeriesPoint[]) {
   return p ? { date: p.date, amount: p.expenses || 0 } : null;
 }
 
+function getBudgetScheduleDelta(item: BudgetTrackingPeriod) {
+  if (!Number.isFinite(item.budget_amount) || item.budget_amount <= 0) return null;
+  if (!Number.isFinite(item.days_total) || item.days_total <= 0) return null;
+  if (!Number.isFinite(item.days_elapsed) || item.days_elapsed <= 0) return null;
+
+  const elapsedRatio = clamp01(item.days_elapsed / item.days_total);
+  const expectedSpentSoFar = item.budget_amount * elapsedRatio;
+  const delta = expectedSpentSoFar - item.spent_amount;
+
+  return {
+    expectedSpentSoFar,
+    delta,
+    direction: delta >= 0 ? ('ahead' as const) : ('behind' as const),
+  };
+}
+
 export function getMerchantLeaderboardTitle(lang: Lang): string {
   return lang === 'nb' ? 'Topp brukersteder' : 'Top merchants';
 }
@@ -139,6 +183,19 @@ function getCopy(lang: Lang): InsightCopy {
       leaderboardTitle: 'Leaderboard (helt uoffisielt)',
       leaderboardHint: 'Klikk en rad for drilldown til transaksjoner med samme periode og utgiftstype.',
       topCategories: 'Topp kategorier',
+      quizTitle: 'Forbruksquiz',
+      quizSubtitle: 'Tre raske sp\u00f8rsm\u00e5l om perioden din.',
+      quizProgress: 'Besvart',
+      quizScore: 'Poeng',
+      quizPerfect: 'Perfekt! Du kjenner forbruket ditt imponerende godt.',
+      quizGood: 'Sterkt levert. Du har god kontroll p\u00e5 tallene.',
+      quizTryAgain: 'God start. Ta en ny runde og l\u00e5s opp flere detaljer.',
+      quizShowData: 'Se datagrunnlag',
+      quizShuffle: 'Ny quiz',
+      wisdomTitle: 'AI-coach med glimt i \u00f8yet',
+      wisdomSubtitle: 'Mikror\u00e5d laget fra dine faktiske tall i perioden.',
+      missionTitle: 'Ukens mini-oppdrag',
+      praiseTitle: 'Ros fra coachen',
     };
   }
 
@@ -163,6 +220,19 @@ function getCopy(lang: Lang): InsightCopy {
     leaderboardTitle: 'Leaderboard (unofficial)',
     leaderboardHint: 'Click a row to drill down to transactions with the same date range and flow type.',
     topCategories: 'Top categories',
+    quizTitle: 'Spending quiz',
+    quizSubtitle: 'Three quick questions based on your current period.',
+    quizProgress: 'Answered',
+    quizScore: 'Score',
+    quizPerfect: 'Perfect. You know your own spending surprisingly well.',
+    quizGood: 'Strong work. You clearly track your numbers.',
+    quizTryAgain: 'Nice start. Run another round to sharpen your instincts.',
+    quizShowData: 'Show data behind answer',
+    quizShuffle: 'New quiz',
+    wisdomTitle: 'AI coach with personality',
+    wisdomSubtitle: 'Micro-advice generated from your real period data.',
+    missionTitle: 'Mini mission of the week',
+    praiseTitle: 'Coach applause',
   };
 }
 
@@ -249,6 +319,12 @@ type Highlight = {
   title: string;
   value: string;
   detail: string;
+  drilldown?:
+    | { type: 'category'; categoryId?: string | null }
+    | { type: 'merchant'; merchantId?: string | null; merchantName?: string | null }
+    | { type: 'day'; date: string }
+    | { type: 'transaction'; transactionId: string }
+    | { type: 'period' };
 };
 
 function buildHighlights(args: {
@@ -267,20 +343,22 @@ function buildHighlights(args: {
   if (topCategory) {
     out.push({
       id: 'top-category',
-      emoji: '📦',
+      emoji: '\u{1F4E6}',
       title: lang === 'nb' ? 'Største kategori' : 'Top category',
       value: localizeCategoryName(topCategory.name, currentLanguage),
       detail: formatCompactCurrency(topCategory.total),
+      drilldown: { type: 'category', categoryId: topCategory.id },
     });
   }
 
   if (largestExpenseTx) {
     out.push({
       id: 'largest-purchase',
-      emoji: '🧾',
+      emoji: '\u{1F9FE}',
       title: lang === 'nb' ? 'Største enkeltkjøp' : 'Largest single purchase',
       value: largestExpenseTx.description,
       detail: formatCompactCurrency(Math.abs(largestExpenseTx.amount)),
+      drilldown: { type: 'transaction', transactionId: largestExpenseTx.id },
     });
   }
 
@@ -288,10 +366,11 @@ function buildHighlights(args: {
   if (topMerchant) {
     out.push({
       id: 'top-merchant',
-      emoji: '🏪',
+      emoji: '\u{1F3EA}',
       title: lang === 'nb' ? 'Mest brukte brukersted' : 'Most used merchant',
       value: topMerchant.name,
       detail: lang === 'nb' ? `${topMerchant.count} kjøp` : `${topMerchant.count} purchases`,
+      drilldown: { type: 'merchant', merchantId: topMerchant.id, merchantName: topMerchant.name },
     });
   }
 
@@ -299,10 +378,11 @@ function buildHighlights(args: {
   if (topDay) {
     out.push({
       id: 'top-day',
-      emoji: '📅',
+      emoji: '\u{1F4C5}',
       title: lang === 'nb' ? 'Dag med høyest forbruk' : 'Highest-spend day',
       value: topDay.date,
       detail: formatCompactCurrency(Math.abs(topDay.amount)),
+      drilldown: { type: 'day', date: topDay.date },
     });
   }
 
@@ -312,10 +392,11 @@ function buildHighlights(args: {
     const up = delta > 0;
     out.push({
       id: 'period-change',
-      emoji: up ? '📈' : '📉',
+      emoji: up ? '\u{1F4C8}' : '\u{1F4C9}',
       title: lang === 'nb' ? 'Endring mot forrige periode' : 'Change vs previous period',
       value: `${up ? '+' : ''}${pct.toFixed(1)}%`,
       detail: `${up ? '+' : ''}${formatCompactCurrency(delta)}`,
+      drilldown: { type: 'period' },
     });
   }
 
@@ -342,7 +423,173 @@ function buildFunFact(args: {
     : `If you cut ${categoryName} by 10%, you save about ${formatCompactCurrency(saving)} in the same period.`;
 }
 
+function uniqueStrings(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = value.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+export function buildSpendingQuiz(args: {
+  lang: Lang;
+  currentLanguage: string;
+  summary: AnalyticsSummary | null;
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  timeseries: TimeSeriesPoint[];
+}): QuizQuestion[] {
+  const { lang, currentLanguage, summary, categories, merchants, timeseries } = args;
+  const questions: QuizQuestion[] = [];
+  const totalExpenses = Math.abs(summary?.total_expenses ?? 0);
+  const topCategory = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+  const topDay = getTopSpendDay(timeseries);
+
+  if (topCategory && totalExpenses > 0) {
+    const localizedCategory = localizeCategoryName(topCategory.name, currentLanguage);
+    const exactPct = Math.max(1, Math.round((Math.abs(topCategory.total) / totalExpenses) * 100));
+    const nearLow = Math.max(1, exactPct - 7);
+    const nearHigh = Math.min(95, exactPct + 9);
+    const options = uniqueStrings([`${nearLow}%`, `${exactPct}%`, `${nearHigh}%`]);
+    const correctIndex = options.indexOf(`${exactPct}%`);
+    if (options.length >= 3 && correctIndex >= 0) {
+      questions.push({
+        id: 'quiz-top-category-share',
+        prompt:
+          lang === 'nb'
+            ? `Hvor stor andel av forbruket gikk til ${localizedCategory}?`
+            : `How much of your spending went to ${localizedCategory}?`,
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${localizedCategory} tok ${exactPct}% av perioden. Det er en tydelig driver.`
+            : `${localizedCategory} represented ${exactPct}% of this period. It is a clear driver.`,
+        drilldown: { type: 'category', categoryId: topCategory.id },
+      });
+    }
+  }
+
+  if (topMerchant) {
+    const decoys = merchants
+      .map((m) => m.merchant_name || (lang === 'nb' ? 'Ukjent brukersted' : 'Unknown merchant'))
+      .filter((name) => name !== topMerchant.name)
+      .slice(0, 2);
+    const options = uniqueStrings([topMerchant.name, ...decoys]);
+    if (options.length >= 3) {
+      const correctIndex = options.indexOf(topMerchant.name);
+      questions.push({
+        id: 'quiz-top-merchant',
+        prompt:
+          lang === 'nb'
+            ? 'Hvilket brukersted dukket opp oftest i perioden?'
+            : 'Which merchant appeared most often in this period?',
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${topMerchant.name} dukket opp ${topMerchant.count} ganger i perioden.`
+            : `${topMerchant.name} appeared ${topMerchant.count} times in this period.`,
+        drilldown: { type: 'merchant', merchantId: topMerchant.id, merchantName: topMerchant.name },
+      });
+    }
+  }
+
+  if (topDay) {
+    const allDates = uniqueStrings(timeseries.map((p) => p.date).filter(Boolean));
+    const nearDates = allDates.filter((d) => d !== topDay.date).slice(0, 2);
+    const options = uniqueStrings([topDay.date, ...nearDates]);
+    if (options.length >= 3) {
+      const correctIndex = options.indexOf(topDay.date);
+      questions.push({
+        id: 'quiz-top-day',
+        prompt:
+          lang === 'nb'
+            ? 'Hvilken dag hadde h\u00f8yest forbruk?'
+            : 'Which day had the highest spending?',
+        options,
+        correctIndex,
+        explanation:
+          lang === 'nb'
+            ? `${topDay.date} var toppdagen med ${formatCompactCurrency(Math.abs(topDay.amount))}.`
+            : `${topDay.date} was the peak day with ${formatCompactCurrency(Math.abs(topDay.amount))}.`,
+        drilldown: { type: 'day', date: topDay.date },
+      });
+    }
+  }
+
+  return questions.slice(0, 3);
+}
+
+export function buildCoachWisdom(args: {
+  lang: Lang;
+  summary: AnalyticsSummary | null;
+  compare: AnalyticsCompareResponse | null;
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  currentLanguage: string;
+}): { praise: string; mission: string; bullets: string[] } {
+  const { lang, summary, compare, categories, merchants, currentLanguage } = args;
+  const totalExpenses = Math.abs(summary?.total_expenses ?? 0);
+  const expenseDelta = compare?.change.expenses ?? 0;
+  const expensePct = compare?.change_percentage.expenses ?? 0;
+  const topCategory = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+
+  const praise =
+    expenseDelta < 0
+      ? lang === 'nb'
+        ? `Sterkt jobbet! Forbruket er ned ${formatCompactCurrency(Math.abs(expenseDelta))} (${Math.abs(expensePct).toFixed(1)}%).`
+        : `Great work! Spending is down ${formatCompactCurrency(Math.abs(expenseDelta))} (${Math.abs(expensePct).toFixed(1)}%).`
+      : expenseDelta === 0
+        ? lang === 'nb'
+          ? 'Stabilt og kontrollert. Du holder samme forbruksniv\u00e5 som forrige periode.'
+          : 'Stable and controlled. You kept spending flat versus the previous period.'
+        : lang === 'nb'
+          ? 'Bra innsats med oversikt. N\u00e5 handler det om \u00e5 finjustere de st\u00f8rste postene.'
+          : 'Solid visibility. Next step is tightening the largest spending buckets.';
+
+  const mission =
+    topCategory
+      ? lang === 'nb'
+        ? `Sett et mini-m\u00e5l: kutt ${localizeCategoryName(topCategory.name, currentLanguage)} med 5% neste periode.`
+        : `Set a mini goal: reduce ${localizeCategoryName(topCategory.name, currentLanguage)} by 5% next period.`
+      : lang === 'nb'
+        ? 'Sett et mini-m\u00e5l: kategoriser de 10 siste transaksjonene for bedre innsikt.'
+        : 'Set a mini goal: categorize your latest 10 transactions for sharper insight.';
+
+  const bullets: string[] = [];
+  if (topCategory && totalExpenses > 0) {
+    const share = Math.round((Math.abs(topCategory.total) / totalExpenses) * 100);
+    bullets.push(
+      lang === 'nb'
+        ? `${localizeCategoryName(topCategory.name, currentLanguage)} utgj\u00f8r ${share}% av forbruket ditt.`
+        : `${localizeCategoryName(topCategory.name, currentLanguage)} represents ${share}% of your spending.`
+    );
+  }
+  if (topMerchant) {
+    bullets.push(
+      lang === 'nb'
+        ? `${topMerchant.name} er p\u00e5 toppen med ${topMerchant.count} kj\u00f8p.`
+        : `${topMerchant.name} leads with ${topMerchant.count} purchases.`
+    );
+  }
+  bullets.push(
+    lang === 'nb'
+      ? 'Tips: bruk drilldown i h\u00f8ydepunkter for \u00e5 handle p\u00e5 de st\u00f8rste postene f\u00f8rst.'
+      : 'Tip: use highlight drilldowns to act on your largest spend first.'
+  );
+
+  return { praise, mission, bullets };
+}
+
 export function InsightsPage() {
+  const INSIGHTS_CACHE_TTL_MS = 30_000;
   const { i18n } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -358,6 +605,8 @@ export function InsightsPage() {
   const [timeseries, setTimeseries] = useState<TimeSeriesPoint[]>([]);
   const [largestExpenseTx, setLargestExpenseTx] = useState<TransactionWithMeta | null>(null);
   const [compare, setCompare] = useState<AnalyticsCompareResponse | null>(null);
+  const [budgetTracking, setBudgetTracking] = useState<BudgetTrackingPeriod[]>([]);
+  const [budgetsEnabled, setBudgetsEnabled] = useState(false);
 
   const initialRange = useMemo(() => loadLastDateRange() ?? getMonthRange(), []);
   const [dateFrom, setDateFrom] = useState(initialRange.start);
@@ -370,52 +619,126 @@ export function InsightsPage() {
   const [customRangeError, setCustomRangeError] = useState<string | null>(null);
 
   const [seed, setSeed] = useState(0);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, number>>({});
+  const requestIdRef = useRef(0);
 
   const loadData = async () => {
+    const requestId = ++requestIdRef.current;
+    const cacheKey = makePageCacheKey('insights:page', {
+      userId: user?.id || 'anonymous',
+      dateFrom,
+      dateTo,
+    });
+    const cached = readPageCache<{
+      summary: AnalyticsSummary | null;
+      categories: CategoryBreakdown[];
+      merchants: MerchantBreakdown[];
+      subscriptions: RecurringItem[];
+      timeseries: TimeSeriesPoint[];
+      largestExpenseTx: TransactionWithMeta | null;
+      compare: AnalyticsCompareResponse | null;
+      budgetTracking: BudgetTrackingPeriod[];
+      budgetsEnabled: boolean;
+    }>(cacheKey);
+    if (cached) {
+      setSummary(cached.summary);
+      setCategories(cached.categories);
+      setMerchants(cached.merchants);
+      setSubscriptions(cached.subscriptions);
+      setTimeseries(cached.timeseries);
+      setLargestExpenseTx(cached.largestExpenseTx);
+      setCompare(cached.compare);
+      setBudgetTracking(cached.budgetTracking);
+      setBudgetsEnabled(cached.budgetsEnabled);
+      setLoading(false);
+    }
     setLoading(true);
     const prev = getPreviousRange(dateFrom, dateTo);
 
     try {
-      const results = await Promise.allSettled([
-        api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo }),
-        api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo }),
-        api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 }),
-        api.getAnalyticsSubscriptions(),
-        api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false }),
-        api.getTransactions({
-          date_from: dateFrom,
-          date_to: dateTo,
-          flow_type: 'expense',
-          include_transfers: false,
-          limit: 1,
-          sort_by: 'amount_abs',
-          sort_order: 'desc',
-        }),
-        api.getAnalyticsCompare({
-          current_start: dateFrom,
-          current_end: dateTo,
-          previous_start: prev.from,
-          previous_end: prev.to,
-        }),
+      const summaryPromise = api.getAnalyticsSummary({ date_from: dateFrom, date_to: dateTo });
+      const byCategoryPromise = api.getAnalyticsByCategory({ date_from: dateFrom, date_to: dateTo });
+      const timeseriesPromise = api.getAnalyticsTimeseries({ date_from: dateFrom, date_to: dateTo, granularity: 'day', include_transfers: false });
+      const comparePromise = api.getAnalyticsCompare({
+        current_start: dateFrom,
+        current_end: dateTo,
+        previous_start: prev.from,
+        previous_end: prev.to,
+      });
+
+      const byMerchantPromise = api.getAnalyticsByMerchant({ date_from: dateFrom, date_to: dateTo, limit: 12 });
+      const subsPromise = api.getAnalyticsSubscriptions();
+      const largestPromise = api.getTransactions({
+        date_from: dateFrom,
+        date_to: dateTo,
+        flow_type: 'expense',
+        include_transfers: false,
+        limit: 1,
+        sort_by: 'amount_abs',
+        sort_order: 'desc',
+      });
+      const budgetTrackingPromise = api.getBudgetTracking();
+
+      const coreResults = await Promise.allSettled([
+        summaryPromise,
+        byCategoryPromise,
+        timeseriesPromise,
+        comparePromise,
       ]);
 
-      const [summaryRes, byCatRes, byMerchRes, subsRes, timeseriesRes, largestRes, compareRes] = results;
+      if (requestId !== requestIdRef.current) return;
+
+      const [summaryRes, byCatRes, timeseriesRes, compareRes] = coreResults;
       if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value);
       if (byCatRes.status === 'fulfilled') setCategories(byCatRes.value.categories);
+      if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.series);
+      if (compareRes.status === 'fulfilled') setCompare(compareRes.value);
+      setLoading(false);
+
+      const secondaryResults = await Promise.allSettled([
+        byMerchantPromise,
+        subsPromise,
+        largestPromise,
+        budgetTrackingPromise,
+      ]);
+
+      if (requestId !== requestIdRef.current) return;
+
+      const [byMerchRes, subsRes, largestRes, budgetTrackingRes] = secondaryResults;
       if (byMerchRes.status === 'fulfilled') setMerchants(byMerchRes.value.merchants);
       if (subsRes.status === 'fulfilled') setSubscriptions(subsRes.value.subscriptions);
-      if (timeseriesRes.status === 'fulfilled') setTimeseries(timeseriesRes.value.series);
       if (largestRes.status === 'fulfilled') setLargestExpenseTx(largestRes.value.transactions[0] ?? null);
-      if (compareRes.status === 'fulfilled') setCompare(compareRes.value);
+      if (budgetTrackingRes.status === 'fulfilled') {
+        setBudgetTracking(budgetTrackingRes.value.periods || []);
+        setBudgetsEnabled(Boolean(budgetTrackingRes.value.enabled));
+      }
+
+      writePageCache(
+        cacheKey,
+        {
+          summary: summaryRes.status === 'fulfilled' ? summaryRes.value : summary,
+          categories: byCatRes.status === 'fulfilled' ? byCatRes.value.categories : categories,
+          merchants: byMerchRes.status === 'fulfilled' ? byMerchRes.value.merchants : merchants,
+          subscriptions: subsRes.status === 'fulfilled' ? subsRes.value.subscriptions : subscriptions,
+          timeseries: timeseriesRes.status === 'fulfilled' ? timeseriesRes.value.series : timeseries,
+          largestExpenseTx: largestRes.status === 'fulfilled' ? (largestRes.value.transactions[0] ?? null) : largestExpenseTx,
+          compare: compareRes.status === 'fulfilled' ? compareRes.value : compare,
+          budgetTracking: budgetTrackingRes.status === 'fulfilled' ? (budgetTrackingRes.value.periods || []) : budgetTracking,
+          budgetsEnabled: budgetTrackingRes.status === 'fulfilled' ? Boolean(budgetTrackingRes.value.enabled) : budgetsEnabled,
+        },
+        INSIGHTS_CACHE_TTL_MS
+      );
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, user?.id]);
 
   useEffect(() => {
     if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
@@ -445,6 +768,37 @@ export function InsightsPage() {
     () => buildFunFact({ lang, categories, currentLanguage }),
     [lang, categories, currentLanguage]
   );
+
+  const quiz = useMemo(
+    () =>
+      buildSpendingQuiz({
+        lang,
+        currentLanguage,
+        summary,
+        categories,
+        merchants,
+        timeseries,
+      }),
+    [lang, currentLanguage, summary, categories, merchants, timeseries]
+  );
+
+  const coach = useMemo(
+    () => buildCoachWisdom({ lang, summary, compare, categories, merchants, currentLanguage }),
+    [lang, summary, compare, categories, merchants, currentLanguage]
+  );
+
+  const quizAnsweredCount = useMemo(
+    () => quiz.filter((q) => quizAnswers[q.id] !== undefined).length,
+    [quiz, quizAnswers]
+  );
+  const quizScore = useMemo(
+    () => quiz.filter((q) => quizAnswers[q.id] === q.correctIndex).length,
+    [quiz, quizAnswers]
+  );
+
+  useEffect(() => {
+    setQuizAnswers({});
+  }, [dateFrom, dateTo, seed]);
 
   const applyCustomRange = () => {
     if (!customDateFrom || !customDateTo) return;
@@ -493,6 +847,48 @@ export function InsightsPage() {
     }
 
     navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
+  };
+
+  const openDrilldown = (drilldown: Highlight['drilldown']) => {
+    if (!drilldown) return;
+
+    if (drilldown.type === 'category') {
+      openCategoryDrilldown(drilldown.categoryId);
+      return;
+    }
+
+    if (drilldown.type === 'merchant') {
+      openMerchantDrilldown({
+        merchant_id: drilldown.merchantId ?? null,
+        merchant_name: drilldown.merchantName ?? '',
+        total: 0,
+        count: 0,
+        avg: 0,
+        trend: 0,
+      });
+      return;
+    }
+
+    if (drilldown.type === 'day') {
+      const qs = createBaseDrilldownQuery();
+      qs.set('date_from', drilldown.date);
+      qs.set('date_to', drilldown.date);
+      navigate(`/transactions?${qs.toString()}`);
+      return;
+    }
+
+    if (drilldown.type === 'transaction') {
+      const qs = new URLSearchParams();
+      qs.set('transaction_id', drilldown.transactionId);
+      navigate(`/transactions?${qs.toString()}`);
+      return;
+    }
+
+    navigate(`/transactions?${createBaseDrilldownQuery().toString()}`);
+  };
+
+  const openHighlightDrilldown = (highlight: Highlight) => {
+    openDrilldown(highlight.drilldown);
   };
 
   return (
@@ -615,6 +1011,62 @@ export function InsightsPage() {
         </CardContent>
       </Card>
 
+      {budgetsEnabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{lang === 'nb' ? 'Budsjettkompass' : 'Budget compass'}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {budgetTracking.length === 0 ? (
+              <p className="text-sm text-white/70">
+                {lang === 'nb'
+                  ? 'Budsjett er aktivert, men ingen periodegrenser er satt ennå.'
+                  : 'Budgeting is enabled, but no period limits are set yet.'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {budgetTracking.map((item) => {
+                  const label =
+                    item.period === 'weekly'
+                      ? lang === 'nb' ? 'Uke' : 'Week'
+                      : item.period === 'monthly'
+                        ? lang === 'nb' ? 'M\u00e5ned' : 'Month'
+                        : lang === 'nb' ? '\u00c5r' : 'Year';
+                  const schedule = item.period === 'yearly' ? getBudgetScheduleDelta(item) : null;
+                  const statusLabel =
+                    item.status === 'on_track'
+                      ? lang === 'nb' ? 'I rute' : 'On track'
+                      : item.status === 'warning'
+                        ? lang === 'nb' ? 'Følg med' : 'Watchlist'
+                        : lang === 'nb' ? 'Over' : 'Over';
+                  return (
+                    <button
+                      key={item.period}
+                      type="button"
+                      className="rounded-lg border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10 transition-colors"
+                      onClick={() => navigate('/budgets')}
+                    >
+                      <p className="text-xs text-white/60">{label}</p>
+                      <p className="mt-1 text-sm font-semibold text-white">
+                        {formatCompactCurrency(item.spent_amount)} / {formatCompactCurrency(item.budget_amount)}
+                      </p>
+                      <p className="mt-1 text-xs text-cyan-100/90">{statusLabel}</p>
+                      {schedule && (
+                        <p className="mt-1 text-xs text-white/70">
+                          {lang === 'nb'
+                            ? `Skjema hittil: ${formatCompactCurrency(schedule.expectedSpentSoFar)} - ${schedule.direction === 'ahead' ? 'Foran skjema' : 'Bak skjema'}: ${formatCompactCurrency(Math.abs(schedule.delta))}`
+                            : `Expected by now: ${formatCompactCurrency(schedule.expectedSpentSoFar)} - ${schedule.direction === 'ahead' ? 'Ahead of schedule' : 'Behind schedule'}: ${formatCompactCurrency(Math.abs(schedule.delta))}`}
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>{copy.highlightsTitle}</CardTitle>
@@ -634,11 +1086,16 @@ export function InsightsPage() {
           ) : highlights.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {highlights.map((h) => (
-                <div key={h.id} className="rounded-lg border border-white/10 bg-white/5 p-3">
+                <button
+                  key={h.id}
+                  type="button"
+                  className="rounded-lg border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10"
+                  onClick={() => openHighlightDrilldown(h)}
+                >
                   <p className="text-xs text-white/60">{h.emoji} {h.title}</p>
                   <p className="mt-1 text-sm font-semibold text-white">{h.value}</p>
                   <p className="mt-1 text-xs text-cyan-100/90">{h.detail}</p>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
@@ -649,6 +1106,156 @@ export function InsightsPage() {
             <p className="text-xs font-semibold text-fuchsia-100">{copy.funFactTitle}</p>
             <p className="mt-1 text-sm text-fuchsia-50">{funFact}</p>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="relative overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -left-20 top-12 h-48 w-48 rounded-full bg-cyan-300/20 blur-3xl animate-floatSlow" />
+          <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-fuchsia-300/20 blur-3xl animate-float" />
+          <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-emerald-300/10 blur-3xl animate-floatSlower" />
+        </div>
+        <CardHeader className="relative">
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="h-4 w-4 text-cyan-200" />
+            {copy.quizTitle}
+          </CardTitle>
+          <p className="text-xs text-white/70">{copy.quizSubtitle}</p>
+        </CardHeader>
+        <CardContent className="relative grid grid-cols-1 xl:grid-cols-3 gap-4">
+          {loading ? (
+            <>
+              <div className="xl:col-span-2 space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                    <Skeleton className="h-4 w-4/5" />
+                    <Skeleton className="mt-3 h-9 w-full" />
+                    <Skeleton className="mt-2 h-9 w-full" />
+                    <Skeleton className="mt-2 h-9 w-full" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                <Skeleton className="h-6 w-1/2" />
+                <Skeleton className="h-16 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="xl:col-span-2 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">
+                    {copy.quizProgress}: {quizAnsweredCount}/{quiz.length}
+                  </Badge>
+                  <Badge variant="secondary">
+                    {copy.quizScore}: {quizScore}/{quiz.length}
+                  </Badge>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    onClick={() => {
+                      setQuizAnswers({});
+                      setSeed((s) => s + 1);
+                    }}
+                  >
+                    {copy.quizShuffle}
+                  </Button>
+                </div>
+
+                {quiz.map((q, index) => {
+                  const selected = quizAnswers[q.id];
+                  const answered = selected !== undefined;
+                  return (
+                    <div key={q.id} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <p className="text-xs text-white/60">
+                        {lang === 'nb' ? 'Sp\u00f8rsm\u00e5l' : 'Question'} {index + 1}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-white">{q.prompt}</p>
+                      <div className="mt-3 grid gap-2">
+                        {q.options.map((option, optIndex) => {
+                          const isCorrect = optIndex === q.correctIndex;
+                          const isSelected = selected === optIndex;
+                          const stateClass = answered
+                            ? isCorrect
+                              ? 'border-emerald-300/40 bg-emerald-400/15 text-emerald-100'
+                              : isSelected
+                                ? 'border-rose-300/40 bg-rose-400/15 text-rose-100'
+                                : 'border-white/10 bg-white/5 text-white/70'
+                            : 'border-white/15 bg-white/5 text-white hover:bg-white/10';
+                          return (
+                            <button
+                              key={`${q.id}-${option}`}
+                              type="button"
+                              className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${stateClass}`}
+                              disabled={answered}
+                              onClick={() => setQuizAnswers((prev) => ({ ...prev, [q.id]: optIndex }))}
+                            >
+                              {option}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {answered && (
+                        <div className="mt-3 rounded-lg border border-cyan-200/20 bg-cyan-500/10 p-3">
+                          <p className="text-xs text-cyan-100/90">{q.explanation}</p>
+                          {q.drilldown && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2"
+                              onClick={() => openDrilldown(q.drilldown as Highlight['drilldown'])}
+                            >
+                              {copy.quizShowData}
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-3">
+                <div className="rounded-xl border border-emerald-200/20 bg-emerald-500/10 p-4">
+                  <p className="text-xs font-semibold text-emerald-100 flex items-center gap-2">
+                    <Trophy className="h-4 w-4" />
+                    {copy.praiseTitle}
+                  </p>
+                  <p className="mt-2 text-sm text-emerald-50">{coach.praise}</p>
+                </div>
+
+                <div className="rounded-xl border border-fuchsia-200/20 bg-fuchsia-500/10 p-4">
+                  <p className="text-xs font-semibold text-fuchsia-100">{copy.wisdomTitle}</p>
+                  <p className="mt-1 text-xs text-fuchsia-100/80">{copy.wisdomSubtitle}</p>
+                  <ul className="mt-3 space-y-2 text-sm text-fuchsia-50">
+                    {coach.bullets.map((bullet) => (
+                      <li key={bullet} className="leading-relaxed">• {bullet}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="rounded-xl border border-cyan-200/20 bg-cyan-500/10 p-4">
+                  <p className="text-xs font-semibold text-cyan-100 flex items-center gap-2">
+                    <Target className="h-4 w-4" />
+                    {copy.missionTitle}
+                  </p>
+                  <p className="mt-2 text-sm text-cyan-50">{coach.mission}</p>
+                </div>
+
+                {quiz.length > 0 && quizAnsweredCount === quiz.length && (
+                  <div className="rounded-xl border border-amber-200/20 bg-amber-500/10 p-4">
+                    <p className="text-sm text-amber-50 font-medium">
+                      {quizScore === quiz.length ? copy.quizPerfect : quizScore >= Math.ceil(quiz.length / 2) ? copy.quizGood : copy.quizTryAgain}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

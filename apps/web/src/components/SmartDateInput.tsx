@@ -51,7 +51,7 @@ export function SmartDateInput({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="relative flex items-center gap-2">
       <Input
         type="text"
         inputMode="numeric"
@@ -80,14 +80,14 @@ export function SmartDateInput({
           onChange(next);
           onErrorChange?.(null);
         }}
-        className="sr-only"
+        className="absolute right-0 top-0 h-9 w-9 opacity-0 pointer-events-none z-40"
         aria-hidden
         tabIndex={-1}
       />
       <button
         type="button"
         aria-label={ariaLabel ? `${ariaLabel} (velg i kalender)` : 'Velg dato i kalender'}
-        className="h-9 w-9 shrink-0 rounded-md border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
+        className="relative z-50 h-9 w-9 shrink-0 rounded-md border border-white/15 bg-white/5 text-white/80 hover:bg-white/10"
         onClick={() => {
           const picker = hiddenDateInputRef.current;
           if (!picker) return;
