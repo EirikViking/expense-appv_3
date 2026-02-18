@@ -76,6 +76,20 @@ type QuizQuestion = {
     | { type: 'period' };
 };
 
+export type BudgetSurplusIdea = {
+  id: string;
+  title: string;
+  description: string;
+  amount: number;
+};
+
+export type BudgetSurplusPlan = {
+  period: BudgetTrackingPeriod['period'];
+  periodLabel: string;
+  surplusAmount: number;
+  ideas: BudgetSurplusIdea[];
+};
+
 function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
 }
@@ -153,6 +167,143 @@ function getBudgetScheduleDelta(item: BudgetTrackingPeriod) {
     expectedSpentSoFar,
     delta,
     direction: delta >= 0 ? ('ahead' as const) : ('behind' as const),
+  };
+}
+
+function splitSurplusAmount(total: number, shares: number[]): number[] {
+  const safeTotal = Math.max(0, Math.round(total));
+  if (safeTotal <= 0) return shares.map(() => 0);
+
+  const allocations = shares.map((share) => Math.max(0, Math.floor(safeTotal * share)));
+  const allocated = allocations.reduce((sum, value) => sum + value, 0);
+  allocations[allocations.length - 1] += Math.max(0, safeTotal - allocated);
+  return allocations;
+}
+
+function buildBudgetSurplusIdeas(args: {
+  lang: Lang;
+  surplusAmount: number;
+  currentLanguage: string;
+  topCategoryName?: string;
+  topMerchantName?: string;
+}): BudgetSurplusIdea[] {
+  const { lang, currentLanguage } = args;
+  const surplusAmount = Math.max(0, Math.round(args.surplusAmount));
+  const [buffer, invest, improve, enjoy] = splitSurplusAmount(surplusAmount, [0.4, 0.25, 0.2, 0.15]);
+  const localizedTopCategory = args.topCategoryName
+    ? localizeCategoryName(args.topCategoryName, currentLanguage)
+    : lang === 'nb'
+      ? 'hovedkategorien din'
+      : 'your top category';
+  const topMerchant = args.topMerchantName || (lang === 'nb' ? 'favorittbrukerstedet ditt' : 'your most used merchant');
+
+  if (lang === 'nb') {
+    return [
+      {
+        id: 'buffer',
+        title: 'Bygg ekstra sikkerhetsbuffer',
+        description: `Sett ca ${formatCompactCurrency(buffer)} i bufferkonto. Det gir ro hvis neste måned blir dyrere.`,
+        amount: buffer,
+      },
+      {
+        id: 'invest',
+        title: 'Langsiktig vekst',
+        description: `Invester ca ${formatCompactCurrency(invest)} i en bred indeksløsning eller ekstra avdrag for lavere fremtidige kostnader.`,
+        amount: invest,
+      },
+      {
+        id: 'improve',
+        title: 'Smartere hverdagsvalg',
+        description: `Bruk ca ${formatCompactCurrency(improve)} på et planlagt kvalitetsløft i ${localizedTopCategory}, så du kjøper bedre og sjeldnere.`,
+        amount: improve,
+      },
+      {
+        id: 'enjoy',
+        title: 'Planlagt belønning',
+        description: `Sett av ca ${formatCompactCurrency(enjoy)} til en konkret opplevelse hos ${topMerchant} eller en annen prioritet du faktisk verdsetter.`,
+        amount: enjoy,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'buffer',
+      title: 'Strengthen your safety buffer',
+      description: `Move about ${formatCompactCurrency(buffer)} to your cash buffer so next month has more room.`,
+      amount: buffer,
+    },
+    {
+      id: 'invest',
+      title: 'Grow future options',
+      description: `Use about ${formatCompactCurrency(invest)} for broad investing or extra debt payoff to reduce future pressure.`,
+      amount: invest,
+    },
+    {
+      id: 'improve',
+      title: 'Upgrade daily quality',
+      description: `Allocate about ${formatCompactCurrency(improve)} to improve ${localizedTopCategory} in a planned way.`,
+      amount: improve,
+    },
+    {
+      id: 'enjoy',
+      title: 'Intentional reward',
+      description: `Keep about ${formatCompactCurrency(enjoy)} for one meaningful experience at ${topMerchant} or another personal priority.`,
+      amount: enjoy,
+    },
+  ];
+}
+
+export function buildBudgetSurplusPlan(args: {
+  lang: Lang;
+  budgetTracking: BudgetTrackingPeriod[];
+  categories: CategoryBreakdown[];
+  merchants: MerchantBreakdown[];
+  currentLanguage: string;
+}): BudgetSurplusPlan | null {
+  const { lang, budgetTracking, categories, merchants, currentLanguage } = args;
+  if (!Array.isArray(budgetTracking) || budgetTracking.length === 0) return null;
+
+  const periodPriority: Record<BudgetTrackingPeriod['period'], number> = {
+    monthly: 3,
+    yearly: 2,
+    weekly: 1,
+  };
+
+  const candidate = budgetTracking
+    .map((item) => ({ item, schedule: getBudgetScheduleDelta(item) }))
+    .filter((entry) => entry.schedule && entry.schedule.delta > 0)
+    .sort((a, b) => {
+      const byPeriod = periodPriority[b.item.period] - periodPriority[a.item.period];
+      if (byPeriod !== 0) return byPeriod;
+      return (b.schedule?.delta || 0) - (a.schedule?.delta || 0);
+    })[0];
+
+  if (!candidate?.schedule) return null;
+  const surplusAmount = Math.max(0, Math.round(candidate.schedule.delta));
+  if (surplusAmount < 100) return null;
+
+  const periodLabel =
+    candidate.item.period === 'weekly'
+      ? lang === 'nb' ? 'uke' : 'week'
+      : candidate.item.period === 'monthly'
+        ? lang === 'nb' ? 'måned' : 'month'
+        : lang === 'nb' ? 'år' : 'year';
+
+  const topCategory = getTopCategory(categories);
+  const topMerchant = getTopMerchant(merchants);
+
+  return {
+    period: candidate.item.period,
+    periodLabel,
+    surplusAmount,
+    ideas: buildBudgetSurplusIdeas({
+      lang,
+      surplusAmount,
+      currentLanguage,
+      topCategoryName: topCategory?.name,
+      topMerchantName: topMerchant?.name,
+    }),
   };
 }
 
@@ -787,6 +938,11 @@ export function InsightsPage() {
     [lang, summary, compare, categories, merchants, currentLanguage]
   );
 
+  const budgetSurplusPlan = useMemo(
+    () => buildBudgetSurplusPlan({ lang, budgetTracking, categories, merchants, currentLanguage }),
+    [lang, budgetTracking, categories, merchants, currentLanguage]
+  );
+
   const quizAnsweredCount = useMemo(
     () => quiz.filter((q) => quizAnswers[q.id] !== undefined).length,
     [quiz, quizAnswers]
@@ -1024,7 +1180,8 @@ export function InsightsPage() {
                   : 'Budgeting is enabled, but no period limits are set yet.'}
               </p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {budgetTracking.map((item) => {
                   const label =
                     item.period === 'weekly'
@@ -1061,7 +1218,38 @@ export function InsightsPage() {
                     </button>
                   );
                 })}
-              </div>
+                </div>
+                {budgetSurplusPlan && (
+                  <div className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-emerald-100">
+                        {lang === 'nb' ? 'Du er foran budsjett - bruk overskuddet smart' : 'You are ahead of budget - use the surplus wisely'}
+                      </p>
+                      <Badge variant="secondary" className="border-emerald-200/20 bg-emerald-400/20 text-emerald-100">
+                        {lang === 'nb'
+                          ? `${formatCompactCurrency(budgetSurplusPlan.surplusAmount)} foran ${budgetSurplusPlan.periodLabel}`
+                          : `${formatCompactCurrency(budgetSurplusPlan.surplusAmount)} ahead this ${budgetSurplusPlan.periodLabel}`}
+                      </Badge>
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {budgetSurplusPlan.ideas.map((idea) => (
+                        <div
+                          key={idea.id}
+                          className="rounded-lg border border-white/15 bg-white/5 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium text-white">{idea.title}</p>
+                            <span className="text-xs font-semibold text-emerald-200">
+                              {formatCompactCurrency(idea.amount)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-white/75">{idea.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
