@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import type { BudgetTrackingPeriod } from '@expense/shared';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +55,17 @@ export function BudgetsPage() {
 
   const [tracking, setTracking] = useState<BudgetTrackingPeriod[]>([]);
 
+  const toBudgetErrorMessage = (err: unknown, fallbackKey: string): string => {
+    if (err instanceof ApiError) {
+      if (err.status === 403) return t('budgetsPage.forbidden');
+      if (err.status >= 500) return t('budgetsPage.tempUnavailable');
+    }
+    if (err instanceof Error && /internal server error/i.test(err.message)) {
+      return t('budgetsPage.tempUnavailable');
+    }
+    return err instanceof Error ? err.message : t(fallbackKey);
+  };
+
   const configuredCount = useMemo(
     () => [weekly, monthly, yearly].filter((v) => v.trim().length > 0).length,
     [weekly, monthly, yearly],
@@ -89,7 +100,7 @@ export function BudgetsPage() {
       setYearly(toInputValue(settingsRes.settings.yearly_amount));
       setTracking(trackingRes.periods || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('budgetsPage.loadFailed'));
+      setError(toBudgetErrorMessage(err, 'budgetsPage.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -146,7 +157,7 @@ export function BudgetsPage() {
       setTracking(trackingRes.periods || []);
       setSuccess(t('budgetsPage.saved'));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('budgetsPage.saveFailed'));
+      setError(toBudgetErrorMessage(err, 'budgetsPage.saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -165,7 +176,7 @@ export function BudgetsPage() {
       setSuccess(t('budgetsPage.saved'));
     } catch (err) {
       setEnabled(previous);
-      setError(err instanceof Error ? err.message : t('budgetsPage.saveFailed'));
+      setError(toBudgetErrorMessage(err, 'budgetsPage.saveFailed'));
     } finally {
       setSaving(false);
     }

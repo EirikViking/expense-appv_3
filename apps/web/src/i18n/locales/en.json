@@ -485,6 +485,8 @@
     },
     "loadFailed": "Failed to load budget settings.",
     "saveFailed": "Failed to save budget settings.",
+    "forbidden": "You do not have access to budgets.",
+    "tempUnavailable": "Budget features are temporarily unavailable. Please try again shortly.",
     "loading": "Loading budget tracking...",
     "feedback": {
       "underBudget": "Excellent work. You are under budget across all configured periods.",

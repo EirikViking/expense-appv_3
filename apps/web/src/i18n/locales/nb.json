@@ -380,6 +380,8 @@
     },
     "loadFailed": "Kunne ikke laste budsjettinnstillinger.",
     "saveFailed": "Kunne ikke lagre budsjettinnstillinger.",
+    "forbidden": "Du har ikke tilgang til budsjetter.",
+    "tempUnavailable": "Budsjett er midlertidig utilgjengelig. Prøv igjen om litt.",
     "loading": "Laster budsjettoppfølging..."
   },
   "bootstrap": {

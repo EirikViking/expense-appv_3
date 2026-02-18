@@ -24,6 +24,46 @@ type BudgetSettingsRow = {
   updated_at: string | null;
 };
 
+async function ensureBudgetSettingsSchema(db: D1Database): Promise<void> {
+  await db
+    .prepare(`
+      CREATE TABLE IF NOT EXISTS budget_settings (
+        user_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        weekly_amount REAL,
+        monthly_amount REAL,
+        yearly_amount REAL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `)
+    .run();
+
+  const columnsRes = await db.prepare('PRAGMA table_info(budget_settings)').all<{ name: string }>();
+  const columns = new Set((columnsRes.results || []).map((row) => String(row.name)));
+
+  if (!columns.has('enabled')) {
+    await db.prepare('ALTER TABLE budget_settings ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!columns.has('weekly_amount')) {
+    await db.prepare('ALTER TABLE budget_settings ADD COLUMN weekly_amount REAL').run();
+  }
+  if (!columns.has('monthly_amount')) {
+    await db.prepare('ALTER TABLE budget_settings ADD COLUMN monthly_amount REAL').run();
+  }
+  if (!columns.has('yearly_amount')) {
+    await db.prepare('ALTER TABLE budget_settings ADD COLUMN yearly_amount REAL').run();
+  }
+  if (!columns.has('created_at')) {
+    await db.prepare(`ALTER TABLE budget_settings ADD COLUMN created_at TEXT DEFAULT (datetime('now'))`).run();
+  }
+  if (!columns.has('updated_at')) {
+    await db.prepare(`ALTER TABLE budget_settings ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))`).run();
+  }
+
+  await db.prepare('CREATE INDEX IF NOT EXISTS idx_budget_settings_enabled ON budget_settings(enabled)').run();
+}
+
 function toDateIso(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -112,6 +152,8 @@ function buildTrackingPeriod(
 }
 
 async function loadBudgetSettings(db: D1Database, userId: string): Promise<BudgetSettings> {
+  await ensureBudgetSettingsSchema(db);
+
   const row = await db
     .prepare('SELECT enabled, weekly_amount, monthly_amount, yearly_amount, updated_at FROM budget_settings WHERE user_id = ?')
     .bind(userId)
