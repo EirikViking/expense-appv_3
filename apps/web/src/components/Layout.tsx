@@ -23,7 +23,7 @@ import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
-import { prefetchAppRoutes } from '@/lib/route-prefetch';
+import { prefetchAppRoutes, prefetchRouteForPath } from '@/lib/route-prefetch';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -116,6 +116,8 @@ export function Layout({ children }: LayoutProps) {
                     key={item.path}
                     to={item.path}
                     onClick={() => setSidebarOpen(false)}
+                    onMouseEnter={() => prefetchRouteForPath(item.path)}
+                    onFocus={() => prefetchRouteForPath(item.path)}
                     className={cn(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                       active
