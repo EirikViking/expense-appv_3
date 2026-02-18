@@ -339,15 +339,16 @@ transactions.get('/', async (c) => {
         conditions.push(UNKNOWN_MERCHANT_SQL);
       } else {
         // "merchant_name" comes from aggregated views (dashboard/insights) and often represents a store name
-        // rather than an exact string match to a single row's description. Use a case-insensitive contains
-        // match so variants like "KIWI 505 BARCODE ..." are included.
-        const needle = `%${mn}%`;
+        // rather than an exact string match to a single row's description.
+        //
+        // Use INSTR + LOWER instead of LIKE '%...%' because D1 can throw
+        // "LIKE or GLOB pattern too complex" for long merchant names.
         conditions.push(`(
-          COALESCE(m.canonical_name, '') LIKE ? COLLATE NOCASE OR
-          COALESCE(t.merchant, '') LIKE ? COLLATE NOCASE OR
-          t.description LIKE ? COLLATE NOCASE
+          INSTR(LOWER(COALESCE(m.canonical_name, '')), LOWER(?)) > 0 OR
+          INSTR(LOWER(COALESCE(t.merchant, '')), LOWER(?)) > 0 OR
+          INSTR(LOWER(COALESCE(t.description, '')), LOWER(?)) > 0
         )`);
-        params.push(needle, needle, needle);
+        params.push(mn, mn, mn);
       }
     }
 
