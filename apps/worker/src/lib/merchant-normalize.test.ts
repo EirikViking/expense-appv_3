@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { normalizeMerchant, UNKNOWN_MERCHANT } from './merchant-normalize';
 
 describe('normalizeMerchant', () => {
-  it('normalizes required merchant cases', () => {
+  it('normalizes known merchant patterns', () => {
     expect(normalizeMerchant('100021 ELKJOP.NO').merchant).toBe('ELKJOP');
     expect(normalizeMerchant('100022 NOK')).toEqual({
       merchant: UNKNOWN_MERCHANT,
@@ -23,5 +23,28 @@ describe('normalizeMerchant', () => {
     expect(normalized.merchant_raw).toBe('100032 NOK 1061,56');
     expect(normalized.merchant_kind).toBe('name');
   });
-});
 
+  it('strips dotted numeric reference prefixes before merchant name', () => {
+    const normalized = normalizeMerchant('9802.44.27714, Felleskonto ...');
+    expect(normalized.merchant).toBe('Felleskonto ...');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+
+  it('strips prefixed letter+numeric reference prefixes before merchant name', () => {
+    const normalized = normalizeMerchant('R9802.44.27714, Felleskonto ...');
+    expect(normalized.merchant).toBe('Felleskonto ...');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+
+  it('strips long compact reference ids before merchant name', () => {
+    const normalized = normalizeMerchant('R98024427714 Felleskonto ...');
+    expect(normalized.merchant).toBe('Felleskonto ...');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+
+  it('keeps normal merchant names intact', () => {
+    const normalized = normalizeMerchant('KIWI');
+    expect(normalized.merchant).toBe('KIWI');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+});

@@ -83,6 +83,14 @@ function cleanupMerchantCandidate(raw: string): string {
   // Remove leading numeric transaction codes.
   candidate = candidate.replace(/^\d{3,8}\s+/, '');
 
+  // Remove compact reference ids in front of merchant names.
+  // Examples:
+  // - "9802.44.27714, Felleskonto ..." -> "Felleskonto ..."
+  // - "R9802.44.27714, Felleskonto ..." -> "Felleskonto ..."
+  // - "R98024427714 Felleskonto ..." -> "Felleskonto ..."
+  candidate = candidate.replace(/^[A-Z]?\d{2,}(?:[.\-/:]\d{2,}){1,}[,;:]?\s+/i, '');
+  candidate = candidate.replace(/^[A-Z]?\d{8,}[,;:]?\s+/i, '');
+
   // "100032 NOK 1061,56 Klarna Ab" -> "Klarna Ab"
   candidate = candidate.replace(/^(?:NOK|KR)\s+[-\d.,]+\s+/i, '');
   candidate = candidate.replace(/^\d{3,8}\s+(?:NOK|KR)\s+[-\d.,]+\s+/i, '');
