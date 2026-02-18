@@ -486,9 +486,14 @@ export function DashboardPage() {
     });
   }, [topExpenseCategoryTiles, currentLanguage]);
 
+  const momentumEndDate = useMemo(() => {
+    const today = formatDateLocal(new Date());
+    return dateTo > today ? today : dateTo;
+  }, [dateTo]);
+
   const spendingMomentum = useMemo(
-    () => computeSpendingMomentum(timeseries, { start: dateFrom, end: dateTo }),
-    [timeseries, dateFrom, dateTo]
+    () => computeSpendingMomentum(timeseries, { start: dateFrom, end: momentumEndDate }),
+    [timeseries, dateFrom, momentumEndDate]
   );
 
   const formatAbsolutePercent = (value: number) => {
