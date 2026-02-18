@@ -22,6 +22,7 @@ export function getCategoryHint(combinedText: unknown, amount: number): string |
   if (!text) return null;
 
   // Most specific first.
+  if (hasAny(text, ['google play', 'apple.com/bill']) && amount < 0) return 'cat_bills_memberships';
   if (/\b(bolt|uber|taxi)\b/.test(text) && amount < 0) return 'cat_transport_taxi_uber';
   if (hasAny(text, ['paypal :tidal', 'tidalmusica', 'tidal'])) return 'cat_entertainment_streaming';
   if (hasAny(text, ['felleskonto'])) return 'cat_bills_housing_shared';

@@ -853,14 +853,23 @@ export function DashboardPage() {
                           : item.period === 'monthly'
                             ? t('budgetsPage.period.monthly')
                             : t('budgetsPage.period.yearly');
-                      const elapsedEndDate = new Date(`${item.start_date}T00:00:00.000Z`);
-                      elapsedEndDate.setUTCDate(elapsedEndDate.getUTCDate() + Math.max(0, item.days_elapsed - 1));
-                      const end = formatDate(formatDateLocal(elapsedEndDate));
+                      const elapsedBudget = item.days_total > 0
+                        ? (item.budget_amount * item.days_elapsed) / item.days_total
+                        : item.budget_amount;
+                      const variance = elapsedBudget - item.spent_amount;
+                      const paceText = variance >= 0
+                        ? t('dashboard.budgetPeriodToDateUnder', { amount: formatCurrency(variance) })
+                        : t('dashboard.budgetPeriodToDateOver', { amount: formatCurrency(Math.abs(variance)) });
 
                       return (
-                        <p key={`to-date-${item.period}`} className="text-xs text-white/70">
-                          <span className="font-medium text-white/80">{label}</span>: {formatDate(item.start_date)} - {end}
-                        </p>
+                        <div key={`to-date-${item.period}`} className="space-y-0.5">
+                          <p className="text-xs text-white/70">
+                            <span className="font-medium text-white/80">{label}</span>: {t('budgetsPage.spent')} {formatCurrency(item.spent_amount)} / {formatCurrency(elapsedBudget)}
+                          </p>
+                          <p className={`text-[11px] ${variance >= 0 ? 'text-emerald-300/90' : 'text-rose-300/90'}`}>
+                            {paceText}
+                          </p>
+                        </div>
                       );
                     })}
                   </div>

@@ -3,6 +3,8 @@ import { getCategoryHint } from './category-hints';
 
 describe('category hints', () => {
   it('maps known Other merchants from real samples', () => {
+    expect(getCategoryHint('Google Play Apps', -255)).toBe('cat_bills_memberships');
+    expect(getCategoryHint('APPLE.COM/BILL\\80056952', -119)).toBe('cat_bills_memberships');
     expect(getCategoryHint('Visa 100021 Bolt Oslo', -239.2)).toBe('cat_transport_taxi_uber');
     expect(getCategoryHint('Uber *Trip Help.Uber.Com', -119.5)).toBe('cat_transport_taxi_uber');
     expect(getCategoryHint('Taxi Sentrum AS', -450)).toBe('cat_transport_taxi_uber');
