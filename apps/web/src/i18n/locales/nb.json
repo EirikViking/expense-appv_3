@@ -119,6 +119,7 @@
     "excludeTransfersDefault": "Ekskluder overføringer (standard)",
     "showExcluded": "Vis utelatte",
     "excluded": "Utelatt",
+    "amountFilterHelp": "Beløpsfilter bruker absoluttverdi. Skriv 500 for transaksjoner på minst 500 kr.",
     "sort": {
       "label": "Sorter",
       "dateDesc": "Dato (nyest først)",
@@ -156,7 +157,10 @@
     "validation": {
       "dateRequired": "Dato er påkrevd",
       "descriptionRequired": "Beskrivelse er påkrevd",
-      "amountInvalid": "Beløp må være et gyldig tall"
+      "amountInvalid": "Beløp må være et gyldig tall",
+      "invalidDateFormat": "Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY.",
+      "invalidDate": "Ugyldig dato.",
+      "invalidDateRange": "Fra-dato kan ikke være etter til-dato."
     },
     "budgetSummaryTitle": "Budsjettstatus"
   },
@@ -287,7 +291,9 @@
     "noRules": "Ingen regler enda. Opprett en for automatisk kategorisering.",
     "setCategoryTo": "Sett kategori ->",
     "showingCount": "Viser {{shown}} av {{total}}",
-    "addTagTo": "Legg til tag ->"
+    "addTagTo": "Legg til tag ->",
+    "enableRule": "Aktiver regel",
+    "disableRule": "Deaktiver regel"
   },
   "settingsPage": {
     "title": "Innstillinger",

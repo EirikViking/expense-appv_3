@@ -17,6 +17,8 @@ import {
   CheckCircle,
   XCircle,
   GripVertical,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
@@ -557,6 +559,7 @@ export function RulesPage() {
             )}
             <div className="flex gap-2">
               <Button onClick={handleSave}>
+                <CheckCircle className="h-4 w-4 mr-2" />
                 {isCreating ? t('rulesPage.create') : t('common.save')}
               </Button>
               <Button variant="outline" onClick={cancelEdit}>
@@ -678,7 +681,7 @@ export function RulesPage() {
                       variant="ghost"
                       onClick={() => handleTest(rule.id)}
                       disabled={testingRuleId === rule.id}
-                      title="Run rule test"
+                      title={t('rulesPage.testRules')}
                       aria-label={`${t('rulesPage.testRules')}: ${rule.name}`}
                     >
                       <Play className="h-4 w-4" />
@@ -687,18 +690,20 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => toggleEnabled(rule)}
+                      title={rule.enabled ? t('rulesPage.disableRule') : t('rulesPage.enableRule')}
                       aria-label={rule.enabled ? `${t('rulesPage.disabled')}: ${rule.name}` : `${t('rulesPage.ruleEnabled')}: ${rule.name}`}
                     >
                       {rule.enabled ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
+                        <ToggleRight className="h-4 w-4 text-green-500" />
                       ) : (
-                        <XCircle className="h-4 w-4 text-white/45" />
+                        <ToggleLeft className="h-4 w-4 text-white/45" />
                       )}
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => startEdit(rule)}
+                      title={t('rulesPage.editRule')}
                       aria-label={`${t('transactions.editOne')}: ${rule.name}`}
                     >
                       <Pencil className="h-4 w-4 text-white/45" />
@@ -707,6 +712,7 @@ export function RulesPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => handleDelete(rule.id)}
+                      title={t('transactions.deleteOne')}
                       aria-label={`${t('transactions.deleteOne')}: ${rule.name}`}
                     >
                       <Trash2 className="h-4 w-4 text-red-400" />

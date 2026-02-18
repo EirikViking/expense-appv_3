@@ -21,7 +21,11 @@ export function detectInitialLanguage(): SupportedLanguage {
   } catch {
     // ignore
   }
-  return normalizeNavigatorLang(navigator.language || 'en');
+  const navigatorLang =
+    typeof navigator !== 'undefined' && typeof navigator.language === 'string'
+      ? navigator.language
+      : 'en';
+  return normalizeNavigatorLang(navigatorLang);
 }
 
 export async function setLanguage(lang: SupportedLanguage): Promise<void> {
@@ -51,4 +55,3 @@ i18n
   });
 
 export default i18n;
-

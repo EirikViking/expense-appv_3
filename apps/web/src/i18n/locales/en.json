@@ -120,6 +120,7 @@
     "showExcluded": "Show excluded",
     "excluded": "Excluded",
     "budgetSummaryTitle": "Budget status",
+    "amountFilterHelp": "Amount filters use absolute value. Enter 500 to include transactions of at least 500.",
     "sort": {
       "label": "Sort",
       "dateDesc": "Date (newest first)",
@@ -157,7 +158,10 @@
     "validation": {
       "dateRequired": "Date is required",
       "descriptionRequired": "Description is required",
-      "amountInvalid": "Amount must be a valid number"
+      "amountInvalid": "Amount must be a valid number",
+      "invalidDateFormat": "Invalid date format. Use YYYY-MM-DD or DD.MM.YYYY.",
+      "invalidDate": "Invalid date.",
+      "invalidDateRange": "From date cannot be after to date."
     }
   },
   "theme": {
@@ -360,7 +364,9 @@
     "noRules": "No rules yet. Create one to automatically categorize transactions.",
     "setCategoryTo": "Set category ->",
     "showingCount": "Showing {{shown}} of {{total}}",
-    "addTagTo": "Add tag ->"
+    "addTagTo": "Add tag ->",
+    "enableRule": "Enable rule",
+    "disableRule": "Disable rule"
   },
   "settingsPage": {
     "title": "Settings",

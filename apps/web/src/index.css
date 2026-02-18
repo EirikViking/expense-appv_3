@@ -25,17 +25,35 @@ html, body {
 
   --field-bg: rgba(255,255,255,0.05);
   --field-border: rgba(255,255,255,0.15);
+
+  --atmo-base: radial-gradient(1200px circle at 10% 0%, rgba(34,211,238,0.35), transparent 55%),
+    radial-gradient(900px circle at 90% 20%, rgba(236,72,153,0.28), transparent 55%),
+    radial-gradient(1000px circle at 60% 110%, rgba(168,85,247,0.25), transparent 55%),
+    linear-gradient(180deg, #070A12 0%, #0B1020 35%, #0A0E1A 100%);
+  --atmo-blob-a: linear-gradient(to bottom right, rgba(103,232,249,0.30), rgba(6,182,212,0.16), transparent);
+  --atmo-blob-b: linear-gradient(to top right, rgba(232,121,249,0.30), rgba(192,132,252,0.18), transparent);
+  --atmo-blob-c: linear-gradient(to top right, rgba(252,211,77,0.25), rgba(244,114,182,0.14), transparent);
+  --atmo-spot: radial-gradient(900px circle at 50% 20%, rgba(255,255,255,0.10), transparent 55%);
 }
 
 /* Day mode is still "aurora", but a bit clearer and less inky. */
 :root[data-theme="day"] {
-  --app-bg: #07101A;
-  --app-fg: #F0F4FF;
+  --app-bg: #0A1730;
+  --app-fg: #F4F8FF;
 
-  --glass-bg: linear-gradient(180deg, rgba(12,18,34,0.70), rgba(12,18,34,0.40));
-  --glass-border: rgba(255,255,255,0.14);
-  --field-bg: rgba(255,255,255,0.06);
-  --field-border: rgba(255,255,255,0.18);
+  --glass-bg: linear-gradient(180deg, rgba(18,33,62,0.72), rgba(18,33,62,0.45));
+  --glass-border: rgba(166, 207, 255, 0.28);
+  --field-bg: rgba(147, 197, 253, 0.14);
+  --field-border: rgba(166, 207, 255, 0.34);
+
+  --atmo-base: radial-gradient(1200px circle at 10% 0%, rgba(59,130,246,0.38), transparent 56%),
+    radial-gradient(900px circle at 90% 20%, rgba(16,185,129,0.26), transparent 56%),
+    radial-gradient(1000px circle at 60% 110%, rgba(14,165,233,0.26), transparent 56%),
+    linear-gradient(180deg, #0D2142 0%, #123056 40%, #0E2647 100%);
+  --atmo-blob-a: linear-gradient(to bottom right, rgba(125,211,252,0.36), rgba(56,189,248,0.20), transparent);
+  --atmo-blob-b: linear-gradient(to top right, rgba(110,231,183,0.30), rgba(45,212,191,0.18), transparent);
+  --atmo-blob-c: linear-gradient(to top right, rgba(191,219,254,0.28), rgba(56,189,248,0.14), transparent);
+  --atmo-spot: radial-gradient(900px circle at 50% 20%, rgba(255,255,255,0.18), transparent 58%);
 }
 
 body {

@@ -264,13 +264,13 @@ transactions.get('/', async (c) => {
     }
 
     if (min_amount !== undefined) {
-      conditions.push('t.amount >= ?');
-      params.push(min_amount);
+      conditions.push('ABS(t.amount) >= ?');
+      params.push(Math.abs(min_amount));
     }
 
     if (max_amount !== undefined) {
-      conditions.push('t.amount <= ?');
-      params.push(max_amount);
+      conditions.push('ABS(t.amount) <= ?');
+      params.push(Math.abs(max_amount));
     }
 
     if (flow_type) {

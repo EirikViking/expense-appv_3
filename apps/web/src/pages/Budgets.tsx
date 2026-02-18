@@ -152,6 +152,25 @@ export function BudgetsPage() {
     }
   };
 
+  const persistEnabled = async (nextEnabled: boolean) => {
+    const previous = enabled;
+    setEnabled(nextEnabled);
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      await api.updateBudgetSettings({ enabled: nextEnabled });
+      const trackingRes = await api.getBudgetTracking();
+      setTracking(trackingRes.periods || []);
+      setSuccess(t('budgetsPage.saved'));
+    } catch (err) {
+      setEnabled(previous);
+      setError(err instanceof Error ? err.message : t('budgetsPage.saveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
@@ -168,7 +187,10 @@ export function BudgetsPage() {
             <input
               type="checkbox"
               checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
+              disabled={saving || loading}
+              onChange={(e) => {
+                void persistEnabled(e.target.checked);
+              }}
               className="h-4 w-4 rounded border-white/20 bg-white/5"
             />
             <span className="font-medium">

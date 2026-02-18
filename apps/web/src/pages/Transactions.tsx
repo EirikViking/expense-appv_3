@@ -169,7 +169,7 @@ export function TransactionsPage() {
   const fetchData = useCallback(async () => {
     if (!filtersInitialized) return;
     if (!validateDateRange(dateFrom, dateTo)) {
-      setDateRangeError('Fra-dato kan ikke være etter til-dato.');
+      setDateRangeError(t('transactions.validation.invalidDateRange'));
       setTransactions([]);
       setTotal(0);
       setOverallTotal(0);
@@ -212,12 +212,12 @@ export function TransactionsPage() {
           min_amount: (() => {
             if (!minAmount.trim()) return undefined;
             const n = Number(minAmount);
-            return Number.isFinite(n) ? n : undefined;
+            return Number.isFinite(n) ? Math.abs(n) : undefined;
           })(),
           max_amount: (() => {
             if (!maxAmount.trim()) return undefined;
             const n = Number(maxAmount);
-            return Number.isFinite(n) ? n : undefined;
+            return Number.isFinite(n) ? Math.abs(n) : undefined;
           })(),
           search: searchQuery || undefined,
           include_transfers: !excludeTransfers,
@@ -304,8 +304,8 @@ export function TransactionsPage() {
       setDateRangeError(null);
       return;
     }
-    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : 'Fra-dato kan ikke være etter til-dato.');
-  }, [dateFrom, dateTo]);
+    setDateRangeError(validateDateRange(dateFrom, dateTo) ? null : t('transactions.validation.invalidDateRange'));
+  }, [dateFrom, dateTo, t]);
 
   // Initialize from URL query params (drilldown support)
   useEffect(() => {
@@ -659,8 +659,8 @@ export function TransactionsPage() {
                 <SmartDateInput
                   value={dateFrom}
                   ariaLabel={t('common.fromDate')}
-                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
-                  invalidDateMessage="Ugyldig dato."
+                  invalidFormatMessage={t('transactions.validation.invalidDateFormat')}
+                  invalidDateMessage={t('transactions.validation.invalidDate')}
                   onChange={(next) => {
                     setDateFrom(next);
                     setPage(0);
@@ -676,8 +676,8 @@ export function TransactionsPage() {
                 <SmartDateInput
                   value={dateTo}
                   ariaLabel={t('common.toDate')}
-                  invalidFormatMessage="Ugyldig datoformat. Bruk YYYY-MM-DD eller DD.MM.YYYY."
-                  invalidDateMessage="Ugyldig dato."
+                  invalidFormatMessage={t('transactions.validation.invalidDateFormat')}
+                  invalidDateMessage={t('transactions.validation.invalidDate')}
                   onChange={(next) => {
                     setDateTo(next);
                     setPage(0);
@@ -772,7 +772,7 @@ export function TransactionsPage() {
                 <Input
                   type="number"
                   inputMode="decimal"
-                  placeholder="e.g. -500"
+                  placeholder="500"
                   value={minAmount}
                   onChange={(e) => {
                     setMinAmount(e.target.value);
@@ -787,7 +787,7 @@ export function TransactionsPage() {
                 <Input
                   type="number"
                   inputMode="decimal"
-                  placeholder="e.g. 0"
+                  placeholder="5000"
                   value={maxAmount}
                   onChange={(e) => {
                     setMaxAmount(e.target.value);
@@ -796,6 +796,7 @@ export function TransactionsPage() {
                 />
               </div>
             </div>
+            <p className="mt-2 text-xs text-white/60">{t('transactions.amountFilterHelp')}</p>
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

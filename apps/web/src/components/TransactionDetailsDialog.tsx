@@ -78,6 +78,12 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     const handleToggleTransfer = async (next: boolean) => {
         const tx = localTx ?? transaction;
         if (!tx) return;
+        const previous = tx;
+        setLocalTx({
+            ...tx,
+            is_transfer: next,
+            is_excluded: next ? true : tx.is_excluded,
+        });
         setIsUpdating(true);
         try {
             // If a user un-marks transfer, default to included (not excluded) so it counts in analytics again.
@@ -85,6 +91,7 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
             setLocalTx(updated);
             onUpdateSuccess?.();
         } catch (err) {
+            setLocalTx(previous);
             alert(t('transactions.failedUpdateOne'));
         } finally {
             setIsUpdating(false);
@@ -249,6 +256,9 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                                 <span className="text-sm">
                                     {t('transactions.markAsTransferHint')}
                                 </span>
+                                {isUpdating && (
+                                    <span className="text-xs text-white/60">{t('common.save')}...</span>
+                                )}
                             </div>
                         </div>
                         <div className="space-y-1">

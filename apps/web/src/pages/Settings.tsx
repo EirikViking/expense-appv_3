@@ -11,6 +11,8 @@ import { useTranslation } from 'react-i18next';
 import { InviteShareCard } from '@/components/InviteShareCard';
 import { GIT_COMMIT } from '@/lib/version';
 import { Link } from 'react-router-dom';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { ThemeSwitcher } from '@/components/ThemeSwitcher';
 
 const buildId = GIT_COMMIT.slice(0, 7);
 
@@ -202,6 +204,17 @@ export function SettingsPage() {
           <CardDescription>{t('settingsPage.appearanceDescription')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          <div className="flex flex-wrap items-center gap-6 p-4 border border-white/15 rounded-lg bg-white/5">
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-white/70">{t('lang.language')}</span>
+              <LanguageSwitcher />
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-white/70">{t('theme.label')}</span>
+              <ThemeSwitcher />
+            </div>
+          </div>
+
           <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
             <div className="space-y-0.5">
               <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>

@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
+import { DEFAULT_CATEGORY_COLOR, resolveCategoryColor } from '@/lib/category-color';
 
 const CATEGORY_ICON_MAP = {
   utensils: Utensils,
@@ -111,7 +112,7 @@ export function CategoriesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [formName, setFormName] = useState('');
-  const [formColor, setFormColor] = useState('#3b82f6');
+  const [formColor, setFormColor] = useState(DEFAULT_CATEGORY_COLOR);
   const [formIcon, setFormIcon] = useState('');
   const [formParentId, setFormParentId] = useState('');
   const [formErrors, setFormErrors] = useState<{ name?: string }>({});
@@ -150,10 +151,13 @@ export function CategoriesPage() {
   };
 
   const startCreate = (parentId = '') => {
+    const parentColor = parentId
+      ? categories.find((cat) => cat.id === parentId)?.color
+      : null;
     setIsCreating(true);
     setEditingId(null);
     setFormName('');
-    setFormColor('#3b82f6');
+    setFormColor(resolveCategoryColor(undefined, parentColor));
     setFormIcon('');
     setFormParentId(parentId);
     setFormErrors({});
@@ -171,7 +175,8 @@ export function CategoriesPage() {
     setEditingId(cat.id);
     setIsCreating(false);
     setFormName(cat.name);
-    setFormColor(cat.color || '#3b82f6');
+    const parentColor = cat.parent_id ? categories.find((item) => item.id === cat.parent_id)?.color : null;
+    setFormColor(resolveCategoryColor(cat.color, parentColor));
     setFormIcon(cat.icon || '');
     setFormParentId(cat.parent_id || '');
     setFormErrors({});
@@ -182,7 +187,7 @@ export function CategoriesPage() {
     setEditingId(null);
     setIsCreating(false);
     setFormName('');
-    setFormColor('#3b82f6');
+    setFormColor(DEFAULT_CATEGORY_COLOR);
     setFormIcon('');
     setFormParentId('');
     setFormErrors({});
@@ -198,18 +203,21 @@ export function CategoriesPage() {
     }
     setFormErrors({});
 
+    const parentColor = formParentId ? categories.find((cat) => cat.id === formParentId)?.color : null;
+    const safeColor = resolveCategoryColor(formColor, parentColor);
+
     try {
       if (isCreating) {
         await api.createCategory({
           name: trimmedName,
-          color: formColor,
+          color: safeColor,
           icon: formIcon || undefined,
           parent_id: formParentId || undefined,
         });
       } else if (editingId) {
         await api.updateCategory(editingId, {
           name: trimmedName,
-          color: formColor,
+          color: safeColor,
           icon: formIcon || undefined,
           parent_id: formParentId || undefined,
         });
@@ -281,7 +289,7 @@ export function CategoriesPage() {
                 />
                 <input
                   type="color"
-                  value={formColor}
+                  value={resolveCategoryColor(formColor)}
                   onChange={(e) => setFormColor(e.target.value)}
                   className="h-8 w-8 rounded cursor-pointer"
                 />
@@ -424,7 +432,7 @@ export function CategoriesPage() {
                 </label>
                 <input
                   type="color"
-                  value={formColor}
+                  value={resolveCategoryColor(formColor)}
                   onChange={(e) => setFormColor(e.target.value)}
                   className="h-10 w-full rounded cursor-pointer"
                 />

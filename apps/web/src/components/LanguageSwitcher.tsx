@@ -4,7 +4,9 @@ import { cn } from '@/lib/utils';
 
 export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
   const { i18n } = useTranslation();
-  const current = (i18n.resolvedLanguage || i18n.language || 'en') as SupportedLanguage;
+  const resolved = (i18n.resolvedLanguage || i18n.language || 'en').toLowerCase();
+  const current: SupportedLanguage =
+    resolved.startsWith('nb') || resolved.startsWith('no') || resolved.startsWith('nn') ? 'nb' : 'en';
 
   const set = (lang: SupportedLanguage) => {
     void setLanguage(lang);
