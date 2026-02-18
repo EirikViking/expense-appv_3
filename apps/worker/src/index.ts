@@ -54,6 +54,19 @@ app.get('/health', (c) => {
   });
 });
 
+// Lightweight observability for slow endpoints.
+app.use('*', async (c, next) => {
+  const start = Date.now();
+  await next();
+  const durationMs = Date.now() - start;
+  c.header('X-Response-Time', `${durationMs}ms`);
+  if (durationMs >= 800 && c.req.path !== '/health') {
+    console.warn(
+      `[perf] ${c.req.method} ${c.req.path} ${durationMs}ms status=${c.res.status}`
+    );
+  }
+});
+
 // Auth routes (no auth required)
 app.route('/auth', authRoutes);
 
