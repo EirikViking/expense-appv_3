@@ -17,6 +17,7 @@
     "test:parsers": "npx tsx scripts/test-parsers.ts",
     "test:e2e": "npx playwright test",
     "test:e2e:smoke": "npx playwright test e2e/login.spec.ts --project=chromium --reporter=line",
+    "test:e2e:smoke:ci": "npx playwright test e2e/login.spec.ts --project=chromium --reporter=line,html",
     "generate-fixtures": "npx tsx scripts/generate-fixtures.ts",
     "lint": "corepack pnpm -r lint",
     "verify": "corepack pnpm lint && corepack pnpm -r typecheck && corepack pnpm -r test && corepack pnpm -r build",

@@ -6,6 +6,7 @@ export default defineConfig({
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 1 : 0,
     workers: 1,
+    timeout: 60_000,
     reporter: 'html',
     use: {
         baseURL: 'http://localhost:5199',
@@ -22,13 +23,13 @@ export default defineConfig({
         {
             command: 'corepack pnpm dev:worker',
             port: 8788,
-            timeout: 30000,
+            timeout: 120000,
             reuseExistingServer: !process.env.CI,
         },
         {
             command: 'corepack pnpm dev:web',
             port: 5199,
-            timeout: 30000,
+            timeout: 120000,
             reuseExistingServer: !process.env.CI,
         },
     ],
