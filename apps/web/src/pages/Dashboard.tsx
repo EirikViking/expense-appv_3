@@ -840,40 +840,6 @@ export function DashboardPage() {
                     </div>
                   );
                 })}
-                <div className="rounded-lg border border-white/12 bg-white/5 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-medium">{t('dashboard.budgetPeriodToDateTitle')}</p>
-                    <span className="text-xs text-white/70">{t('dashboard.budgetPeriodToDateNow')}</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    {budgetTracking.map((item) => {
-                      const label =
-                        item.period === 'weekly'
-                          ? t('budgetsPage.period.weekly')
-                          : item.period === 'monthly'
-                            ? t('budgetsPage.period.monthly')
-                            : t('budgetsPage.period.yearly');
-                      const elapsedBudget = item.days_total > 0
-                        ? (item.budget_amount * item.days_elapsed) / item.days_total
-                        : item.budget_amount;
-                      const variance = elapsedBudget - item.spent_amount;
-                      const paceText = variance >= 0
-                        ? t('dashboard.budgetPeriodToDateUnder', { amount: formatCurrency(variance) })
-                        : t('dashboard.budgetPeriodToDateOver', { amount: formatCurrency(Math.abs(variance)) });
-
-                      return (
-                        <div key={`to-date-${item.period}`} className="space-y-0.5">
-                          <p className="text-xs text-white/70">
-                            <span className="font-medium text-white/80">{label}</span>: {t('budgetsPage.spent')} {formatCurrency(item.spent_amount)} / {formatCurrency(elapsedBudget)}
-                          </p>
-                          <p className={`text-[11px] ${variance >= 0 ? 'text-emerald-300/90' : 'text-rose-300/90'}`}>
-                            {paceText}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
               </div>
             )}
           </CardContent>
