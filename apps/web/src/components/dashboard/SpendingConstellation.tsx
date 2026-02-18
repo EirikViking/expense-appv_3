@@ -52,13 +52,14 @@ export function SpendingConstellation({
   const nodes = items.map((item, index) => {
     const pos = POSITIONS[index % POSITIONS.length];
     const weight = Math.abs(item.total) / maxTotal;
-    const size = Math.round(64 + weight * 72);
+    const size = Math.round(58 + weight * 58);
     return {
       ...item,
       x: pos.x,
       y: pos.y,
       size,
       animation: ANIMATIONS[index % ANIMATIONS.length],
+      animationDelay: `${index * 0.22}s`,
     };
   });
 
@@ -86,12 +87,12 @@ export function SpendingConstellation({
             {emptyLabel}
           </div>
         ) : (
-          <div className="constellation-surface relative h-[300px] sm:h-[360px] overflow-hidden rounded-2xl border border-cyan-200/15">
-            <div className="pointer-events-none absolute -left-10 -top-16 h-56 w-56 rounded-full bg-cyan-400/20 blur-3xl constellation-aurora" />
-            <div className="pointer-events-none absolute -right-12 bottom-0 h-64 w-64 rounded-full bg-fuchsia-500/20 blur-3xl constellation-aurora constellation-aurora-delay" />
-            <div className="pointer-events-none absolute left-1/3 top-1/3 h-52 w-52 rounded-full bg-emerald-400/10 blur-3xl constellation-aurora constellation-aurora-delay-2" />
-            <div className="pointer-events-none absolute inset-0 constellation-grid opacity-40" />
-            <div className="pointer-events-none absolute inset-0 constellation-scan opacity-40" />
+          <div className="constellation-surface relative h-[260px] sm:h-[300px] overflow-hidden rounded-2xl border border-cyan-200/15">
+            <div className="pointer-events-none absolute -left-10 -top-16 h-56 w-56 rounded-full bg-cyan-400/16 blur-3xl constellation-aurora" />
+            <div className="pointer-events-none absolute -right-12 bottom-0 h-64 w-64 rounded-full bg-fuchsia-500/14 blur-3xl constellation-aurora constellation-aurora-delay" />
+            <div className="pointer-events-none absolute left-1/3 top-1/3 h-52 w-52 rounded-full bg-emerald-400/8 blur-3xl constellation-aurora constellation-aurora-delay-2" />
+            <div className="pointer-events-none absolute inset-0 constellation-grid opacity-30" />
+            <div className="pointer-events-none absolute inset-0 constellation-scan opacity-26" />
 
             <div className="constellation-core pointer-events-none absolute left-1/2 top-1/2 z-[1] flex h-32 w-32 -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full border border-cyan-300/30 bg-slate-950/55 text-center shadow-[0_0_40px_rgba(34,211,238,0.24)] backdrop-blur-sm sm:h-36 sm:w-36">
               <span className="text-[10px] uppercase tracking-[0.12em] text-cyan-200/80">allocation core</span>
@@ -147,6 +148,7 @@ export function SpendingConstellation({
                     height: `${node.size}px`,
                     background: `radial-gradient(circle at 28% 24%, ${toneA}, ${toneB})`,
                     borderColor: `${node.fill}99`,
+                    animationDelay: node.animationDelay,
                   }}
                   onClick={() => onSelect(node.id)}
                   title={node.name}
@@ -159,9 +161,13 @@ export function SpendingConstellation({
                   <span className="absolute left-1 top-1 rounded-full border border-white/20 bg-black/25 px-1.5 py-0.5 text-[9px] font-semibold text-cyan-100">
                     #{index + 1}
                   </span>
-                  <span className="max-w-[86%] truncate text-[11px] font-semibold">{node.name}</span>
-                  <span className="mt-1 text-[10px] text-white/95">{formatCompactCurrency(Math.abs(node.total))}</span>
-                  <span className="text-[10px] text-white/75">{node.count} tx</span>
+                  <span className="max-w-[86%] truncate text-[12px] font-semibold leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">
+                    {node.name}
+                  </span>
+                  <span className="mt-1 rounded-full border border-white/20 bg-black/25 px-2 py-0.5 text-[10px] text-white/95">
+                    {formatCompactCurrency(Math.abs(node.total))}
+                  </span>
+                  <span className="mt-1 rounded-full bg-black/25 px-2 py-0.5 text-[10px] text-white/80">{node.count} tx</span>
                 </button>
               );
             })}

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+﻿import { useMemo, useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   BarChart,
@@ -94,6 +94,10 @@ export function DashboardPage() {
   const [flatCategories, setFlatCategories] = useState<Category[]>([]);
   // Default ON: this is the main value of the dashboard for most users.
   const [showCategoryDetails, setShowCategoryDetails] = useState(true);
+  const [showConstellation, setShowConstellation] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('dashboard_show_constellation') !== '0';
+  });
   const baseRequestIdRef = useRef(0);
   const merchantRequestIdRef = useRef(0);
   const trendRequestIdRef = useRef(0);
@@ -165,6 +169,11 @@ export function DashboardPage() {
     if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
     else if (!dateFrom && !dateTo) clearLastDateRange();
   }, [dateFrom, dateTo]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('dashboard_show_constellation', showConstellation ? '1' : '0');
+  }, [showConstellation]);
 
   // Drilldown state
   const [drilldownOpen, setDrilldownOpen] = useState(false);
@@ -507,15 +516,15 @@ export function DashboardPage() {
 
   const momentumText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) {
-      return currentLanguage === 'nb' ? 'For lite historikk ennå' : 'Not enough history yet';
+      return currentLanguage === 'nb' ? 'For lite historikk ennÃ¥' : 'Not enough history yet';
     }
 
     const pct = formatAbsolutePercent(spendingMomentum.changePct);
     if (spendingMomentum.trend === 'heating') {
-      return currentLanguage === 'nb' ? `${pct} opp mot første halvdel` : `${pct} up vs first half`;
+      return currentLanguage === 'nb' ? `${pct} opp mot fÃ¸rste halvdel` : `${pct} up vs first half`;
     }
     if (spendingMomentum.trend === 'cooling') {
-      return currentLanguage === 'nb' ? `${pct} ned mot første halvdel` : `${pct} down vs first half`;
+      return currentLanguage === 'nb' ? `${pct} ned mot fÃ¸rste halvdel` : `${pct} down vs first half`;
     }
     return currentLanguage === 'nb' ? 'Stabil utvikling i perioden' : 'Stable movement in this period';
   }, [spendingMomentum, currentLanguage]);
@@ -866,33 +875,57 @@ export function DashboardPage() {
         </section>
       )}
 
-      {constellationItems.length > 0 && (
-        <SpendingConstellation
-          title={currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
-          subtitle={
-            currentLanguage === 'nb'
-              ? 'Klikk en boble for å åpne transaksjoner i valgt kategori.'
-              : 'Click a node to open transactions for that category.'
-          }
-          emptyLabel={t('dashboard.noCategorizedTransactions')}
-          hintLabel={
-            currentLanguage === 'nb'
-              ? 'Størrelsen viser totalbeløp i perioden. Perfekt for rask sammenligning.'
-              : 'Node size shows period totals for quick comparison.'
-          }
-          momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
-          momentumText={momentumText}
-          momentumHelpText={momentumHelpText}
-          momentumBreakdownText={momentumBreakdownText}
-          items={constellationItems}
-          onSelect={(id) => {
-            const selected = topExpenseCategoryTiles.find((category, index) => {
-              const categoryId = String(category.category_id || category.category_name || index);
-              return categoryId === id;
-            });
-            if (selected) openCategoryDrilldown(selected);
-          }}
-        />
+            {constellationItems.length > 0 && (
+        <section className="space-y-3" aria-labelledby="spending-constellation-heading">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="spending-constellation-heading" className="text-sm font-semibold text-white/80">
+              {currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowConstellation((prev) => !prev)}
+              className="rounded-md border border-white/15 bg-white/5 px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-white/10"
+            >
+              {showConstellation
+                ? currentLanguage === 'nb' ? 'Skjul' : 'Hide'
+                : currentLanguage === 'nb' ? 'Vis' : 'Show'}
+            </button>
+          </div>
+          {showConstellation ? (
+            <SpendingConstellation
+              title={currentLanguage === 'nb' ? 'Forbruks-konstellasjon' : 'Spending constellation'}
+              subtitle={
+                currentLanguage === 'nb'
+                  ? 'Klikk en boble for å åpne transaksjoner i valgt kategori.'
+                  : 'Click a node to open transactions for that category.'
+              }
+              emptyLabel={t('dashboard.noCategorizedTransactions')}
+              hintLabel={
+                currentLanguage === 'nb'
+                  ? 'Størrelsen viser totalbeløp i perioden. Perfekt for rask sammenligning.'
+                  : 'Node size shows period totals for quick comparison.'
+              }
+              momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
+              momentumText={momentumText}
+              momentumHelpText={momentumHelpText}
+              momentumBreakdownText={momentumBreakdownText}
+              items={constellationItems}
+              onSelect={(id) => {
+                const selected = topExpenseCategoryTiles.find((category, index) => {
+                  const categoryId = String(category.category_id || category.category_name || index);
+                  return categoryId === id;
+                });
+                if (selected) openCategoryDrilldown(selected);
+              }}
+            />
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/65">
+              {currentLanguage === 'nb'
+                ? 'Forbruks-konstellasjon er skjult. Trykk "Vis" for å åpne den igjen.'
+                : 'Spending constellation is hidden. Press "Show" to open it again.'}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Charts */}
@@ -1348,3 +1381,4 @@ export function DashboardPage() {
     </div>
   );
 }
+
