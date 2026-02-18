@@ -486,23 +486,10 @@ export function DashboardPage() {
     });
   }, [topExpenseCategoryTiles, currentLanguage]);
 
-  const spendingMomentum = useMemo(() => computeSpendingMomentum(timeseries), [timeseries]);
-
-  const momentumDateRanges = useMemo(() => {
-    if (!Array.isArray(timeseries) || timeseries.length < 4) return null;
-    const sorted = [...timeseries]
-      .filter((point) => typeof point.date === 'string' && point.date.length > 0)
-      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    if (sorted.length < 4) return null;
-    const midpoint = Math.floor(sorted.length / 2);
-    if (midpoint <= 0 || midpoint >= sorted.length) return null;
-    return {
-      firstFrom: sorted[0].date,
-      firstTo: sorted[midpoint - 1].date,
-      secondFrom: sorted[midpoint].date,
-      secondTo: sorted[sorted.length - 1].date,
-    };
-  }, [timeseries]);
+  const spendingMomentum = useMemo(
+    () => computeSpendingMomentum(timeseries, { start: dateFrom, end: dateTo }),
+    [timeseries, dateFrom, dateTo]
+  );
 
   const formatAbsolutePercent = (value: number) => {
     const locale = currentLanguage === 'nb' ? 'nb-NO' : 'en-US';
@@ -537,22 +524,22 @@ export function DashboardPage() {
   const momentumBreakdownText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) return '';
     if (currentLanguage === 'nb') {
-      const firstRange = momentumDateRanges
-        ? `${formatDate(momentumDateRanges.firstFrom)}-${formatDate(momentumDateRanges.firstTo)}`
+      const firstRange = spendingMomentum
+        ? `${formatDate(spendingMomentum.firstFrom)}-${formatDate(spendingMomentum.firstTo)}`
         : '';
-      const secondRange = momentumDateRanges
-        ? `${formatDate(momentumDateRanges.secondFrom)}-${formatDate(momentumDateRanges.secondTo)}`
+      const secondRange = spendingMomentum
+        ? `${formatDate(spendingMomentum.secondFrom)}-${formatDate(spendingMomentum.secondTo)}`
         : '';
       return `1. halvdel${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
     }
-    const firstRange = momentumDateRanges
-      ? `${momentumDateRanges.firstFrom}-${momentumDateRanges.firstTo}`
+    const firstRange = spendingMomentum
+      ? `${spendingMomentum.firstFrom}-${spendingMomentum.firstTo}`
       : '';
-    const secondRange = momentumDateRanges
-      ? `${momentumDateRanges.secondFrom}-${momentumDateRanges.secondTo}`
+    const secondRange = spendingMomentum
+      ? `${spendingMomentum.secondFrom}-${spendingMomentum.secondTo}`
       : '';
     return `First half${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | Second half${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
-  }, [spendingMomentum, currentLanguage, momentumDateRanges]);
+  }, [spendingMomentum, currentLanguage]);
 
   const topCategoryPieData = useMemo(() => {
     return categories.slice(0, 8).map((category, index) => {
