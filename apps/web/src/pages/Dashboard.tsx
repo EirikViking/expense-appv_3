@@ -487,12 +487,21 @@ export function DashboardPage() {
 
   const spendingMomentum = useMemo(() => computeSpendingMomentum(timeseries), [timeseries]);
 
+  const formatAbsolutePercent = (value: number) => {
+    const locale = currentLanguage === 'nb' ? 'nb-NO' : 'en-US';
+    const formatted = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(Math.abs(value));
+    return `${formatted}%`;
+  };
+
   const momentumText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) {
       return currentLanguage === 'nb' ? 'For lite historikk ennå' : 'Not enough history yet';
     }
 
-    const pct = formatPercentage(Math.abs(spendingMomentum.changePct));
+    const pct = formatAbsolutePercent(spendingMomentum.changePct);
     if (spendingMomentum.trend === 'heating') {
       return currentLanguage === 'nb' ? `${pct} opp mot første halvdel` : `${pct} up vs first half`;
     }
@@ -500,6 +509,20 @@ export function DashboardPage() {
       return currentLanguage === 'nb' ? `${pct} ned mot første halvdel` : `${pct} down vs first half`;
     }
     return currentLanguage === 'nb' ? 'Stabil utvikling i perioden' : 'Stable movement in this period';
+  }, [spendingMomentum, currentLanguage]);
+
+  const momentumHelpText = useMemo(() => {
+    return currentLanguage === 'nb'
+      ? 'Momentum sammenligner total forbruk i andre halvdel av valgt periode mot første halvdel.'
+      : 'Momentum compares total spending in the second half of the selected period against the first half.';
+  }, [currentLanguage]);
+
+  const momentumBreakdownText = useMemo(() => {
+    if (!spendingMomentum || spendingMomentum.changePct === null) return '';
+    if (currentLanguage === 'nb') {
+      return `1. halvdel: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
+    }
+    return `First half: ${formatCurrency(spendingMomentum.firstHalf)} | Second half: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
   }, [spendingMomentum, currentLanguage]);
 
   const topCategoryPieData = useMemo(() => {
@@ -838,6 +861,8 @@ export function DashboardPage() {
           }
           momentumTitle={currentLanguage === 'nb' ? 'Momentum' : 'Momentum'}
           momentumText={momentumText}
+          momentumHelpText={momentumHelpText}
+          momentumBreakdownText={momentumBreakdownText}
           items={constellationItems}
           onSelect={(id) => {
             const selected = topExpenseCategoryTiles.find((category, index) => {

@@ -18,6 +18,8 @@ type Props = {
   hintLabel: string;
   momentumTitle: string;
   momentumText: string;
+  momentumHelpText?: string;
+  momentumBreakdownText?: string;
   items: ConstellationItem[];
   onSelect: (id: string) => void;
 };
@@ -39,6 +41,8 @@ export function SpendingConstellation({
   hintLabel,
   momentumTitle,
   momentumText,
+  momentumHelpText,
+  momentumBreakdownText,
   items,
   onSelect,
 }: Props) {
@@ -70,6 +74,9 @@ export function SpendingConstellation({
             <div className="pointer-events-none absolute inset-0 constellation-shimmer opacity-60" />
             <p className="relative text-[11px] uppercase tracking-wide text-cyan-200/85">{momentumTitle}</p>
             <p className="relative text-xs font-semibold text-cyan-100">{momentumText}</p>
+            {momentumBreakdownText && (
+              <p className="relative mt-1 text-[10px] text-cyan-100/80">{momentumBreakdownText}</p>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -159,6 +166,9 @@ export function SpendingConstellation({
               );
             })}
           </div>
+        )}
+        {momentumHelpText && (
+          <p className="mt-3 text-xs text-cyan-100/75">{momentumHelpText}</p>
         )}
         <p className="mt-3 text-xs text-white/60">{hintLabel}</p>
       </CardContent>

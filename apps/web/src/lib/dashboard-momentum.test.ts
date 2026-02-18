@@ -24,6 +24,7 @@ describe('computeSpendingMomentum', () => {
     expect(result).not.toBeNull();
     expect(result?.trend).toBe('heating');
     expect(result?.delta).toBe(270);
+    expect(result?.changePct).toBeCloseTo(122.7273, 3);
   });
 
   it('detects cooling trend when second half falls clearly', () => {
@@ -37,6 +38,7 @@ describe('computeSpendingMomentum', () => {
     expect(result).not.toBeNull();
     expect(result?.trend).toBe('cooling');
     expect(result?.delta).toBe(-390);
+    expect(result?.changePct).toBeCloseTo(-50, 3);
   });
 });
 
