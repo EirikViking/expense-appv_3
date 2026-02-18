@@ -3,6 +3,9 @@ import { getCategoryHint } from './category-hints';
 
 describe('category hints', () => {
   it('maps known Other merchants from real samples', () => {
+    expect(getCategoryHint('Visa 100021 Bolt Oslo', -239.2)).toBe('cat_transport_taxi_uber');
+    expect(getCategoryHint('Uber *Trip Help.Uber.Com', -119.5)).toBe('cat_transport_taxi_uber');
+    expect(getCategoryHint('Taxi Sentrum AS', -450)).toBe('cat_transport_taxi_uber');
     expect(getCategoryHint('Visa 100032 Nok 1061,56 Klarna Ab', -1061.56)).toBe('cat_shopping');
     expect(getCategoryHint('Giro 3225 Talkmore AS AvtalegiroTalkmore AS', -239.2)).toBe('cat_bills_internet');
     expect(getCategoryHint('Visa 100331 Clasohlson.com/no', -1199)).toBe('cat_shopping_home');
@@ -17,6 +20,7 @@ describe('category hints', () => {
   });
 
   it('handles trumf directionally and keeps unknown as null', () => {
+    expect(getCategoryHint('BOLT transfer refund', 150)).toBeNull();
     expect(getCategoryHint('Giro 224254874 Trumf AS', -423.07)).toBe('cat_food_groceries');
     expect(getCategoryHint('Giro innbetaling Trumf bonus', 423.07)).toBe('cat_income_refund');
     expect(getCategoryHint('Overføring til Felleskonto', -8200)).toBe('cat_bills_housing_shared');

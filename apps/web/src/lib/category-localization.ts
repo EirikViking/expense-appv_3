@@ -4,6 +4,7 @@ const NB_CATEGORY_NAME_MAP: Record<string, string> = {
   Restaurants: 'Restauranter',
   'Coffee & Snacks': 'Kaffe og snacks',
   Transportation: 'Transport',
+  'Taxi/Bolt/Uber': 'Taxi/Bolt/Uber',
   Fuel: 'Drivstoff',
   'Public Transit': 'Kollektivtransport',
   Parking: 'Parkering',
