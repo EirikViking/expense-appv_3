@@ -19,6 +19,9 @@ export interface XlsxParseResult {
 }
 
 const MAX_HEADER_SCAN_ROWS = 50;
+const MAX_XLSX_BYTES = 12 * 1024 * 1024;
+const MAX_XLSX_ROWS = 30_000;
+const MAX_XLSX_COLUMNS = 200;
 const DATE_VALUE_PATTERN = /^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}$/;
 const DATE_SERIAL_INTEGER_MIN = 30000;
 const DATE_SERIAL_INTEGER_MAX = 60000;
@@ -1339,6 +1342,16 @@ function parseFileWithHeaders(
  */
 export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
   try {
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      return { transactions: [], error: 'Kunne ikke lese filen. XLSX ser tom ut.' };
+    }
+    if (arrayBuffer.byteLength > MAX_XLSX_BYTES) {
+      return {
+        transactions: [],
+        error: `Importfeil: XLSX-filen er for stor (${Math.round(arrayBuffer.byteLength / (1024 * 1024))} MB). Maks tillatt er 12 MB.`,
+      };
+    }
+
     // Read workbook, keeping dates as numbers to handle Excel serial dates
     const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: false });
     const sheetName = workbook.SheetNames[0];
@@ -1349,7 +1362,15 @@ export function parseXlsxFile(arrayBuffer: ArrayBuffer): XlsxParseResult {
     }
 
     const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
-    console.log(`[XLSX Parser] Sheet "${sheetName}" range: ${sheet['!ref']}, rows: ${range.e.r - range.s.r + 1}`);
+    const rowCount = range.e.r - range.s.r + 1;
+    const colCount = range.e.c - range.s.c + 1;
+    if (rowCount > MAX_XLSX_ROWS || colCount > MAX_XLSX_COLUMNS) {
+      return {
+        transactions: [],
+        error: `Importfeil: XLSX-strukturen er for stor (${rowCount} rader, ${colCount} kolonner).`,
+      };
+    }
+    console.log(`[XLSX Parser] Sheet "${sheetName}" range: ${sheet['!ref']}, rows: ${rowCount}`);
 
     // Robust path: scan for repeated header sections and parse only real transaction rows.
     const sectionParsed = parseSheetByHeaderSections(sheet, range, sheetName);
