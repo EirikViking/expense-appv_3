@@ -14,15 +14,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const targetUrl = new URL(`/${splat}`, origin);
   targetUrl.search = requestUrl.search;
 
-  const headers = new Headers(context.request.headers);
-  headers.delete('host');
-
-  const upstreamRequest = new Request(targetUrl.toString(), {
-    method: context.request.method,
-    headers,
-    body: context.request.method === 'GET' || context.request.method === 'HEAD' ? undefined : context.request.body,
-    redirect: 'manual',
-  });
+  const upstreamRequest = new Request(targetUrl.toString(), context.request);
 
   const upstreamResponse = await fetch(upstreamRequest);
   const responseHeaders = new Headers(upstreamResponse.headers);
