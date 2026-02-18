@@ -186,11 +186,137 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .animate-floatSlower { animation: floatSlower 16s ease-in-out infinite; }
 .animate-onboarding-step-in { animation: onboardingStepIn 280ms ease-out both; }
 
+@keyframes auroraDrift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(10px, -16px, 0) scale(1.08); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes scanSweep {
+  0% { transform: translateY(-105%); opacity: 0; }
+  12% { opacity: 0.45; }
+  100% { transform: translateY(115%); opacity: 0; }
+}
+
+@keyframes dashFlow {
+  to { stroke-dashoffset: -42; }
+}
+
+@keyframes haloSpin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes pulseBeat {
+  0% { transform: scale(0.92); opacity: 0.18; }
+  50% { transform: scale(1.06); opacity: 0.36; }
+  100% { transform: scale(0.92); opacity: 0.18; }
+}
+
+@keyframes shimmerTilt {
+  0% { transform: translateX(-110%) skewX(-18deg); opacity: 0; }
+  25% { opacity: 0.5; }
+  70% { opacity: 0.2; }
+  100% { transform: translateX(170%) skewX(-18deg); opacity: 0; }
+}
+
+.constellation-surface {
+  background:
+    radial-gradient(circle at 16% 18%, rgba(34, 211, 238, 0.20), transparent 34%),
+    radial-gradient(circle at 80% 84%, rgba(232, 121, 249, 0.16), transparent 36%),
+    radial-gradient(circle at 58% 44%, rgba(16, 185, 129, 0.12), transparent 40%),
+    linear-gradient(150deg, rgba(8, 12, 26, 0.92), rgba(6, 14, 26, 0.78));
+}
+
+.constellation-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px, 24px 24px;
+  mask-image: radial-gradient(circle at center, rgba(0,0,0,0.92), rgba(0,0,0,0.35));
+}
+
+.constellation-scan::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(56, 189, 248, 0.28) 45%,
+    rgba(56, 189, 248, 0.05) 65%,
+    transparent 100%
+  );
+  animation: scanSweep 7.5s linear infinite;
+}
+
+.constellation-aurora {
+  animation: auroraDrift 13s ease-in-out infinite;
+}
+
+.constellation-aurora-delay {
+  animation-delay: -3s;
+}
+
+.constellation-aurora-delay-2 {
+  animation-delay: -6s;
+}
+
+.constellation-link {
+  animation: dashFlow 3.2s linear infinite;
+}
+
+.constellation-node-halo {
+  position: absolute;
+  inset: -10px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.28), transparent 62%);
+  filter: blur(1px);
+  animation: pulseBeat 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.constellation-node-ring {
+  position: absolute;
+  inset: -4px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  animation: haloSpin 9s linear infinite;
+  pointer-events: none;
+}
+
+.constellation-core::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  animation: haloSpin 14s linear infinite reverse;
+  pointer-events: none;
+}
+
+.constellation-shimmer {
+  background: linear-gradient(
+    105deg,
+    transparent 10%,
+    rgba(255, 255, 255, 0.3) 48%,
+    transparent 85%
+  );
+  animation: shimmerTilt 3.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-float,
   .animate-floatSlow,
   .animate-floatSlower,
-  .animate-onboarding-step-in {
+  .animate-onboarding-step-in,
+  .constellation-scan::before,
+  .constellation-aurora,
+  .constellation-link,
+  .constellation-node-halo,
+  .constellation-node-ring,
+  .constellation-core::before,
+  .constellation-shimmer {
     animation: none !important;
   }
 }
