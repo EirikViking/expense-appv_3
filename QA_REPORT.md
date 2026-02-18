@@ -1,5 +1,16 @@
 # QA Report: Personal Expense Analytics Application
 
+## QA Hardening Update (2026-02-18)
+
+### Applied now
+- [x] Upgraded `hono` to `4.11.9` (patched for JWT middleware advisories).
+- [x] Upgraded `react-router-dom` to `6.30.3` and forced `@remix-run/router` to `1.23.2`.
+- [x] Added CI workflow `.github/workflows/ci.yml` with typecheck + test + web build on PR/push.
+- [x] Hardened root scripts to use `corepack pnpm` so `verify` is stable across environments where `pnpm` is not on PATH.
+
+### Known remaining risk
+- [ ] `xlsx` advisories remain (`0.18.5`), and npm currently reports no patched upstream package version for this dependency in this project setup.
+
 ## QA Fixes Applied (2026-02-14)
 
 ### Done
