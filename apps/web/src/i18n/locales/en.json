@@ -94,6 +94,8 @@
     "spent": "Spent",
     "budgetPulse": "Budget pulse",
     "budgetNoTargets": "Budgeting is enabled, but no weekly/monthly/yearly target is configured yet.",
+    "budgetPeriodToDateTitle": "Period to date",
+    "budgetPeriodToDateNow": "To date",
     "topExpenseCards": "Largest expense items",
     "txCountShort": "Tx",
     "clickToDrilldown": "Click to drill down",

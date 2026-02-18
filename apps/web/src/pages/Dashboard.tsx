@@ -840,6 +840,31 @@ export function DashboardPage() {
                     </div>
                   );
                 })}
+                <div className="rounded-lg border border-white/12 bg-white/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{t('dashboard.budgetPeriodToDateTitle')}</p>
+                    <span className="text-xs text-white/70">{t('dashboard.budgetPeriodToDateNow')}</span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {budgetTracking.map((item) => {
+                      const label =
+                        item.period === 'weekly'
+                          ? t('budgetsPage.period.weekly')
+                          : item.period === 'monthly'
+                            ? t('budgetsPage.period.monthly')
+                            : t('budgetsPage.period.yearly');
+                      const elapsedEndDate = new Date(`${item.start_date}T00:00:00.000Z`);
+                      elapsedEndDate.setUTCDate(elapsedEndDate.getUTCDate() + Math.max(0, item.days_elapsed - 1));
+                      const end = formatDate(formatDateLocal(elapsedEndDate));
+
+                      return (
+                        <p key={`to-date-${item.period}`} className="text-xs text-white/70">
+                          <span className="font-medium text-white/80">{label}</span>: {formatDate(item.start_date)} - {end}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>

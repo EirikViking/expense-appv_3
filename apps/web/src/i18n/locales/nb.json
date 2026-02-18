@@ -98,6 +98,8 @@
     "transactionsOnDate": "Transaksjoner: {{date}}",
     "budgetPulse": "Budsjettstatus",
     "budgetNoTargets": "Budsjett er aktivert, men ingen uke/måned/år-mål er satt enda.",
+    "budgetPeriodToDateTitle": "Periode frem til nå",
+    "budgetPeriodToDateNow": "Til nå",
     "refreshing": "Oppdaterer...",
     "momentumTitle": "Momentum",
     "momentumNotEnoughHistory": "For lite historikk enn\u00e5",
