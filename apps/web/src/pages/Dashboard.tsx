@@ -31,6 +31,7 @@ import {
   formatCurrency,
   formatCompactCurrency,
   formatPercentage,
+  formatDate,
   formatDateShort,
   formatDateLocal,
   formatMonth,
@@ -487,6 +488,22 @@ export function DashboardPage() {
 
   const spendingMomentum = useMemo(() => computeSpendingMomentum(timeseries), [timeseries]);
 
+  const momentumDateRanges = useMemo(() => {
+    if (!Array.isArray(timeseries) || timeseries.length < 4) return null;
+    const sorted = [...timeseries]
+      .filter((point) => typeof point.date === 'string' && point.date.length > 0)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (sorted.length < 4) return null;
+    const midpoint = Math.floor(sorted.length / 2);
+    if (midpoint <= 0 || midpoint >= sorted.length) return null;
+    return {
+      firstFrom: sorted[0].date,
+      firstTo: sorted[midpoint - 1].date,
+      secondFrom: sorted[midpoint].date,
+      secondTo: sorted[sorted.length - 1].date,
+    };
+  }, [timeseries]);
+
   const formatAbsolutePercent = (value: number) => {
     const locale = currentLanguage === 'nb' ? 'nb-NO' : 'en-US';
     const formatted = new Intl.NumberFormat(locale, {
@@ -513,17 +530,29 @@ export function DashboardPage() {
 
   const momentumHelpText = useMemo(() => {
     return currentLanguage === 'nb'
-      ? 'Momentum sammenligner total forbruk i andre halvdel av valgt periode mot første halvdel.'
+      ? 'Momentum sammenligner total forbruk i andre halvdel av valgt periode mot f\u00F8rste halvdel.'
       : 'Momentum compares total spending in the second half of the selected period against the first half.';
   }, [currentLanguage]);
 
   const momentumBreakdownText = useMemo(() => {
     if (!spendingMomentum || spendingMomentum.changePct === null) return '';
     if (currentLanguage === 'nb') {
-      return `1. halvdel: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
+      const firstRange = momentumDateRanges
+        ? `${formatDate(momentumDateRanges.firstFrom)}-${formatDate(momentumDateRanges.firstTo)}`
+        : '';
+      const secondRange = momentumDateRanges
+        ? `${formatDate(momentumDateRanges.secondFrom)}-${formatDate(momentumDateRanges.secondTo)}`
+        : '';
+      return `1. halvdel${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | 2. halvdel${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Endring: ${formatCurrency(spendingMomentum.delta, true)}`;
     }
-    return `First half: ${formatCurrency(spendingMomentum.firstHalf)} | Second half: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
-  }, [spendingMomentum, currentLanguage]);
+    const firstRange = momentumDateRanges
+      ? `${momentumDateRanges.firstFrom}-${momentumDateRanges.firstTo}`
+      : '';
+    const secondRange = momentumDateRanges
+      ? `${momentumDateRanges.secondFrom}-${momentumDateRanges.secondTo}`
+      : '';
+    return `First half${firstRange ? ` (${firstRange})` : ''}: ${formatCurrency(spendingMomentum.firstHalf)} | Second half${secondRange ? ` (${secondRange})` : ''}: ${formatCurrency(spendingMomentum.secondHalf)} | Change: ${formatCurrency(spendingMomentum.delta, true)}`;
+  }, [spendingMomentum, currentLanguage, momentumDateRanges]);
 
   const topCategoryPieData = useMemo(() => {
     return categories.slice(0, 8).map((category, index) => {
