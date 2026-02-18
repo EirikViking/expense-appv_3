@@ -161,8 +161,12 @@ auth.post('/login', async (c) => {
       return c.json({ error: 'Bootstrap required', bootstrap_required: true }, 400);
     }
 
-    const body = await c.req.json();
-    const parsed = loginRequestSchema.safeParse(body);
+    const parsedBody = await readJsonBody(c);
+    if (!parsedBody.ok) {
+      return c.json({ error: 'Invalid request body' }, 400);
+    }
+
+    const parsed = loginRequestSchema.safeParse(parsedBody.body);
     if (!parsed.success) {
       return c.json({ error: 'Invalid request', details: parsed.error.message }, 400);
     }
