@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { prefetchAppRoutes, prefetchRouteForPath } from '@/lib/route-prefetch';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ const navItems = [
 
 export function Layout({ children }: LayoutProps) {
   const { isAuthenticated, logout, needsOnboarding, completeOnboarding, user, actorUser, isImpersonating, checkAuth } = useAuth();
+  const { showBudgets } = useFeatureFlags();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -61,8 +63,13 @@ export function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    prefetchAppRoutes();
-  }, [isAuthenticated]);
+    prefetchAppRoutes({ showBudgets });
+  }, [isAuthenticated, showBudgets]);
+
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item) => (showBudgets ? true : item.path !== '/budgets')),
+    [showBudgets],
+  );
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -108,7 +115,7 @@ export function Layout({ children }: LayoutProps) {
         {isAuthenticated && (
           <nav className="flex flex-col h-[calc(100vh-4rem)]">
             <div className="flex-1 px-3 py-4 space-y-1">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.path);
                 return (

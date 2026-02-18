@@ -24,6 +24,7 @@ import { validateDateRange } from '@/lib/date-input';
 import { localizeCategoryName } from '@/lib/category-localization';
 import { useAuth } from '@/context/AuthContext';
 import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 type Lang = 'en' | 'nb';
 
@@ -743,6 +744,7 @@ export function InsightsPage() {
   const INSIGHTS_CACHE_TTL_MS = 30_000;
   const { i18n } = useTranslation();
   const { user } = useAuth();
+  const { showBudgets } = useFeatureFlags();
   const navigate = useNavigate();
   const lang = getLang(i18n.resolvedLanguage);
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
@@ -828,7 +830,9 @@ export function InsightsPage() {
         sort_by: 'amount_abs',
         sort_order: 'desc',
       });
-      const budgetTrackingPromise = api.getBudgetTracking();
+      const budgetTrackingPromise = showBudgets
+        ? api.getBudgetTracking()
+        : Promise.resolve({ enabled: false, periods: [] as BudgetTrackingPeriod[] });
 
       const coreResults = await Promise.allSettled([
         summaryPromise,
@@ -889,7 +893,7 @@ export function InsightsPage() {
   useEffect(() => {
     void loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo, user?.id]);
+  }, [dateFrom, dateTo, user?.id, showBudgets]);
 
   useEffect(() => {
     if (dateFrom && dateTo) saveLastDateRange({ start: dateFrom, end: dateTo });
@@ -1167,7 +1171,7 @@ export function InsightsPage() {
         </CardContent>
       </Card>
 
-      {budgetsEnabled && (
+      {showBudgets && budgetsEnabled && (
         <Card>
           <CardHeader>
             <CardTitle>{lang === 'nb' ? 'Budsjettkompass' : 'Budget compass'}</CardTitle>

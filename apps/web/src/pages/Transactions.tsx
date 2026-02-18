@@ -41,9 +41,11 @@ import {
   isDateFilterActive,
   resolveDateFiltersFromSearchParams,
 } from '@/lib/transactions-filters';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
+  const { showBudgets } = useFeatureFlags();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -280,6 +282,12 @@ export function TransactionsPage() {
   }, [categories.length]);
 
   useEffect(() => {
+    if (!showBudgets) {
+      setBudgetsEnabled(false);
+      setBudgetTracking([]);
+      return;
+    }
+
     let active = true;
     api
       .getBudgetTracking()
@@ -297,7 +305,7 @@ export function TransactionsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [showBudgets]);
 
   useEffect(() => {
     if (!dateFrom || !dateTo) {
@@ -531,7 +539,7 @@ export function TransactionsPage() {
         </div>
       </div>
 
-      {budgetsEnabled && budgetTracking.length > 0 && (
+      {showBudgets && budgetsEnabled && budgetTracking.length > 0 && (
         <div className="rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2">
           <p className="text-xs text-cyan-100/90 mb-1">{t('transactions.budgetSummaryTitle')}</p>
           <div className="flex flex-wrap gap-3 text-xs text-cyan-50">

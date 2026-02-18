@@ -13,8 +13,11 @@ const criticalRoutePrefetchers: Array<() => Promise<unknown>> = [
 const secondaryRoutePrefetchers: Array<() => Promise<unknown>> = [
   () => import('@/pages/Categories'),
   () => import('@/pages/Rules'),
-  () => import('@/pages/Budgets'),
   () => import('@/pages/Settings'),
+];
+
+const budgetRoutePrefetchers: Array<() => Promise<unknown>> = [
+  () => import('@/pages/Budgets'),
 ];
 
 const prefetchByPath: Record<string, () => Promise<unknown>> = {
@@ -69,7 +72,8 @@ export function prefetchRouteForPath(path: string): void {
   void load();
 }
 
-export function prefetchAppRoutes() {
+export function prefetchAppRoutes(opts?: { showBudgets?: boolean }) {
+  const showBudgets = opts?.showBudgets ?? true;
   if (prefetched) return;
   const connection = getConnection();
   if (isConstrainedNetwork(connection)) return;
@@ -81,6 +85,17 @@ export function prefetchAppRoutes() {
   if (isConstrainedDevice()) return;
 
   secondaryPrefetched = true;
-  setTimeout(() => runWhenIdle(() => prefetchMany(secondaryRoutePrefetchers), 500), 3000);
+  setTimeout(
+    () =>
+      runWhenIdle(
+        () =>
+          prefetchMany([
+            ...secondaryRoutePrefetchers,
+            ...(showBudgets ? budgetRoutePrefetchers : []),
+          ]),
+        500,
+      ),
+    3000,
+  );
 }
 

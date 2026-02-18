@@ -13,6 +13,7 @@ import { GIT_COMMIT } from '@/lib/version';
 import { Link } from 'react-router-dom';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { ThemeSwitcher } from '@/components/ThemeSwitcher';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 const buildId = GIT_COMMIT.slice(0, 7);
 
@@ -25,6 +26,7 @@ type UserDraft = {
 export function SettingsPage() {
   const { t } = useTranslation();
   const { user, actorUser, isImpersonating, checkAuth } = useAuth();
+  const { showBudgets, setShowBudgets } = useFeatureFlags();
   const isAdmin = actorUser?.role === 'admin';
 
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
@@ -215,14 +217,27 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 border border-white/15 rounded-lg bg-white/5">
-            <div className="space-y-0.5">
+          <div className="flex items-start justify-between gap-4 p-4 border border-white/15 rounded-lg bg-white/5">
+            <div className="space-y-1">
               <span className="font-medium text-base block">{t('settingsPage.showBudgets')}</span>
-              <p className="text-sm text-white/70">{t('settingsPage.showBudgetsHelp')}</p>
+              <p className="text-sm text-white/70">
+                {showBudgets ? t('settingsPage.showBudgetsHelp') : t('settingsPage.showBudgetsDisabledHelp')}
+              </p>
+              {showBudgets && (
+                <Link to="/budgets" className="inline-flex rounded bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15">
+                  {t('settingsPage.manageInBudgets')}
+                </Link>
+              )}
             </div>
-            <Link to="/budgets" className="rounded bg-white/10 px-3 py-1.5 text-xs text-white/80 hover:bg-white/15">
-              {t('settingsPage.manageInBudgets')}
-            </Link>
+            <label className="inline-flex items-center gap-2 text-sm text-white/85">
+              <input
+                type="checkbox"
+                checked={showBudgets}
+                onChange={(e) => setShowBudgets(e.target.checked)}
+                className="h-4 w-4 rounded border-white/20 bg-white/5"
+              />
+              <span>{showBudgets ? t('common.yes') : t('common.no')}</span>
+            </label>
           </div>
         </CardContent>
       </Card>

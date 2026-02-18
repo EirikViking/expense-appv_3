@@ -62,6 +62,7 @@ import { useAuth } from '@/context/AuthContext';
 import { makePageCacheKey, readPageCache, writePageCache } from '@/lib/page-data-cache';
 import { SpendingConstellation } from '@/components/dashboard/SpendingConstellation';
 import { computeSpendingMomentum } from '@/lib/dashboard-momentum';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 
 export function DashboardPage() {
   const DASHBOARD_CACHE_TTL_MS = 120_000;
@@ -69,6 +70,7 @@ export function DashboardPage() {
   const DASHBOARD_TREND_CACHE_TTL_MS = 180_000;
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
+  const { showBudgets } = useFeatureFlags();
   const currentLanguage = i18n.resolvedLanguage || i18n.language;
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -294,7 +296,9 @@ export function DashboardPage() {
           granularity: 'day',
           include_transfers: !excludeTransfers,
         });
-        const budgetTrackingPromise = api.getBudgetTracking();
+        const budgetTrackingPromise = showBudgets
+          ? api.getBudgetTracking()
+          : Promise.resolve({ enabled: false, periods: [] as BudgetTrackingPeriod[] });
         const anomaliesPromise = api.getAnalyticsAnomalies({
           date_from: dateFrom,
           date_to: dateTo,
@@ -352,7 +356,7 @@ export function DashboardPage() {
     }
 
     void loadBaseData();
-  }, [excludeTransfers, dateFrom, dateTo, statusFilter, userId]);
+  }, [excludeTransfers, dateFrom, dateTo, statusFilter, userId, showBudgets]);
 
   useEffect(() => {
     if (!overview) {
@@ -800,7 +804,7 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      {budgetsEnabled && (
+      {showBudgets && budgetsEnabled && (
         <Card>
           <CardHeader>
             <CardTitle>{t('dashboard.budgetPulse')}</CardTitle>

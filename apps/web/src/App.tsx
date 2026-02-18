@@ -5,7 +5,7 @@ import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { ApiGuardScreen } from './components/ApiGuard';
 import { isApiUrlConfigured, getApiBaseUrl } from './lib/version';
-import { FeatureFlagsProvider } from './context/FeatureFlagsContext';
+import { FeatureFlagsProvider, useFeatureFlags } from './context/FeatureFlagsContext';
 
 const LoginPage = lazy(() => import('./pages/Login').then((m) => ({ default: m.LoginPage })));
 const BootstrapPage = lazy(() => import('./pages/Bootstrap').then((m) => ({ default: m.BootstrapPage })));
@@ -24,6 +24,8 @@ const SettingsPage = lazy(() => import('./pages/Settings').then((m) => ({ defaul
 console.log(`[App Startup] API_BASE_URL=${getApiBaseUrl()}`);
 
 function AppRoutes() {
+  const { showBudgets } = useFeatureFlags();
+
   return (
     <Suspense fallback={<div className="min-h-screen bg-black text-white" />}>
       <Routes>
@@ -86,7 +88,7 @@ function AppRoutes() {
           element={
             <ProtectedRoute>
               <Layout>
-                <BudgetsPage />
+                {showBudgets ? <BudgetsPage /> : <Navigate to="/settings" replace />}
               </Layout>
             </ProtectedRoute>
           }
