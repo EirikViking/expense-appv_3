@@ -35,21 +35,15 @@ export function setStoredApiUrl(url: string): void {
 // Get API base URL
 export function getApiBaseUrl(): string {
     if (import.meta.env.DEV) return '/api';
-    const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl) return envUrl;
     const storedUrl = getStoredApiUrl();
     if (storedUrl) return storedUrl;
-    return '';
+    // In production we default to same-origin API proxy to avoid third-party cookie issues.
+    return '/api';
 }
 
 // Check if API URL is configured properly
 export function isApiUrlConfigured(): boolean {
-    if (import.meta.env.DEV) return true; // Dev mode uses proxy
-    const envUrl = import.meta.env.VITE_API_URL;
-    if (envUrl) return envUrl.startsWith('http');
-    const storedUrl = getStoredApiUrl();
-    if (storedUrl) {
-        return storedUrl.startsWith('http');
-    }
-    return false;
+    if (import.meta.env.DEV) return true;
+    const apiUrl = getApiBaseUrl();
+    return apiUrl === '/api' || apiUrl.startsWith('http');
 }
