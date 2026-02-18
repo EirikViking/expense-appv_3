@@ -179,3 +179,10 @@ export function normalizeMerchant(raw: string, fallbackRaw?: string): {
   };
 }
 
+export function merchantCasefoldKey(raw: string): string {
+  return normalizeSpace(String(raw || ''))
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('en-US');
+}
+

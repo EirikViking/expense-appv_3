@@ -30,7 +30,7 @@ merchants.get('/', async (c) => {
     const params: (string | number)[] = [];
 
     if (search) {
-      whereClause = 'WHERE canonical_name LIKE ?';
+      whereClause = 'WHERE canonical_name LIKE ? COLLATE NOCASE';
       params.push(`%${search}%`);
     }
 
@@ -43,7 +43,7 @@ merchants.get('/', async (c) => {
     const query = `
       SELECT * FROM merchants
       ${whereClause}
-      ORDER BY canonical_name
+      ORDER BY canonical_name COLLATE NOCASE
       LIMIT ? OFFSET ?
     `;
     params.push(limit, offset);
@@ -121,7 +121,7 @@ merchants.post('/', async (c) => {
 
     // Check for duplicate name
     const existing = await c.env.DB
-      .prepare('SELECT 1 FROM merchants WHERE canonical_name = ?')
+      .prepare('SELECT 1 FROM merchants WHERE LOWER(TRIM(canonical_name)) = LOWER(TRIM(?))')
       .bind(canonical_name)
       .first();
 
@@ -187,7 +187,7 @@ merchants.put('/:id', async (c) => {
     // Check for duplicate name if changing
     if (canonical_name) {
       const duplicate = await c.env.DB
-        .prepare('SELECT 1 FROM merchants WHERE canonical_name = ? AND id != ?')
+        .prepare('SELECT 1 FROM merchants WHERE LOWER(TRIM(canonical_name)) = LOWER(TRIM(?)) AND id != ?')
         .bind(canonical_name, id)
         .first();
 
