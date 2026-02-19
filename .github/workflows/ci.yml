@@ -25,6 +25,8 @@ jobs:
         run: corepack pnpm -r test
       - name: Build Web
         run: corepack pnpm --filter @expense/web build
+      - name: Bundle budgets
+        run: corepack pnpm check:bundle-budgets
 
   e2e-smoke:
     runs-on: ubuntu-latest
@@ -39,10 +41,14 @@ jobs:
         run: corepack enable
       - name: Install
         run: corepack pnpm install --frozen-lockfile
+      - name: Apply local D1 migrations
+        run: corepack pnpm --filter worker db:migrate:local
       - name: Install Playwright Chromium
         run: corepack pnpm exec playwright install --with-deps chromium
       - name: E2E smoke
         run: corepack pnpm test:e2e:smoke:ci
+      - name: E2E real seeded flow
+        run: corepack pnpm test:e2e:real:ci
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
