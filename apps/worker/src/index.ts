@@ -14,6 +14,7 @@ import budgetsRoutes from './routes/budgets';
 import recurringRoutes from './routes/recurring';
 import analyticsRoutes from './routes/analytics';
 import adminUsersRoutes from './routes/admin-users';
+import { createErrorResponse } from './lib/error-contract';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -64,6 +65,35 @@ app.use('*', async (c, next) => {
     console.warn(
       `[perf] ${c.req.method} ${c.req.path} ${durationMs}ms status=${c.res.status}`
     );
+  }
+});
+
+// Standardize JSON error responses to { error, message, code, ... }.
+app.use('*', async (c, next) => {
+  await next();
+
+  const originalResponse = c.res;
+  const status = originalResponse.status;
+  if (status < 400) return;
+
+  const contentType = originalResponse.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) return;
+
+  try {
+    const rawBody = await originalResponse.text();
+    const body = JSON.parse(rawBody) as unknown;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      c.res = createErrorResponse(
+        status,
+        { message: originalResponse.statusText || 'Request failed' },
+        originalResponse.headers
+      );
+      return;
+    }
+    c.res = createErrorResponse(status, body as Record<string, unknown>, originalResponse.headers);
+  } catch {
+    // Ignore parse failures; keep original response untouched.
+    c.res = originalResponse;
   }
 });
 
