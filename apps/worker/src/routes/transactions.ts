@@ -20,6 +20,7 @@ import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify'
 import { buildCombinedText, passesGuards, trainNaiveBayes } from '../lib/other-reclassify';
 import { getCategoryHint } from '../lib/category-hints';
 import { normalizeMerchant } from '../lib/merchant-normalize';
+import { normalizeTransactionDescription } from '../lib/transaction-description-normalize';
 import { ensureAdmin, getEffectiveUser, getScopeUserId } from '../lib/request-scope';
 import { enrichTransactions, type DbTransactionRow } from '../lib/transactions-enrich';
 
@@ -2215,6 +2216,7 @@ transactions.post('/admin/rebuild-flow-and-signs', async (c) => {
       const merchantNormalized = normalizeMerchant(nextMerchant || '', nextDescription || '');
       const finalMerchant = merchantNormalized.merchant;
       const finalMerchantRaw = nextMerchantRaw || merchantNormalized.merchant_raw || null;
+      nextDescription = normalizeTransactionDescription(nextDescription, finalMerchant);
 
       const nextAmount = normalized.amount;
       const wasLegacyForcedExpenseTransfer =
@@ -2607,8 +2609,8 @@ transactions.post('/admin/reclassify-other', async (c) => {
   }
 });
 
-// Normalize merchant values across existing rows.
-// Useful after introducing deterministic merchant normalization logic.
+// Normalize merchant values and cryptic description prefixes across existing rows.
+// Useful after introducing deterministic normalization logic.
 transactions.post('/admin/normalize-merchants', async (c) => {
   try {
     const body = (await c.req.json().catch(() => null)) as
@@ -2649,17 +2651,21 @@ transactions.post('/admin/normalize-merchants', async (c) => {
 
     const updates: D1PreparedStatement[] = [];
     let wouldUpdate = 0;
+    let wouldUpdateDescription = 0;
 
     for (const tx of txs) {
       const sourceRaw = tx.merchant_raw || tx.merchant || tx.description || '';
       const normalized = normalizeMerchant(sourceRaw, tx.description || '');
+      const descriptionNext = normalizeTransactionDescription(tx.description || '', normalized.merchant);
 
       const merchantNext = normalized.merchant || null;
       const merchantRawNext = normalized.merchant_raw || null;
       const merchantChanged = (tx.merchant || null) !== merchantNext || (tx.merchant_raw || null) !== merchantRawNext;
-      if (!merchantChanged) continue;
+      const descriptionChanged = (tx.description || '') !== descriptionNext;
+      if (!merchantChanged && !descriptionChanged) continue;
 
       wouldUpdate++;
+      if (descriptionChanged) wouldUpdateDescription++;
       if (dryRun) continue;
 
       let nextRawJson = tx.raw_json;
@@ -2670,6 +2676,7 @@ transactions.post('/admin/normalize-merchants', async (c) => {
             (parsed as any).merchant_raw = merchantRawNext;
             (parsed as any).merchant_normalized = merchantNext;
             (parsed as any).merchant_kind = normalized.merchant_kind;
+            (parsed as any).normalized_description = descriptionNext;
             nextRawJson = JSON.stringify(parsed);
           }
         }
@@ -2682,11 +2689,11 @@ transactions.post('/admin/normalize-merchants', async (c) => {
           .prepare(
             `
               UPDATE transactions
-              SET merchant = ?, merchant_raw = ?, raw_json = ?
+              SET merchant = ?, merchant_raw = ?, description = ?, raw_json = ?
               WHERE id = ?
             `
           )
-          .bind(merchantNext, merchantRawNext, nextRawJson, tx.id)
+          .bind(merchantNext, merchantRawNext, descriptionNext, nextRawJson, tx.id)
       );
     }
 
@@ -2699,6 +2706,7 @@ transactions.post('/admin/normalize-merchants', async (c) => {
       dry_run: dryRun,
       scanned,
       would_update: wouldUpdate,
+      would_update_description: wouldUpdateDescription,
       updated: dryRun ? 0 : updates.length,
       next_cursor: scanned === limit ? nextCursor : null,
       done: scanned < limit,

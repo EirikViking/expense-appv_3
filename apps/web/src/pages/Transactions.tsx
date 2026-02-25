@@ -42,7 +42,7 @@ import {
   resolveDateFiltersFromSearchParams,
 } from '@/lib/transactions-filters';
 import { useFeatureFlags } from '@/context/FeatureFlagsContext';
-import { getDisplayTransactionDescription } from '@/lib/transaction-display';
+import { getDisplayTransactionDescription, looksLikeOpaqueMerchantToken } from '@/lib/transaction-display';
 
 export function TransactionsPage() {
   const { t, i18n } = useTranslation();
@@ -1060,7 +1060,15 @@ export function TransactionsPage() {
                             {tx.merchant_name && (
                               <>
                                 <span className="text-white/25">|</span>
-                                <span title={tx.merchant_raw && tx.merchant_raw !== tx.merchant_name ? tx.merchant_raw : undefined}>
+                                <span
+                                  title={
+                                    tx.merchant_raw &&
+                                    tx.merchant_raw !== tx.merchant_name &&
+                                    !looksLikeOpaqueMerchantToken(tx.merchant_raw)
+                                      ? tx.merchant_raw
+                                      : undefined
+                                  }
+                                >
                                   {tx.merchant_name}
                                 </span>
                               </>

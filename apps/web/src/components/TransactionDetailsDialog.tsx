@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { localizeCategoryName } from '@/lib/category-localization';
-import { getDisplayTransactionDescription } from '@/lib/transaction-display';
+import { getDisplayTransactionDescription, looksLikeOpaqueMerchantToken } from '@/lib/transaction-display';
 
 interface TransactionDetailsDialogProps {
     transaction: TransactionWithMeta | null;
@@ -124,6 +124,8 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
     if (!tx && !open) return null;
     if (!tx) return null;
     const displayDescription = getDisplayTransactionDescription(tx.description, tx.merchant_name);
+    const hideRawDescription = looksLikeOpaqueMerchantToken(tx.description);
+    const hideRawMerchant = looksLikeOpaqueMerchantToken(tx.merchant_raw);
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -204,7 +206,7 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.description')}</p>
                             <p className="break-words">{displayDescription}</p>
-                            {displayDescription !== tx.description && (
+                            {displayDescription !== tx.description && !hideRawDescription && (
                                 <p className="text-xs text-white/55 break-words">{tx.description}</p>
                             )}
                         </div>
@@ -220,7 +222,7 @@ export function TransactionDetailsDialog({ transaction, open, onOpenChange, onDe
                         <div className="space-y-1">
                             <p className="text-sm font-medium text-white/70">{t('common.merchant')}</p>
                             <p>{tx.merchant_name || t('common.notAvailable')}</p>
-                            {tx.merchant_raw && tx.merchant_name && tx.merchant_raw !== tx.merchant_name && (
+                            {tx.merchant_raw && tx.merchant_name && tx.merchant_raw !== tx.merchant_name && !hideRawMerchant && (
                                 <p className="text-xs text-white/55">{tx.merchant_raw}</p>
                             )}
                         </div>

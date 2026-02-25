@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getDisplayTransactionDescription } from './transaction-display';
+import { getDisplayTransactionDescription, looksLikeOpaqueMerchantToken } from './transaction-display';
 
 describe('getDisplayTransactionDescription', () => {
   it('strips dotted numeric reference prefix', () => {
@@ -18,5 +18,16 @@ describe('getDisplayTransactionDescription', () => {
     expect(getDisplayTransactionDescription('Avtalegiro Til Storebrand Livsforsikring AS')).toBe(
       'Avtalegiro Til Storebrand Livsforsikring AS',
     );
+  });
+
+  it('prefers merchant label for opaque token descriptions', () => {
+    expect(getDisplayTransactionDescription('PING*NUVINNO', 'Jølstad')).toBe('Jølstad');
+    expect(getDisplayTransactionDescription('PING * NUVINNO', 'Jølstad')).toBe('Jølstad');
+  });
+
+  it('detects opaque token shapes', () => {
+    expect(looksLikeOpaqueMerchantToken('PING*NUVINNO')).toBe(true);
+    expect(looksLikeOpaqueMerchantToken('NETFLIX.COM')).toBe(false);
+    expect(looksLikeOpaqueMerchantToken('Avtalegiro Til Storebrand')).toBe(false);
   });
 });

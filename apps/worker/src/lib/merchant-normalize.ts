@@ -17,8 +17,8 @@ function stripEmptySeparators(value: string): string {
 }
 
 function normalizeTokenCasing(value: string): string {
-  const hasLower = /[a-zæøå]/.test(value);
-  const hasUpper = /[A-ZÆØÅ]/.test(value);
+  const hasLower = /[a-z\u00E6\u00F8\u00E5]/.test(value);
+  const hasUpper = /[A-Z\u00C6\u00D8\u00C5]/.test(value);
 
   // Keep all-caps merchant names as-is (PAYPAL, ELKJOP, RUTER).
   if (hasUpper && !hasLower) return value;
@@ -51,6 +51,7 @@ function isCodeLike(value: string): boolean {
 
 function applyDomainMapping(value: string): string {
   const upper = value.toUpperCase();
+  const compact = upper.replace(/\s+/g, '');
 
   if (
     /(?:^|\b)CLASOHLSON(?:\.COM)?(?:\/NO)?(?:\b|$)/.test(upper) ||
@@ -67,18 +68,62 @@ function applyDomainMapping(value: string): string {
     return 'KLARNA';
   }
 
+  if (compact.includes('PING*NUVINNO') || compact.includes('PINGNUVINNO') || compact.includes('NUVINNO')) {
+    return 'J\u00F8lstad';
+  }
+
   return value;
+}
+
+function stripMerchantNoise(value: string): string {
+  let cleaned = value;
+
+  // Common tail noise in Norwegian bank exports.
+  cleaned = cleaned.replace(/\s+nota(?:\s*nr)?\s+\d+.*$/i, '');
+  cleaned = cleaned.replace(/\s+betal(?:ings)?\s*dato\s+\d{1,4}[.\-/]\d{1,2}[.\-/]\d{1,4}.*$/i, '');
+  cleaned = cleaned.replace(/\s+forfalls?dato\s+\d{1,4}[.\-/]\d{1,2}[.\-/]\d{1,4}.*$/i, '');
+
+  // Strip trailing "NO/NOR <store-id>" fragments (e.g. "XXL NOR 301").
+  cleaned = cleaned.replace(/\s+(?:NO|NOR|NORGE)\s+\d{2,10}$/i, '');
+
+  // Drop legal entity suffixes from display labels.
+  cleaned = cleaned.replace(/\s+(?:AS|ASA|AB|SA|ANS|DA|NUF|LLC|LTD|INC)\.?$/i, '');
+
+  return cleaned.trim();
 }
 
 function cleanupMerchantCandidate(raw: string): string {
   let candidate = normalizeSpace(raw);
   candidate = stripEmptySeparators(candidate);
 
+  const paypalMatch = candidate.match(/^paypal\s*\*\s*(.+)$/i);
+  if (paypalMatch) {
+    const tail = normalizeSpace(paypalMatch[1] || '');
+    candidate = /^[A-Z0-9]{8,}$/i.test(tail) ? 'PAYPAL' : tail;
+  }
+
+  const revolutMatch = candidate.match(/^revolut\*+\s*(.*)$/i);
+  if (revolutMatch) {
+    const tail = normalizeSpace(revolutMatch[1] || '');
+    candidate = !tail || /^[0-9*]+$/.test(tail) ? 'REVOLUT' : tail;
+  }
+
   // Remove generic payment rail prefixes when followed by an actual merchant.
   candidate = candidate.replace(
-    /^(?:visa|giro|girobetaling|e[-\s]?varekj[oø]p|varekj[oø]p|kortkj[oø]p)\s+/i,
+    /^(?:visa|giro|girobetaling|avtalegiro(?:\s+til)?|e[-\s]?faktura(?:\s+til)?|e[-\s]?varekj[o\u00F8]p|varekj[o\u00F8]p|kortkj[o\u00F8]p)\s+/i,
     ''
   );
+  candidate = candidate.replace(/^(?:vipps|paypal|nyx|tm|uber|google)\s*\*\s*/i, '');
+  candidate = candidate.replace(/^[A-Z]{1,24}[_-]*\*\s*/i, '');
+  candidate = candidate.replace(/^[A-Z0-9]{6,}\s*\/\s*/i, '');
+  candidate = candidate.replace(/^[A-Z]\d{2,6}\s+(?=[A-Za-z\u00C6\u00D8\u00C5])/i, '');
+  candidate = candidate.replace(/^\d{4,}\s*-\s*/, '');
+  candidate = candidate.replace(/^[*]+\s*/, '');
+
+  // Also remove payment-rail labels if they appear inline.
+  candidate = candidate.replace(/\bavtalegiro\s*/i, '');
+  candidate = candidate.replace(/\be[-\s]?faktura\s*/i, '');
+  candidate = candidate.replace(/^(?:til|fra)\s+/i, '');
 
   // Remove leading numeric transaction codes.
   candidate = candidate.replace(/^\d{3,8}\s+/, '');
@@ -98,6 +143,7 @@ function cleanupMerchantCandidate(raw: string): string {
   // Drop pointless trailing currency token.
   candidate = candidate.replace(/\s+(?:NOK|KR)\.?$/i, '').trim();
 
+  candidate = stripMerchantNoise(candidate);
   candidate = applyDomainMapping(candidate);
   candidate = normalizeSpace(candidate);
 
@@ -193,4 +239,3 @@ export function merchantCasefoldKey(raw: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase('en-US');
 }
-

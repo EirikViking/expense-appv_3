@@ -2,6 +2,12 @@ function normalizeSpace(value: string): string {
   return String(value || '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+export function looksLikeOpaqueMerchantToken(value: string | null | undefined): boolean {
+  const compact = normalizeSpace(value || '').replace(/\s+/g, '');
+  if (!compact) return false;
+  return /^[A-Z0-9]+[*][A-Z0-9*._/-]+$/i.test(compact);
+}
+
 export function getDisplayTransactionDescription(
   description: string | null | undefined,
   merchantName?: string | null,
@@ -9,6 +15,10 @@ export function getDisplayTransactionDescription(
   const source = normalizeSpace(description || '');
   const merchant = normalizeSpace(merchantName || '');
   if (!source) return merchant || '';
+
+  if (merchant && merchant.toLowerCase() !== source.toLowerCase() && looksLikeOpaqueMerchantToken(source)) {
+    return merchant;
+  }
 
   const codeOnly = /^(?:[A-Z]?\d{8,}|[A-Z]?\d{2,}(?:[.\-/:]\d{2,}){1,})[,;:]?$/i;
   if (codeOnly.test(source) && merchant) return merchant;

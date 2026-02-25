@@ -35,6 +35,34 @@ describe('merchant insights grouping', () => {
     expect(breakdown.some((m) => m.merchant_name === 'Ukjent brukersted')).toBe(false);
   });
 
+  it('cleans cryptic autopay and store-code merchant labels', () => {
+    const breakdown = buildMerchantBreakdown(
+      [
+        {
+          merchant_id: null,
+          merchant_name: 'Avtalegiro Til Storebrand Livsforsikring AS Betalingsdato 02-02-2026',
+          total: 499,
+          count: 1,
+        },
+        { merchant_id: null, merchant_name: 'XXL NOR 301', total: 1500, count: 2 },
+        { merchant_id: null, merchant_name: 'PING*NUVINNO', total: 250, count: 1 },
+      ],
+      []
+    );
+
+    const storebrand = breakdown.find((m) => m.merchant_name === 'Storebrand Livsforsikring');
+    expect(storebrand).toBeTruthy();
+    expect(storebrand?.total).toBe(499);
+
+    const xxl = breakdown.find((m) => m.merchant_name === 'XXL');
+    expect(xxl).toBeTruthy();
+    expect(xxl?.count).toBe(2);
+
+    const jolstad = breakdown.find((m) => m.merchant_name === 'J\u00F8lstad');
+    expect(jolstad).toBeTruthy();
+    expect(jolstad?.total).toBe(250);
+  });
+
   it('attaches previous_total and marks trend basis as valid when comparison exists', () => {
     const breakdown = buildMerchantBreakdown(
       [{ merchant_id: null, merchant_name: 'KIWI', total: 2472.04, count: 12 }],

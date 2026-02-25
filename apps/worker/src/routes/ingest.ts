@@ -14,6 +14,7 @@ import { detectIsTransfer } from '../lib/transfer-detect';
 import { normalizeXlsxAmountForIngest } from '../lib/xlsx-normalize';
 import { classifyFlowType, normalizeAmountAndFlags } from '../lib/flow-classify';
 import { normalizeMerchant } from '../lib/merchant-normalize';
+import { normalizeTransactionDescription } from '../lib/transaction-description-normalize';
 import type { Env } from '../types';
 import { getScopeUserId } from '../lib/request-scope';
 
@@ -522,16 +523,20 @@ async function insertXlsxTransactionsBatch(
 
     for (const tx of chunk) {
       try {
+        const originalDescription = tx.description || '';
+        const normalizedMerchant = normalizeMerchant(tx.merchant || '', originalDescription);
+        const normalizedDescription = normalizeTransactionDescription(originalDescription, normalizedMerchant.merchant);
+
         const flow = classifyFlowType({
           source_type: 'xlsx',
-          description: tx.description,
+          description: normalizedDescription,
           amount: tx.amount,
           raw_json: tx.raw_json,
         });
 
         const xlsxNormalized = normalizeXlsxAmountForIngest({
           amount: tx.amount,
-          description: tx.description,
+          description: normalizedDescription,
           raw_json: tx.raw_json,
         });
 
@@ -541,11 +546,10 @@ async function insertXlsxTransactionsBatch(
         const isTransfer =
           normalized.flags?.is_transfer === 1 ||
           xlsxNormalized.flags?.is_transfer === 1 ||
-          detectIsTransfer(tx.description);
+          detectIsTransfer(normalizedDescription);
         const flags = isTransfer ? { is_transfer: 1, is_excluded: 1 } : undefined;
 
         const flowType = isTransfer ? 'transfer' : flow.flow_type;
-        const normalizedMerchant = normalizeMerchant(tx.merchant || '', tx.description || '');
 
         // Preserve original context for deterministic rebuilds/debugging.
         const rawJson = (() => {
@@ -557,6 +561,8 @@ async function insertXlsxTransactionsBatch(
               (obj as any).source_filename = filename;
               (obj as any).source_file_hash = fileHash;
               (obj as any).source_fingerprint = fileHash;
+              (obj as any).original_description = originalDescription;
+              (obj as any).normalized_description = normalizedDescription;
               (obj as any).original_amount = tx.amount;
               (obj as any).pre_normalized_amount = xlsxNormalized.amount;
               (obj as any).normalized_amount = amount;
@@ -580,6 +586,8 @@ async function insertXlsxTransactionsBatch(
             source_file_hash: fileHash,
             source_fingerprint: fileHash,
             raw_json_original: tx.raw_json,
+            original_description: originalDescription,
+            normalized_description: normalizedDescription,
             original_amount: tx.amount,
             pre_normalized_amount: xlsxNormalized.amount,
             normalized_amount: amount,
@@ -596,10 +604,11 @@ async function insertXlsxTransactionsBatch(
 
         prepared.push({
           id: generateId(),
-          tx_hash_promise: computeTxHash(tx.tx_date, tx.description, amount, 'xlsx'),
+          // Keep hash based on source description to avoid duplicate drift across normalization changes.
+          tx_hash_promise: computeTxHash(tx.tx_date, originalDescription, amount, 'xlsx'),
           tx_date: tx.tx_date,
           booked_date: tx.booked_date || null,
-          description: tx.description,
+          description: normalizedDescription,
           merchant: normalizedMerchant.merchant || null,
           merchant_raw: normalizedMerchant.merchant_raw || null,
           amount,
@@ -831,10 +840,12 @@ ingest.post('/pdf', async (c) => {
         // Best-effort re-parse to improve description/amount (helps rule matching and prevents legacy pollution).
         // For "Detaljer" block PDFs we already have tx.description/tx.amount; re-parsing raw_line may not work.
         const reparsed = parsePdfTransactionLine(tx.raw_line);
-        const description = reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
+        const originalDescription =
+          reparsed?.description && reparsed.date === tx.tx_date ? reparsed.description : tx.description;
         const parsedAmount = reparsed?.amount !== undefined && reparsed.date === tx.tx_date ? reparsed.amount : tx.amount;
         const merchantHint = tx.merchant_hint || extractMerchantFromPdfLine(tx.raw_line);
-        const normalizedMerchant = normalizeMerchant(merchantHint || '', description || '');
+        const normalizedMerchant = normalizeMerchant(merchantHint || '', originalDescription || '');
+        const description = normalizeTransactionDescription(originalDescription || '', normalizedMerchant.merchant);
 
         const rawJson = JSON.stringify({
           source_type: 'pdf',
@@ -845,6 +856,7 @@ ingest.post('/pdf', async (c) => {
           raw_line: tx.raw_line,
           ...(tx.raw_block ? { raw_block: tx.raw_block } : {}),
           ...(tx.detaljer ? { detaljer: tx.detaljer } : {}),
+          original_description: originalDescription,
           parsed_description: description,
           parsed_amount: parsedAmount,
           merchant_hint: merchantHint,
@@ -886,7 +898,8 @@ ingest.post('/pdf', async (c) => {
           return rawJson;
         })();
 
-        const txHash = `${scopeUserId}:${await computeTxHash(tx.tx_date, description, amount, 'pdf')}`;
+        // Keep hash based on source description to avoid duplicate drift across normalization changes.
+        const txHash = `${scopeUserId}:${await computeTxHash(tx.tx_date, originalDescription, amount, 'pdf')}`;
 
         // Check transaction-level duplicate
         const isTxDuplicate = await checkTxDuplicate(c.env.DB, txHash, scopeUserId);

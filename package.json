@@ -36,6 +36,7 @@
     "ingest:xlsx": "npx tsx scripts/ingest_xlsx.ts",
     "ingest:xlsx:verify": "npx tsx scripts/ingest_xlsx.ts --verify",
     "merchant:normalize:backfill": "node scripts/backfill-merchant-normalization.mjs",
+    "transactions:normalize:backfill:d1": "npx tsx scripts/backfill-transaction-normalization-d1.ts",
     "setup:local": "corepack pnpm install && corepack pnpm db:migrate:local",
     "db:migrate:local": "corepack pnpm --filter worker db:migrate:local",
     "db:migrate:remote": "corepack pnpm --filter worker db:migrate:remote",

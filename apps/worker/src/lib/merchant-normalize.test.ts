@@ -24,6 +24,34 @@ describe('normalizeMerchant', () => {
     expect(normalized.merchant_kind).toBe('name');
   });
 
+  it('cleans avtalegiro labels into readable merchant names', () => {
+    const normalized = normalizeMerchant(
+      'Avtalegiro Til Storebrand Livsforsikring AS Betalingsdato 02-02-2026'
+    );
+    expect(normalized.merchant).toBe('Storebrand Livsforsikring');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+
+  it('strips trailing country code + store number noise', () => {
+    const normalized = normalizeMerchant('XXL NOR 301');
+    expect(normalized.merchant).toBe('XXL');
+    expect(normalized.merchant_kind).toBe('name');
+  });
+
+  it('maps ping nuvinno variants to Jolstad', () => {
+    expect(normalizeMerchant('PING*NUVINNO').merchant).toBe('J\u00F8lstad');
+    expect(normalizeMerchant('Ping Nuvinno').merchant).toBe('J\u00F8lstad');
+  });
+
+  it('strips payment-rail star prefixes from merchant names', () => {
+    expect(normalizeMerchant('Vipps*Los Tacos Bjoervika').merchant).toBe('Los Tacos Bjoervika');
+    expect(normalizeMerchant('PAYPAL *TEMU').merchant).toBe('TEMU');
+    expect(normalizeMerchant('PAYPAL *P31E4A1A7F').merchant).toBe('PAYPAL');
+    expect(normalizeMerchant('Revolut**5785*').merchant).toBe('REVOLUT');
+    expect(normalizeMerchant('ZETTLE_*KLASSEROMMET A').merchant).toBe('KLASSEROMMET A');
+    expect(normalizeMerchant('3A5M65EMPK/SUKKERBITEN').merchant).toBe('SUKKERBITEN');
+  });
+
   it('strips dotted numeric reference prefixes before merchant name', () => {
     const normalized = normalizeMerchant('9802.44.27714, Felleskonto ...');
     expect(normalized.merchant).toBe('Felleskonto ...');
